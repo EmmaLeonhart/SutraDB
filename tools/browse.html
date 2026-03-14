@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SutraDB Browser</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
         :root {
             --bg: #0d1117; --surface: #161b22; --border: #30363d;
@@ -11,169 +12,164 @@
             --green: #3fb950; --orange: #d29922; --purple: #bc8cff; --red: #f85149;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
         a { color: var(--accent); text-decoration: none; cursor: pointer; }
-        a:hover { text-decoration: underline; }
 
         header {
-            padding: 16px 24px; border-bottom: 1px solid var(--border);
-            display: flex; align-items: center; gap: 16px;
+            padding: 8px 16px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 12px; height: 44px;
         }
-        header h1 { font-size: 1.2em; }
+        header h1 { font-size: 1em; white-space: nowrap; }
         header h1 span { color: var(--accent); }
+        header h1::before { content: '\1F4DC '; }
         #endpoint-input {
-            background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-            color: var(--text); padding: 6px 12px; font-size: 0.85em; width: 260px;
+            background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+            color: var(--text); padding: 4px 8px; font-size: 0.8em; width: 200px;
         }
-        #status { font-size: 0.85em; }
+        #status { font-size: 0.8em; }
         .connected { color: var(--green); }
         .disconnected { color: var(--red); }
+        .view-toggle { display: flex; gap: 4px; margin-left: auto; }
+        .view-toggle button {
+            background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+            padding: 4px 12px; cursor: pointer; font-size: 0.8em; border-radius: 4px;
+        }
+        .view-toggle button.active { color: var(--accent); border-color: var(--accent); }
+        .view-toggle button:hover { color: var(--text); }
 
-        .layout { display: flex; height: calc(100vh - 57px); }
+        .layout { display: flex; height: calc(100vh - 44px); }
 
-        .sidebar {
-            width: 320px; border-right: 1px solid var(--border);
+        /* Left panel: query + results */
+        .panel-left {
+            width: 340px; border-right: 1px solid var(--border);
             display: flex; flex-direction: column; flex-shrink: 0;
         }
-        .sidebar-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.9em; }
         #query-box {
             width: 100%; background: var(--surface); border: none; border-bottom: 1px solid var(--border);
-            color: var(--text); padding: 12px 16px; font-family: 'Consolas', monospace; font-size: 0.85em;
-            resize: vertical; min-height: 120px;
+            color: var(--text); padding: 8px 12px; font-family: Consolas, monospace; font-size: 0.8em;
+            resize: vertical; min-height: 80px; max-height: 200px;
         }
-        .sidebar-actions { padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
-        .btn {
-            padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border);
-            background: var(--surface); color: var(--text); cursor: pointer; font-size: 0.85em;
+        .query-bar { padding: 6px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; flex-wrap: wrap; }
+        .qbtn {
+            background: none; border: 1px solid var(--border); color: var(--muted);
+            padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7em;
         }
-        .btn:hover { border-color: var(--accent); color: var(--accent); }
-        .btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-        .btn-primary:hover { background: #79c0ff; }
+        .qbtn:hover { color: var(--accent); border-color: var(--accent); }
+        .btn-run {
+            background: var(--accent); color: var(--bg); border: none;
+            padding: 2px 12px; border-radius: 3px; cursor: pointer; font-size: 0.75em; font-weight: 600;
+        }
 
-        .result-list { flex: 1; overflow-y: auto; }
+        .result-list { flex: 1; overflow-y: auto; font-size: 0.8em; }
         .result-item {
-            padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
-            font-size: 0.85em;
+            padding: 6px 12px; border-bottom: 1px solid var(--border); cursor: pointer;
         }
         .result-item:hover { background: var(--surface); }
         .result-item.active { background: #1c2333; border-left: 3px solid var(--accent); }
-        .result-item .subject { color: var(--accent); font-weight: 600; }
-        .result-item .predicate { color: var(--purple); }
-        .result-item .object { color: var(--green); }
-        .result-item .vector-badge {
+        .subject { color: var(--accent); }
+        .predicate { color: var(--purple); }
+        .object { color: var(--green); }
+        .vec-badge {
             display: inline-block; background: #1b2838; color: var(--orange);
-            padding: 1px 6px; border-radius: 4px; font-size: 0.8em; margin-left: 4px;
+            padding: 0 4px; border-radius: 3px; font-size: 0.75em;
+        }
+        .stats-bar { padding: 4px 12px; border-top: 1px solid var(--border); font-size: 0.75em; color: var(--muted); }
+
+        /* Right panel: detail or graph */
+        .panel-right { flex: 1; position: relative; overflow: hidden; }
+
+        /* Graph view */
+        #graph-container { width: 100%; height: 100%; }
+        #graph-container svg { width: 100%; height: 100%; }
+
+        /* Detail view */
+        #detail-panel {
+            display: none; position: absolute; top: 0; right: 0; width: 360px; height: 100%;
+            background: var(--surface); border-left: 1px solid var(--border);
+            overflow-y: auto; z-index: 10;
+        }
+        #detail-panel .detail-header {
+            padding: 12px 16px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        #detail-panel .detail-header h3 { font-size: 0.95em; word-break: break-all; }
+        #detail-panel .close-btn { cursor: pointer; color: var(--muted); font-size: 1.2em; }
+        #detail-panel .detail-content { padding: 12px 16px; font-size: 0.85em; }
+        #detail-panel table { width: 100%; }
+        #detail-panel th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.85em; }
+        #detail-panel td { padding: 6px 8px; border-bottom: 1px solid var(--border); word-break: break-all; }
+        .detail-section { margin-bottom: 16px; }
+        .detail-section h4 { color: var(--accent); margin-bottom: 8px; font-size: 0.9em; }
+
+        /* Tooltip */
+        .tooltip {
+            position: absolute; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 4px; padding: 6px 10px; font-size: 0.8em; pointer-events: none;
+            z-index: 20; max-width: 300px; word-break: break-all;
         }
 
-        .main-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-        .entity-header {
-            padding: 16px 24px; border-bottom: 1px solid var(--border);
-            display: flex; align-items: center; gap: 12px;
-        }
-        .entity-header h2 { font-size: 1.1em; word-break: break-all; }
-
-        .tabs {
-            display: flex; border-bottom: 1px solid var(--border);
-        }
-        .tab {
-            padding: 10px 20px; cursor: pointer; font-size: 0.9em;
-            border-bottom: 2px solid transparent;
-        }
-        .tab:hover { background: var(--surface); }
-        .tab.active { border-bottom-color: var(--accent); color: var(--accent); }
-
-        .tab-content { flex: 1; overflow-y: auto; padding: 16px 24px; }
-
-        table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-        th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--muted); font-weight: 600; }
-        td { padding: 8px 12px; border-bottom: 1px solid var(--border); word-break: break-all; }
-        tr:hover { background: var(--surface); }
-        .iri { color: var(--accent); }
-        .literal { color: var(--green); }
-        .vector-val { color: var(--orange); font-family: monospace; font-size: 0.8em; }
-
-        .stats { padding: 8px 16px; border-top: 1px solid var(--border); font-size: 0.8em; color: var(--muted); }
-
-        .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
-        .empty-state h3 { margin-bottom: 8px; }
-
-        .quick-queries { padding: 8px 16px; border-bottom: 1px solid var(--border); }
-        .quick-queries button {
-            background: none; border: 1px solid var(--border); color: var(--muted);
-            padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75em; margin: 2px;
-        }
-        .quick-queries button:hover { color: var(--accent); border-color: var(--accent); }
+        /* SVG styles */
+        .link { stroke: var(--border); stroke-width: 1.5; fill: none; }
+        .link-label { fill: var(--muted); font-size: 8px; pointer-events: none; }
+        .node circle { stroke-width: 2; cursor: pointer; }
+        .node text { fill: var(--text); font-size: 9px; pointer-events: none; }
+        .node-iri circle { fill: var(--accent); stroke: #1a4a7a; }
+        .node-literal circle { fill: var(--green); stroke: #1a3a1f; }
+        .node-vector circle { fill: var(--orange); stroke: #3a2e1b; }
+        .node.selected circle { stroke: white; stroke-width: 3; }
     </style>
 </head>
 <body>
 
 <header>
     <h1><span>Sutra</span>DB Browser</h1>
-    <input id="endpoint-input" value="http://localhost:3030" placeholder="SutraDB endpoint">
-    <span id="status" class="disconnected">checking...</span>
+    <input id="endpoint-input" value="http://localhost:3030">
+    <span id="status" class="disconnected">...</span>
+    <div class="view-toggle">
+        <button class="active" onclick="setView('graph')">Graph</button>
+        <button onclick="setView('table')">Table</button>
+    </div>
 </header>
 
 <div class="layout">
-    <div class="sidebar">
-        <div class="sidebar-header">SPARQL Query</div>
+    <div class="panel-left">
         <textarea id="query-box">SELECT ?s ?p ?o WHERE {
   ?s ?p ?o
-} LIMIT 50</textarea>
-        <div class="quick-queries">
-            <button onclick="quickQuery('all')">All triples</button>
-            <button onclick="quickQuery('types')">All types</button>
-            <button onclick="quickQuery('vectors')">Vector triples</button>
-            <button onclick="quickQuery('entity')">Entity detail</button>
-        </div>
-        <div class="sidebar-actions">
-            <button class="btn btn-primary" onclick="runQuery()">Run Query</button>
-            <button class="btn" onclick="clearResults()">Clear</button>
+} LIMIT 30</textarea>
+        <div class="query-bar">
+            <button class="btn-run" onclick="runQuery()">Run (Ctrl+Enter)</button>
+            <button class="qbtn" onclick="qk('all')">All</button>
+            <button class="qbtn" onclick="qk('types')">Types</button>
+            <button class="qbtn" onclick="qk('vectors')">Vectors</button>
+            <button class="qbtn" onclick="qk('expand')">Expand</button>
         </div>
         <div class="result-list" id="result-list"></div>
-        <div class="stats" id="stats"></div>
+        <div class="stats-bar" id="stats"></div>
     </div>
 
-    <div class="main-panel">
-        <div class="entity-header" id="entity-header" style="display:none;">
-            <h2 id="entity-title"></h2>
-        </div>
-        <div class="tabs" id="tabs" style="display:none;">
-            <div class="tab active" onclick="switchTab('outgoing')">Outgoing</div>
-            <div class="tab" onclick="switchTab('incoming')">Incoming</div>
-            <div class="tab" onclick="switchTab('vectors')">Vectors</div>
-        </div>
-        <div class="tab-content" id="tab-content">
-            <div class="empty-state">
-                <h3>Run a SPARQL query to explore</h3>
-                <p>Click on any entity IRI to browse its triples and vector connections.</p>
+    <div class="panel-right">
+        <div id="graph-container"></div>
+        <div id="detail-panel">
+            <div class="detail-header">
+                <h3 id="detail-title"></h3>
+                <span class="close-btn" onclick="closeDetail()">&times;</span>
             </div>
+            <div class="detail-content" id="detail-content"></div>
         </div>
     </div>
 </div>
 
+<div class="tooltip" id="tooltip" style="display:none;"></div>
+
 <script>
+// ── Config ──
 const endpoint = () => document.getElementById('endpoint-input').value.replace(/\/$/, '');
+let currentView = 'graph';
+let graphData = { nodes: [], links: [] };
+let simulation = null;
+let lastResults = null;
 
-async function checkHealth() {
-    try {
-        const r = await fetch(endpoint() + '/health');
-        if (r.ok) {
-            document.getElementById('status').textContent = 'connected';
-            document.getElementById('status').className = 'connected';
-        } else throw new Error();
-    } catch {
-        document.getElementById('status').textContent = 'disconnected';
-        document.getElementById('status').className = 'disconnected';
-    }
-}
-
-async function sparql(query) {
-    const r = await fetch(endpoint() + '/sparql?query=' + encodeURIComponent(query));
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-}
-
+// ── Shorten IRIs ──
 function shorten(iri) {
     if (!iri) return '?';
     return iri
@@ -183,193 +179,308 @@ function shorten(iri) {
         .replace('http://www.wikidata.org/prop/direct/', 'wdt:')
         .replace('http://embedding-mapping.local/ontology/', 'emb:')
         .replace('http://stress.sutradb.dev/', 'stress:')
-        .replace('http://sutra.dev/', 'sutra:');
+        .replace('http://sutra.dev/', 'sutra:')
+        .replace(/^http:\/\/example\.org\//, 'ex:');
 }
 
-function isVector(val) {
-    return val && (val.includes('sutra:f32vec') || val.includes('f32vec'));
-}
+function isVector(val) { return val && val.includes('f32vec'); }
 
-function termHtml(binding) {
-    if (!binding) return '<span class="literal">?</span>';
-    const v = binding.value;
-    if (binding.type === 'uri') {
-        const short = shorten(v);
-        return `<a class="iri" onclick="browseEntity('${v}')">${short}</a>`;
+// ── Health ──
+async function checkHealth() {
+    try {
+        const r = await fetch(endpoint() + '/health');
+        document.getElementById('status').textContent = r.ok ? 'connected' : 'error';
+        document.getElementById('status').className = r.ok ? 'connected' : 'disconnected';
+    } catch {
+        document.getElementById('status').textContent = 'disconnected';
+        document.getElementById('status').className = 'disconnected';
     }
-    if (isVector(v)) {
-        const preview = v.substring(0, 40) + '...';
-        return `<span class="vector-val">${preview}</span>`;
-    }
-    return `<span class="literal">"${v}"</span>`;
 }
 
-let lastResults = null;
+// ── SPARQL ──
+async function sparql(query) {
+    const r = await fetch(endpoint() + '/sparql?query=' + encodeURIComponent(query));
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+}
 
+// ── Quick queries ──
+function qk(type) {
+    const box = document.getElementById('query-box');
+    const q = {
+        all: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 30',
+        types: 'SELECT DISTINCT ?type WHERE {\n  ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type\n} LIMIT 30',
+        vectors: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 50',
+        expand: '# Click a node in the graph, then click "Expand" to load its neighbors',
+    };
+    box.value = q[type] || q.all;
+    if (type !== 'expand') runQuery();
+}
+
+function expandNode(iri) {
+    document.getElementById('query-box').value =
+        `SELECT ?s ?p ?o WHERE {\n  { <${iri}> ?p ?o . BIND(<${iri}> AS ?s) }\n  UNION\n  { ?s ?p <${iri}> . BIND(<${iri}> AS ?o) }\n} LIMIT 50`;
+    runQuery();
+}
+
+// ── Run query ──
 async function runQuery() {
     const query = document.getElementById('query-box').value;
     try {
         const data = await sparql(query);
         lastResults = data;
         renderResults(data);
+        if (data.head.vars.includes('s') && data.head.vars.includes('p') && data.head.vars.includes('o')) {
+            buildGraph(data);
+        }
     } catch (e) {
         document.getElementById('result-list').innerHTML =
-            `<div class="result-item" style="color:var(--red)">${e.message}</div>`;
+            `<div class="result-item" style="color:var(--red)">${e.message.substring(0, 200)}</div>`;
     }
 }
 
+// ── Render result list ──
 function renderResults(data) {
     const list = document.getElementById('result-list');
     const bindings = data.results.bindings;
     const vars = data.head.vars;
 
-    if (bindings.length === 0) {
+    if (!bindings.length) {
         list.innerHTML = '<div class="result-item" style="color:var(--muted)">No results</div>';
         document.getElementById('stats').textContent = '0 results';
         return;
     }
 
-    // If results have s/p/o, show as triple rows
     const hasSPO = vars.includes('s') && vars.includes('p') && vars.includes('o');
-
     list.innerHTML = bindings.map((b, i) => {
         if (hasSPO) {
             const hasVec = b.o && isVector(b.o.value);
             return `<div class="result-item" onclick="selectResult(${i})">
                 <span class="subject">${shorten(b.s?.value)}</span>
-                <span class="predicate"> ${shorten(b.p?.value)} </span>
-                <span class="object">${shorten(b.o?.value)?.substring(0, 50)}</span>
-                ${hasVec ? '<span class="vector-badge">VEC</span>' : ''}
+                <span class="predicate">${shorten(b.p?.value)}</span>
+                <span class="object">${shorten(b.o?.value)?.substring(0, 40)}</span>
+                ${hasVec ? '<span class="vec-badge">VEC</span>' : ''}
             </div>`;
-        } else {
-            const vals = vars.map(v => `<span>${shorten(b[v]?.value)}</span>`).join(' | ');
-            return `<div class="result-item" onclick="selectResult(${i})">${vals}</div>`;
         }
+        return `<div class="result-item" onclick="selectResult(${i})">${vars.map(v => shorten(b[v]?.value)).join(' | ')}</div>`;
     }).join('');
-
     document.getElementById('stats').textContent = `${bindings.length} results`;
 }
 
 function selectResult(idx) {
-    document.querySelectorAll('.result-item').forEach((el, i) => {
-        el.classList.toggle('active', i === idx);
-    });
-    const vars = lastResults.head.vars;
+    document.querySelectorAll('.result-item').forEach((el, i) => el.classList.toggle('active', i === idx));
     const b = lastResults.results.bindings[idx];
-    // Find first URI in the binding to browse
-    for (const v of vars) {
-        if (b[v]?.type === 'uri') {
-            browseEntity(b[v].value);
-            return;
-        }
+    for (const v of lastResults.head.vars) {
+        if (b[v]?.type === 'uri') { showDetail(b[v].value); return; }
     }
 }
 
-async function browseEntity(iri) {
-    document.getElementById('entity-header').style.display = 'flex';
-    document.getElementById('tabs').style.display = 'flex';
-    document.getElementById('entity-title').textContent = shorten(iri);
-
-    // Load outgoing triples by default
-    switchTab('outgoing', iri);
+// ── View toggle ──
+function setView(view) {
+    currentView = view;
+    document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === view));
+    document.getElementById('graph-container').style.display = view === 'graph' ? 'block' : 'none';
 }
 
-let currentEntity = null;
+// ── Build graph from SPO results ──
+function buildGraph(data) {
+    const nodeMap = new Map();
+    const links = [];
 
-async function switchTab(tab, iri) {
-    if (iri) currentEntity = iri;
-    if (!currentEntity) return;
+    function getNode(binding) {
+        if (!binding) return null;
+        const id = binding.value;
+        if (nodeMap.has(id)) return nodeMap.get(id);
+        const isVec = isVector(id);
+        const node = {
+            id,
+            label: shorten(id),
+            type: binding.type === 'uri' ? 'iri' : (isVec ? 'vector' : 'literal'),
+        };
+        nodeMap.set(id, node);
+        return node;
+    }
 
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelector(`.tab[onclick*="${tab}"]`)?.classList.add('active');
+    for (const b of data.results.bindings) {
+        const s = getNode(b.s);
+        const o = getNode(b.o);
+        if (s && o) {
+            links.push({
+                source: s.id,
+                target: o.id,
+                predicate: shorten(b.p?.value || '?'),
+            });
+        }
+    }
 
-    const content = document.getElementById('tab-content');
-    content.innerHTML = '<div class="empty-state">Loading...</div>';
+    graphData = { nodes: Array.from(nodeMap.values()), links };
+    renderGraph();
+}
+
+// ── D3 Force Graph ──
+function renderGraph() {
+    const container = document.getElementById('graph-container');
+    container.innerHTML = '';
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    const svg = d3.select('#graph-container')
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height);
+
+    // Zoom
+    const g = svg.append('g');
+    svg.call(d3.zoom().scaleExtent([0.1, 5]).on('zoom', (e) => g.attr('transform', e.transform)));
+
+    // Arrow markers
+    svg.append('defs').append('marker')
+        .attr('id', 'arrowhead').attr('viewBox', '-0 -5 10 10')
+        .attr('refX', 20).attr('refY', 0).attr('orient', 'auto')
+        .attr('markerWidth', 6).attr('markerHeight', 6)
+        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#30363d');
+
+    // Links
+    const link = g.append('g').selectAll('line')
+        .data(graphData.links).enter().append('line')
+        .attr('class', 'link')
+        .attr('marker-end', 'url(#arrowhead)');
+
+    // Link labels
+    const linkLabel = g.append('g').selectAll('text')
+        .data(graphData.links).enter().append('text')
+        .attr('class', 'link-label')
+        .text(d => d.predicate);
+
+    // Nodes
+    const node = g.append('g').selectAll('g')
+        .data(graphData.nodes).enter().append('g')
+        .attr('class', d => `node node-${d.type}`)
+        .call(d3.drag()
+            .on('start', dragStart)
+            .on('drag', dragging)
+            .on('end', dragEnd));
+
+    node.append('circle')
+        .attr('r', d => d.type === 'vector' ? 8 : (d.type === 'literal' ? 6 : 10))
+        .on('click', (e, d) => { e.stopPropagation(); showDetail(d.id); })
+        .on('dblclick', (e, d) => { e.stopPropagation(); if (d.type === 'iri') expandNode(d.id); })
+        .on('mouseover', (e, d) => showTooltip(e, d.id))
+        .on('mouseout', hideTooltip);
+
+    node.append('text')
+        .attr('dx', 14).attr('dy', 4)
+        .text(d => d.label.length > 25 ? d.label.substring(0, 22) + '...' : d.label);
+
+    // Simulation
+    simulation = d3.forceSimulation(graphData.nodes)
+        .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(100))
+        .force('charge', d3.forceManyBody().strength(-200))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collide', d3.forceCollide(25))
+        .on('tick', () => {
+            link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+            linkLabel
+                .attr('x', d => (d.source.x + d.target.x) / 2)
+                .attr('y', d => (d.source.y + d.target.y) / 2);
+            node.attr('transform', d => `translate(${d.x},${d.y})`);
+        });
+
+    function dragStart(e, d) { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+    function dragging(e, d) { d.fx = e.x; d.fy = e.y; }
+    function dragEnd(e, d) { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
+}
+
+// ── Tooltip ──
+function showTooltip(event, text) {
+    const tt = document.getElementById('tooltip');
+    tt.textContent = text;
+    tt.style.display = 'block';
+    tt.style.left = (event.pageX + 10) + 'px';
+    tt.style.top = (event.pageY - 20) + 'px';
+}
+function hideTooltip() { document.getElementById('tooltip').style.display = 'none'; }
+
+// ── Detail panel ──
+async function showDetail(iri) {
+    const panel = document.getElementById('detail-panel');
+    const title = document.getElementById('detail-title');
+    const content = document.getElementById('detail-content');
+
+    panel.style.display = 'block';
+    title.textContent = shorten(iri);
+    content.innerHTML = 'Loading...';
+
+    // Highlight in graph
+    d3.selectAll('.node').classed('selected', d => d.id === iri);
 
     try {
-        let query, data;
-        if (tab === 'outgoing') {
-            query = `SELECT ?p ?o WHERE { <${currentEntity}> ?p ?o } LIMIT 200`;
-            data = await sparql(query);
-            content.innerHTML = renderTripleTable('Predicate', 'Object', data, 'p', 'o');
-        } else if (tab === 'incoming') {
-            query = `SELECT ?s ?p WHERE { ?s ?p <${currentEntity}> } LIMIT 200`;
-            data = await sparql(query);
-            content.innerHTML = renderTripleTable('Subject', 'Predicate', data, 's', 'p');
-        } else if (tab === 'vectors') {
-            // Show vector triples (objects containing f32vec)
-            query = `SELECT ?p ?o WHERE { <${currentEntity}> ?p ?o } LIMIT 200`;
-            data = await sparql(query);
-            const vecBindings = data.results.bindings.filter(b => b.o && isVector(b.o.value));
-            const nonVecBindings = data.results.bindings.filter(b => b.o && !isVector(b.o.value));
-            let html = '';
-            if (vecBindings.length > 0) {
-                html += '<h3 style="margin-bottom:12px;color:var(--orange)">Vector Embeddings</h3>';
-                html += '<table><tr><th>Predicate</th><th>Vector (preview)</th></tr>';
-                vecBindings.forEach(b => {
-                    const vec = b.o.value;
-                    const nums = vec.replace(/"/g, '').split('^^')[0].trim();
-                    const preview = nums.split(' ').slice(0, 8).join(', ') + '...';
-                    const dim = nums.split(' ').length;
-                    html += `<tr><td>${termHtml(b.p)}</td><td><span class="vector-val">[${preview}] (${dim}-dim)</span></td></tr>`;
-                });
-                html += '</table>';
-            } else {
-                html += '<p style="color:var(--muted);margin-bottom:16px;">No vector embeddings on this entity.</p>';
-            }
-            html += `<h3 style="margin:24px 0 12px;color:var(--accent)">Other Properties (${nonVecBindings.length})</h3>`;
-            if (nonVecBindings.length > 0) {
-                html += '<table><tr><th>Predicate</th><th>Value</th></tr>';
-                nonVecBindings.forEach(b => {
-                    html += `<tr><td>${termHtml(b.p)}</td><td>${termHtml(b.o)}</td></tr>`;
-                });
-                html += '</table>';
-            }
-            content.innerHTML = html;
+        const outgoing = await sparql(`SELECT ?p ?o WHERE { <${iri}> ?p ?o } LIMIT 100`);
+        const incoming = await sparql(`SELECT ?s ?p WHERE { ?s ?p <${iri}> } LIMIT 100`);
+
+        let html = '';
+
+        // Separate vectors from other properties
+        const vecTriples = outgoing.results.bindings.filter(b => b.o && isVector(b.o.value));
+        const otherTriples = outgoing.results.bindings.filter(b => !b.o || !isVector(b.o.value));
+
+        if (vecTriples.length) {
+            html += '<div class="detail-section"><h4>Vectors</h4><table>';
+            vecTriples.forEach(b => {
+                const vec = b.o.value.replace(/"/g, '').split('^^')[0].trim();
+                const dims = vec.split(' ').length;
+                const preview = vec.split(' ').slice(0, 5).join(', ');
+                html += `<tr><td><span class="predicate">${shorten(b.p.value)}</span></td><td><span class="vec-badge">${dims}-dim</span> [${preview}, ...]</td></tr>`;
+            });
+            html += '</table></div>';
         }
+
+        if (otherTriples.length) {
+            html += `<div class="detail-section"><h4>Outgoing (${otherTriples.length})</h4><table>`;
+            otherTriples.forEach(b => {
+                const oVal = b.o?.type === 'uri'
+                    ? `<a onclick="showDetail('${b.o.value}')">${shorten(b.o.value)}</a>`
+                    : `<span class="object">"${shorten(b.o?.value)}"</span>`;
+                html += `<tr><td><span class="predicate">${shorten(b.p.value)}</span></td><td>${oVal}</td></tr>`;
+            });
+            html += '</table></div>';
+        }
+
+        if (incoming.results.bindings.length) {
+            html += `<div class="detail-section"><h4>Incoming (${incoming.results.bindings.length})</h4><table>`;
+            incoming.results.bindings.forEach(b => {
+                html += `<tr><td><a onclick="showDetail('${b.s.value}')">${shorten(b.s.value)}</a></td><td><span class="predicate">${shorten(b.p.value)}</span></td></tr>`;
+            });
+            html += '</table></div>';
+        }
+
+        if (!html) html = '<p style="color:var(--muted)">No triples found for this entity.</p>';
+
+        html += `<div style="margin-top:16px;"><button class="qbtn" onclick="expandNode('${iri}')">Expand in graph</button></div>`;
+        content.innerHTML = html;
     } catch (e) {
-        content.innerHTML = `<div class="empty-state" style="color:var(--red)">${e.message}</div>`;
+        content.innerHTML = `<p style="color:var(--red)">${e.message}</p>`;
     }
 }
 
-function renderTripleTable(col1, col2, data, var1, var2) {
-    if (data.results.bindings.length === 0) return '<div class="empty-state">No results</div>';
-    let html = `<table><tr><th>${col1}</th><th>${col2}</th></tr>`;
-    data.results.bindings.forEach(b => {
-        const hasVec = b[var2] && isVector(b[var2]?.value);
-        html += `<tr><td>${termHtml(b[var1])}</td><td>${termHtml(b[var2])}${hasVec ? ' <span class="vector-badge">VEC</span>' : ''}</td></tr>`;
-    });
-    html += '</table>';
-    return html;
+function closeDetail() {
+    document.getElementById('detail-panel').style.display = 'none';
+    d3.selectAll('.node').classed('selected', false);
 }
 
-function clearResults() {
-    document.getElementById('result-list').innerHTML = '';
-    document.getElementById('stats').textContent = '';
-    document.getElementById('tab-content').innerHTML = '<div class="empty-state"><h3>Run a SPARQL query to explore</h3></div>';
-    document.getElementById('entity-header').style.display = 'none';
-    document.getElementById('tabs').style.display = 'none';
-}
-
-function quickQuery(type) {
-    const box = document.getElementById('query-box');
-    const queries = {
-        all: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 50',
-        types: 'SELECT DISTINCT ?type WHERE {\n  ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type\n} LIMIT 50',
-        vectors: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o .\n  FILTER(CONTAINS(STR(?o), "f32vec"))\n} LIMIT 50',
-        entity: 'SELECT ?p ?o WHERE {\n  # Replace with an entity IRI:\n  <http://www.wikidata.org/entity/Q8502> ?p ?o\n} LIMIT 50',
-    };
-    box.value = queries[type] || queries.all;
-}
-
-// Keyboard shortcut
+// ── Init ──
 document.getElementById('query-box').addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { runQuery(); e.preventDefault(); }
 });
-
 checkHealth();
 setInterval(checkHealth, 10000);
-</script>
 
+// Legend
+window.addEventListener('load', () => {
+    const c = document.getElementById('graph-container');
+    if (c.clientWidth > 0) renderGraph(); // render empty graph
+});
+</script>
 </body>
 </html>

@@ -46,37 +46,37 @@
         <tr><th>Language</th><th>Package</th><th>Registry</th><th>Status</th></tr>
         <tr>
             <td><strong>Rust</strong></td>
-            <td><code>sutra-sdk</code></td>
+            <td><code>sutradb</code></td>
             <td><a href="https://crates.io">crates.io</a></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>Python</strong></td>
-            <td><code>sutra-sdk</code></td>
+            <td><code>sutradb</code></td>
             <td><a href="https://pypi.org">PyPI</a></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>TypeScript / JavaScript</strong></td>
-            <td><code>@sutradb/sdk</code></td>
+            <td><code>sutradb</code></td>
             <td><a href="https://www.npmjs.com">npm</a></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>Java</strong></td>
-            <td><code>org.sutradb:sutra-sdk</code></td>
+            <td><code>org.sutradb:sutradb</code></td>
             <td><a href="https://central.sonatype.com">Maven Central</a></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>C# / .NET</strong></td>
-            <td><code>SutraDB.SDK</code></td>
+            <td><code>SutraDB</code></td>
             <td><a href="https://www.nuget.org">NuGet</a></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>Go</strong></td>
-            <td><code>github.com/EmmaLeonhart/sutradb-go-sdk</code></td>
+            <td><code>github.com/EmmaLeonhart/sutradb-go</code></td>
             <td>Go modules</td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
@@ -89,7 +89,7 @@
     <div class="comparison">
         <div class="card">
             <h4>Python</h4>
-<pre><code>from sutra_sdk import SutraClient
+<pre><code>from sutradb import SutraClient
 
 db = SutraClient("http://localhost:3030")
 
@@ -116,7 +116,7 @@ results = db.sparql("""
         </div>
         <div class="card">
             <h4>TypeScript</h4>
-<pre><code>import { SutraClient } from '@sutradb/sdk';
+<pre><code>import { SutraClient } from 'sutradb';
 
 const db = new SutraClient('http://localhost:3030');
 
@@ -173,14 +173,14 @@ const results = await db.sparql(`
 
     <p>All SDKs and extensions are developed in a single monorepo with shared CI:</p>
 
-<pre><code>sutradb-sdks/
+<pre><code>SutraDB/
   sdks/
-    rust/           # sutra-sdk (crates.io)
-    python/         # sutra-sdk (PyPI)
-    typescript/     # @sutradb/sdk (npm)
-    java/           # org.sutradb:sutra-sdk (Maven)
-    dotnet/         # SutraDB.SDK (NuGet)
-    go/             # sutradb-go-sdk (Go modules)
+    rust/           # sutradb (crates.io)
+    python/         # sutradb (PyPI)
+    typescript/     # sutradb (npm)
+    java/           # org.sutradb:sutradb (Maven)
+    dotnet/         # SutraDB (NuGet)
+    go/             # sutradb-go (Go modules)
   extensions/
     protege/        # Prot&eacute;g&eacute; plugin (Java)
     jupyter/        # Jupyter magics (Python)
