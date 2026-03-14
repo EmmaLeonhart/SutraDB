@@ -31,7 +31,9 @@
       "Read(//c//**)",
       "Bash(ls:*)",
       "Bash(du:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(git tag:*)",
+      "Bash(cargo clippy:*)"
     ]
   }
 }

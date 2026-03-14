@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity, clippy::too_many_arguments)]
 //! Query executor.
 //!
 //! Evaluates parsed SPARQL queries against a TripleStore + TermDictionary +
@@ -280,7 +281,7 @@ fn evaluate_vector_similar(
     let search_results = ctx
         .vectors
         .search(pred_id, query_vector, k, ef)
-        .map_err(|e| SparqlError::Hnsw(e))?;
+        .map_err(SparqlError::Hnsw)?;
 
     for (i, row) in current.iter().enumerate() {
         let subject_bound = subject_var
@@ -378,7 +379,7 @@ fn apply_order_by(
                 let search_results = ctx
                     .vectors
                     .search(pred_id, &vs.query_vector, 1000, 200)
-                    .map_err(|e| SparqlError::Hnsw(e))?;
+                    .map_err(SparqlError::Hnsw)?;
 
                 let score_map: HashMap<TermId, f32> = search_results
                     .into_iter()
