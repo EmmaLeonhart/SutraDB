@@ -109,11 +109,14 @@ OWL is planned as an opt-in query-time layer (not stored inference).
 
 ## Open Architecture Questions
 
+- ~~**RDF-star vs. RDF 1.2**~~: **Resolved: RDF-star.** Direct edge annotation (`<< s p o >> :hasEmbedding ...`) is the natural pattern for vector/embedding work. RDF 1.2's object-only restriction adds unnecessary indirection. If compatibility is ever needed, a translation layer can handle it.
+- **IRI encoding strategy**: Current sequential interning vs. Oxigraph's hash-based approach (128-bit SipHash — no collision issues at scale, eliminates separate string→ID index). Hash-based is simpler but loses ordering; sequential preserves insertion order for range queries.
 - **HNSW compaction threshold**: What deleted_ratio triggers a rebuild? 0.3? 0.5? Should it be configurable?
 - **SPARQL property paths**: How to handle cycles on large graphs? Depth limit? Visited set?
 - **Adaptive query execution**: Runtime reordering based on intermediate cardinalities — worth the complexity for v0.2?
-- **Named graphs**: Support GRAPH clause and quad storage? Adds complexity but needed for provenance.
+- **Named graphs**: Support GRAPH clause and quad storage? Adds complexity but needed for provenance. Oxigraph supports named graphs with 6 extra indexes (SPOG, POSG, OSPG, GSPO, GPOS, GOSP).
 - **Blank node handling**: Skolemization vs. internal IDs? How to handle blank nodes across imports?
+- **RDF parsing crates**: Write our own parsers or use Oxigraph's crates (oxttl, oxrdfxml, oxjsonld) for data ingestion?
 
 ## Resolved
 
@@ -121,3 +124,6 @@ OWL is planned as an opt-in query-time layer (not stored inference).
 - [x] Storage engine → sled for v0.1
 - [x] OWL → planned as opt-in query-time, not out of scope
 - [x] Naming → SutraDB
+- [x] Query language policy → SPARQL primary, Cypher planned as wrapper. SQL and MongoQL permanently out of scope.
+- [x] Reference architecture → Oxigraph (https://github.com/oxigraph/oxigraph) as implementation reference for storage, indexing, and SPARQL patterns
+- [x] RDF data model → RDF-star (superset of RDF 1.2). Triple terms allowed in any position. Direct edge annotation is the natural pattern for vector/embedding work.

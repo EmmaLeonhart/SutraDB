@@ -155,13 +155,21 @@ ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^sutra:f32vec))
 
 ---
 
+## Query Language Policy
+
+**Supported:** SPARQL 1.1 (superset — any standard query works; extensions add VECTOR_SIMILAR, VECTOR_SCORE)
+**Planned:** Cypher as a translation layer/wrapper over SPARQL
+**Never:** SQL, MongoDB Query Language — use the appropriate database for those. GraphQL — push to application layer.
+
+---
+
 ## Explicitly Out of Scope
 
 Do not implement these without explicit instruction:
 
 - RDFS inference
 - Built-in graph algorithms (PageRank, community detection, etc.)
-- Multi-model query compatibility (SQL, Cypher, Gremlin)
+- SQL or MongoDB query interfaces (see Query Language Policy)
 - Distributed execution / sharding
 - Embedding model metadata enforcement
 - Multi-embedding-space / cross-modal queries
@@ -169,9 +177,17 @@ Do not implement these without explicit instruction:
 
 ---
 
+## Reference Architecture: Oxigraph
+
+[Oxigraph](https://github.com/oxigraph/oxigraph) is the closest existing Rust triplestore. Follow their proven patterns for storage, indexing, and SPARQL pipeline design where applicable. SutraDB's differentiator is native HNSW vector indexing — Oxigraph has no vector support.
+
+---
+
 ## Open Questions (Unresolved)
 
-- **LSM-tree**: build from scratch vs. wrap RocksDB/sled?
+- ~~**RDF-star vs. RDF 1.2**~~ **Resolved: RDF-star.** Direct edge annotation (`<< s p o >> :hasEmbedding ...`) is the natural pattern for vector work.
+- **LSM-tree**: build from scratch vs. wrap RocksDB/sled? Oxigraph chose RocksDB.
+- **IRI encoding**: Sequential interning (current) vs. hash-based (Oxigraph's SipHash approach)?
 - **HNSW compaction**: what threshold triggers a background pass to clean deleted nodes?
 - **SPARQL property paths** (`+`, `*`, `?`): traversal strategy for cycles on large graphs?
 - ~~**License**: Apache 2.0 (patent grant) vs MIT (simplicity)?~~ **Resolved: Apache 2.0.**

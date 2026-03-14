@@ -1,8 +1,8 @@
 # SutraDB — Architecture
 
-> A lean, high-performance RDF-star triplestore with native vector indexing and hybrid SPARQL.
-> Influenced by Qdrant's vector indexing approach, unified into a triplestore.
-> Draft v0.1
+> A lean, high-performance RDF triplestore with native vector indexing and hybrid SPARQL.
+> Influenced by Qdrant's vector indexing and Oxigraph's storage architecture, unified into a single system.
+> Draft v0.2
 
 ---
 
@@ -23,6 +23,8 @@ SutraDB is a single-purpose database. Its only job is to store triples and answe
 ### 2.1 RDF-star as the Foundation
 
 All data is stored as RDF-star triples: subject, predicate, object — where any of the three positions can itself be a quoted triple. This gives us statements about statements natively, without reification hacks.
+
+RDF-star is a **superset of RDF 1.2** — any valid RDF 1.2 data (triple terms in object position only) is also valid RDF-star. SutraDB additionally allows triple terms in subject position, which is the natural pattern for annotating edges with vector embeddings.
 
 ```turtle
 # Embedding on a node
@@ -135,7 +137,7 @@ Future work: lock-free HNSW variants using atomic CAS on neighbor lists for writ
 
 ### 5.1 VECTOR_SIMILAR Operator
 
-A new operator added to the SPARQL graph pattern language:
+SutraDB's query language is a **superset of SPARQL 1.1** — any valid SPARQL 1.1 query works as-is. The extensions below add vector search capabilities that standard SPARQL cannot express:
 
 ```sparql
 # Basic usage
@@ -189,25 +191,58 @@ sutra-cli/       # CLI: import, export, query, benchmark
 
 ---
 
-## 7. Explicitly Out of Scope
+## 7. Query Language Policy
+
+**Supported:**
+- SPARQL 1.1 (and SPARQL 1.2 when finalized) — the primary query interface
+- Hybrid SPARQL extensions (VECTOR_SIMILAR, VECTOR_SCORE) — SutraDB-specific
+
+**Planned:**
+- Cypher — as a translation layer/wrapper over SPARQL, not a native execution engine
+
+**Never:**
+- SQL — not appropriate for graph data; use a relational database
+- MongoDB Query Language — not appropriate for graph data; use a document database
+- GraphQL — push to application layer
+
+---
+
+## 8. Explicitly Out of Scope
 
 These will not be implemented without explicit instruction. They cannot be handled better at the database layer than at the application layer:
 
 - RDFS inference
 - Built-in graph algorithms (PageRank, community detection, etc.)
-- Multi-model query compatibility (SQL, Cypher, Gremlin)
 - Distributed execution / sharding
 - Embedding model metadata enforcement
 - Multi-embedding-space / cross-modal queries
-- GraphQL interface
 
 ---
 
-## 8. Open Questions
+## 9. Reference Implementation: Oxigraph
+
+[Oxigraph](https://github.com/oxigraph/oxigraph) is the closest existing Rust triplestore. SutraDB draws on Oxigraph's proven patterns where applicable:
+
+- **Storage**: Oxigraph uses RocksDB with hash-based IRI encoding (128-bit SipHash). We should evaluate this vs. our current sequential interning.
+- **Indexing**: Oxigraph uses SPO/POS/OSP (plus named graph variants). Similar to our design.
+- **SPARQL pipeline**: Separate parser (spargebra) → optimizer (sparopt) → evaluator (spareval). Our sutra-sparql combines these but should follow the same logical separation internally.
+- **RDF parsing**: Oxigraph uses dedicated crates (oxttl, oxrdfxml, oxjsonld) rather than writing parsers from scratch. We should consider using or adapting these for data ingestion.
+- **RDF 1.2**: Oxigraph migrated from RDF-star to RDF 1.2 in v0.5. See open questions below.
+
+**Where SutraDB diverges from Oxigraph:**
+- Native HNSW vector indexing as a first-class index (Oxigraph has no vector support)
+- Hybrid SPARQL extensions (VECTOR_SIMILAR, VECTOR_SCORE)
+- Planned Cypher translation layer
+
+---
+
+## 10. Open Questions
 
 These are unresolved architecture decisions that must be answered before or during implementation of the relevant component:
 
-- **LSM-tree**: build from scratch vs. wrap RocksDB/sled? Wrapping is weeks faster to prototype but hides tuning knobs and adds a dependency.
+- ~~**RDF-star vs. RDF 1.2**~~ **Resolved: RDF-star.** The `<< s p o >> :hasEmbedding ...` syntax is the natural way to annotate edges with vectors. RDF 1.2's object-only restriction adds indirection (reification nodes) that doesn't serve the embedding use case. Users working in vector/embedding space will expect direct edge annotation. If RDF 1.2 compatibility is ever needed, a translation layer can handle it.
+- **LSM-tree**: build from scratch vs. wrap RocksDB/sled? Wrapping is weeks faster to prototype but hides tuning knobs and adds a dependency. Oxigraph chose RocksDB.
 - **HNSW compaction**: lazy deletion degrades index quality over time. What threshold triggers a background compaction pass to clean deleted nodes?
 - **SPARQL property paths** (`+`, `*`, `?`): traversal strategy for cycles on large graphs — what prevents unbounded recursion?
-- ~~**License**: Apache 2.0 vs MIT?~~ **Resolved: Apache 2.0.** Consistent with Qdrant's licensing.
+- **IRI encoding**: Our current sequential interning vs. Oxigraph's hash-based approach (128-bit SipHash, no collision issues at scale, eliminates need for string→ID index).
+- ~~**License**: Apache 2.0 vs MIT?~~ **Resolved: Apache 2.0.**
