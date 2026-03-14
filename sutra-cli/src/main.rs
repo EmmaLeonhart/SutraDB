@@ -46,8 +46,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Serve { port, data_dir } => {
             let _ = data_dir;
             let state = Arc::new(sutra_proto::AppState {
-                store: sutra_core::TripleStore::new(),
-                dict: sutra_core::TermDictionary::new(),
+                store: Mutex::new(sutra_core::TripleStore::new()),
+                dict: Mutex::new(sutra_core::TermDictionary::new()),
                 vectors: Mutex::new(sutra_hnsw::VectorRegistry::new()),
             });
 

@@ -2,6 +2,7 @@
 
 pub mod error;
 pub mod id;
+pub mod ntriples;
 pub mod persistent;
 pub mod store;
 pub mod triple;
@@ -13,4 +14,5 @@ pub use id::{
 };
 pub use persistent::PersistentStore;
 pub use store::TripleStore;
+pub use ntriples::parse_ntriples_line;
 pub use triple::Triple;
