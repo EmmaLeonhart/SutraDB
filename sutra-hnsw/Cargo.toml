@@ -19,10 +19,11 @@ sutra-core.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 
-[[bench]]
-name = "hnsw_insert"
-harness = false
-
-[[bench]]
-name = "hnsw_search"
-harness = false
+# Uncomment when bench files exist:
+# [[bench]]
+# name = "hnsw_insert"
+# harness = false
+#
+# [[bench]]
+# name = "hnsw_search"
+# harness = false

@@ -16,6 +16,7 @@ xxhash-rust.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 
-[[bench]]
-name = "triple_insert"
-harness = false
+# Uncomment when bench files exist:
+# [[bench]]
+# name = "triple_insert"
+# harness = false

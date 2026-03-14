@@ -9,4 +9,5 @@ pub mod vector;
 
 pub use error::{HnswError, Result};
 pub use index::{HnswConfig, HnswIndex, SearchResult};
-pub use vector::{cosine_similarity, squared_euclidean};
+pub use vector::{cosine_similarity, dot_product, squared_euclidean};
+pub use vector::{normalize, normalized, l2_norm, DistanceMetric};
