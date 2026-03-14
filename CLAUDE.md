@@ -1,16 +1,181 @@
-# MusubiDB
+# Vektor — Claude Code Context
 
-## Workflow Rules
-- **Commit early and often.** Every meaningful change gets a commit with a clear message explaining *why*, not just what.
-- **Do not enter planning-only modes.** All thinking must produce files and commits. If scope is unclear, create a `planning/` directory and write `.md` files there instead of using an internal planning mode.
-- **Keep this file up to date.** As the project takes shape, record architectural decisions, conventions, and anything needed to work effectively in this repo.
-- **Update README.md regularly.** It should always reflect the current state of the project for human readers.
+## What This Is
 
-## Project Description
-_TODO: Describe what this project is about._
+Vektor is a lean, high-performance RDF-star triplestore written in Rust with native HNSW vector indexing and a hybrid SPARQL extension. It is a single-purpose database: store triples, answer queries, at any scale.
 
-## Architecture and Conventions
-_TODO: Document key decisions, file structure, and patterns as they emerge._
+It is **not** a combination of existing databases. It replaces both a vector database (e.g. Qdrant) and a SPARQL triplestore (e.g. Apache Jena Fuseki) with a single unified system where vectors are just triples.
 
-# currentDate
-Today's date is 2026-03-13.
+Full architecture: see `docs/architecture.md`.
+
+---
+
+## Core Philosophy — Read This First
+
+These are non-negotiable. Do not add features that violate them.
+
+1. **No inference, no reasoning.** The database stores what you put in. OWL, RDFS, and all reasoning belong in the application layer. The database is isomorphic with reality, not an interpreter of it.
+
+2. **Vectors are triples.** A vector embedding is an attribute of a node or edge, stored via a predicate typed `vektor:f32vec`. It is indexed by HNSW, but it is not a separate system — it is just another index alongside SPO/POS/OSP.
+
+3. **Full traversal in a single query.** Any traversal of any depth across the entire database must be expressible in one SPARQL query. This is the whole point of a graph database.
+
+4. **Lean by default.** Every feature must justify itself. Complexity is the enemy of performance. When in doubt, push it to the application layer.
+
+---
+
+## Crate Structure
+
+```
+vektor/
+├── vektor-core/      # Triple storage engine, LSM indexes, IRI interning, RDF-star IDs
+├── vektor-hnsw/      # HNSW index, vector literal type, predicate index registry
+├── vektor-sparql/    # SPARQL 1.1 parser, query planner, executor, hybrid extension
+├── vektor-proto/     # SPARQL HTTP protocol, Graph Store Protocol, REST API
+└── vektor-cli/       # CLI tools: import, export, query, benchmark
+```
+
+**Dependency rules:**
+- `vektor-hnsw` has **zero** dependency on `vektor-sparql`. It is a pure data structure crate.
+- `vektor-sparql` depends on both `vektor-core` and `vektor-hnsw`.
+- `vektor-proto` depends on `vektor-sparql`.
+- `vektor-cli` depends on `vektor-proto` and `vektor-sparql`.
+
+---
+
+## Data Model
+
+### RDF-star
+All data is RDF-star triples. Any position (subject, predicate, object) can be a quoted triple. This gives embeddings and metadata on edges natively.
+
+```turtle
+# Embedding on a node
+:paper_42 :hasEmbedding "0.23 -0.11 0.87 ..."^^vektor:f32vec .
+
+# Embedding on an edge (RDF-star)
+<< :paper_42 :discusses :TransformerArchitecture >> :hasEmbedding "0.23 -0.11 ..."^^vektor:f32vec .
+<< :paper_42 :discusses :TransformerArchitecture >> :confidence 0.91 .
+```
+
+### Vector Literals
+- Type: `vektor:f32vec` — a fixed-dimension array of f32
+- Dimensionality is declared per predicate at schema time and enforced on insert
+- Mismatched dimensions = hard error
+- The database is model-agnostic: raw floats only, no embedding model metadata
+
+### Schema Declaration
+```turtle
+vektor:declareVectorPredicate :hasEmbedding ;
+    vektor:dimensions 1536 ;
+    vektor:hnswM 16 ;
+    vektor:hnswEfConstruction 200 .
+```
+
+---
+
+## Storage Engine
+
+### Indexes
+Six indexes over integer-interned IRI IDs:
+
+| Index | Purpose |
+|---|---|
+| SPO | Primary store, subject-first traversal |
+| POS | Predicate-first, range queries |
+| OSP | Object-first, reverse traversal |
+| SP | Star-shaped queries |
+| PO | Type lookups, range scans |
+| VECTOR(p) | One HNSW per vector predicate |
+
+### Implementation Notes
+- Underlying storage: LSM-tree (RocksDB or sled TBD — see open questions)
+- IRIs and blank nodes interned to u64 at write time
+- Quoted triples get a content-addressed u64 ID: hash(S, P, O)
+- All index entries operate on u64 IDs, never strings
+
+---
+
+## HNSW Index
+
+### Parameters
+- `M`: max connections per node per layer (default 16, range 8–64)
+- `ef_construction`: beam width during build (default 200)
+- `ef_search`: beam width during query, tunable per-query
+- `dimensions`: fixed at predicate declaration, enforced on insert
+
+### Design
+- Keyed by triple ID, not a standalone vector ID
+- Insert: vector extracted, inserted into predicate's HNSW under triple's SPO identity
+- Delete: lazy deletion via flag (no graph restructuring)
+- Memory: flat arena allocator per predicate index, memory-mapped for persistence
+- Concurrency: fine-grained RwLock per node; reads concurrent, writes exclusive per node
+
+### Node layout (per HNSW node)
+```rust
+struct HnswNode {
+    vector: Vec<f32>,          // 4 * dimensions bytes
+    layer: u8,
+    neighbors: Vec<Vec<u32>>,  // neighbor lists per layer, bounded by M
+    triple_id: u64,            // back-reference into triple store
+    deleted: bool,
+}
+```
+
+---
+
+## Hybrid SPARQL Extension
+
+### VECTOR_SIMILAR operator
+```sparql
+SELECT ?doc ?entity WHERE {
+  ?entity rdf:type :Person .
+  ?doc :mentions ?entity .
+  VECTOR_SIMILAR(?doc :hasEmbedding "..."^^vektor:f32vec, 0.85)
+}
+
+# With explicit ef_search hint
+VECTOR_SIMILAR(?doc :hasEmbedding "..."^^vektor:f32vec, 0.85, ef:=200)
+
+# Score in ORDER BY
+ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^vektor:f32vec))
+```
+
+### Query planner heuristic (v0.1)
+- Subject **bound** before VECTOR_SIMILAR: execute graph first, filter by vector
+- Subject **unbound**: execute vector search first (top-k), then evaluate graph patterns over candidates
+- Adaptive execution (runtime reordering) is future work
+
+---
+
+## Explicitly Out of Scope
+
+Do not implement these without explicit instruction:
+
+- OWL / RDFS inference or reasoning
+- Built-in graph algorithms (PageRank, community detection, etc.)
+- Multi-model query compatibility (SQL, Cypher, Gremlin)
+- Distributed execution / sharding
+- Embedding model metadata enforcement
+- Multi-embedding-space / cross-modal queries
+- GraphQL interface
+
+---
+
+## Open Questions (Unresolved)
+
+- **LSM-tree**: build from scratch vs. wrap RocksDB/sled?
+- **HNSW compaction**: what threshold triggers a background pass to clean deleted nodes?
+- **SPARQL property paths** (`+`, `*`, `?`): traversal strategy for cycles on large graphs?
+- **License**: Apache 2.0 (patent grant) vs MIT (simplicity)?
+
+---
+
+## Coding Conventions
+
+- Rust edition: 2021
+- Use `thiserror` for error types
+- Use `tokio` for async runtime in `vektor-proto`
+- No `unwrap()` in library code — propagate errors
+- All public API must have doc comments
+- Benchmarks go in `benches/` using `criterion`
+- Tests use `#[cfg(test)]` modules inline, plus integration tests in `tests/`

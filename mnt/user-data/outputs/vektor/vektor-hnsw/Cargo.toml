@@ -1,0 +1,28 @@
+[package]
+name = "vektor-hnsw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "HNSW vector index, vector literal type, predicate index registry — no SPARQL dependency"
+
+[dependencies]
+thiserror.workspace = true
+anyhow.workspace = true
+serde = { workspace = true }
+tracing.workspace = true
+memmap2.workspace = true
+xxhash-rust.workspace = true
+vektor-core.workspace = true
+
+# NOTE: vektor-sparql must NEVER appear here.
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "hnsw_insert"
+harness = false
+
+[[bench]]
+name = "hnsw_search"
+harness = false

@@ -1,0 +1,72 @@
+[workspace]
+name = "vektor"
+members = [
+    "vektor-core",
+    "vektor-hnsw",
+    "vektor-sparql",
+    "vektor-proto",
+    "vektor-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = []
+repository = ""
+description = "A lean RDF-star triplestore with native HNSW vector indexing and hybrid SPARQL"
+
+[workspace.dependencies]
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP (vektor-proto)
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+hyper = { version = "1", features = ["full"] }
+
+# Storage
+memmap2 = "0.9"         # memory-mapped files for HNSW arena
+
+# Hashing
+xxhash-rust = { version = "0.8", features = ["xxh3"] }  # content-addressed triple IDs
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Intra-workspace
+vektor-core   = { path = "vektor-core" }
+vektor-hnsw   = { path = "vektor-hnsw" }
+vektor-sparql = { path = "vektor-sparql" }
+vektor-proto  = { path = "vektor-proto" }
+
+# ── Per-crate Cargo.toml stubs below (inline for reference) ──────────────────
+# Each crate declares its own [package] inheriting workspace.package fields,
+# and lists only the workspace.dependencies it actually uses.
+# See each crate's Cargo.toml for specifics.
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+debug = true   # keep symbols for profiling
