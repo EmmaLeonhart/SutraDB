@@ -48,7 +48,9 @@ fn academic_graph() -> (TripleStore, TermDictionary, VectorRegistry) {
     store.insert(Triple::new(p3, rdf_type, paper)).unwrap();
     store.insert(Triple::new(p4, rdf_type, paper)).unwrap();
     store.insert(Triple::new(p5, rdf_type, paper)).unwrap();
-    store.insert(Triple::new(vaswani, rdf_type, person)).unwrap();
+    store
+        .insert(Triple::new(vaswani, rdf_type, person))
+        .unwrap();
     store.insert(Triple::new(devlin, rdf_type, person)).unwrap();
 
     // Titles
@@ -555,7 +557,10 @@ fn planner_puts_vector_first_for_unbound() {
     // VECTOR_SIMILAR (weight 1, only subject unbound) should come before
     // ?thing ?pred ?obj (weight 3, all unbound)
     assert!(
-        matches!(q.patterns[0], sutra_sparql::parser::Pattern::VectorSimilar { .. }),
+        matches!(
+            q.patterns[0],
+            sutra_sparql::parser::Pattern::VectorSimilar { .. }
+        ),
         "VECTOR_SIMILAR should be first after optimization, got: {:?}",
         q.patterns[0]
     );

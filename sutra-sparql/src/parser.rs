@@ -392,13 +392,15 @@ impl<'a> Parser<'a> {
         }
 
         // Parse the vector values
-        Self::parse_vector_string(&value)
-            .map_err(|msg| self.error(&msg))
+        Self::parse_vector_string(&value).map_err(|msg| self.error(&msg))
     }
 
     fn parse_vector_string(s: &str) -> std::result::Result<Vec<f32>, String> {
         s.split_whitespace()
-            .map(|v| v.parse::<f32>().map_err(|e| format!("invalid vector component '{}': {}", v, e)))
+            .map(|v| {
+                v.parse::<f32>()
+                    .map_err(|e| format!("invalid vector component '{}': {}", v, e))
+            })
             .collect()
     }
 
@@ -717,8 +719,7 @@ impl<'a> Parser<'a> {
             if self.peek_char() == Some('<') {
                 let datatype = self.parse_iri_ref()?;
                 if datatype == "http://sutra.dev/f32vec" {
-                    let vec = Self::parse_vector_string(&value)
-                        .map_err(|msg| self.error(&msg))?;
+                    let vec = Self::parse_vector_string(&value).map_err(|msg| self.error(&msg))?;
                     Ok(Term::VectorLiteral(vec))
                 } else {
                     Ok(Term::TypedLiteral { value, datatype })
@@ -727,19 +728,18 @@ impl<'a> Parser<'a> {
                 // Try prefixed name
                 let saved_pos = self.pos;
                 match self.parse_prefixed_name() {
-                    Ok(Term::PrefixedName { ref prefix, ref local })
-                        if prefix == "sutra" && local == "f32vec" =>
-                    {
-                        let vec = Self::parse_vector_string(&value)
-                            .map_err(|msg| self.error(&msg))?;
+                    Ok(Term::PrefixedName {
+                        ref prefix,
+                        ref local,
+                    }) if prefix == "sutra" && local == "f32vec" => {
+                        let vec =
+                            Self::parse_vector_string(&value).map_err(|msg| self.error(&msg))?;
                         Ok(Term::VectorLiteral(vec))
                     }
-                    Ok(Term::PrefixedName { prefix, local }) => {
-                        Ok(Term::TypedLiteral {
-                            value,
-                            datatype: format!("{}:{}", prefix, local),
-                        })
-                    }
+                    Ok(Term::PrefixedName { prefix, local }) => Ok(Term::TypedLiteral {
+                        value,
+                        datatype: format!("{}:{}", prefix, local),
+                    }),
                     _ => {
                         self.pos = saved_pos;
                         let datatype = self.parse_iri_ref()?;
@@ -1013,7 +1013,9 @@ mod tests {
         )
         .unwrap();
         match &q.patterns[0] {
-            Pattern::VectorSimilar { ef_search, top_k, .. } => {
+            Pattern::VectorSimilar {
+                ef_search, top_k, ..
+            } => {
                 assert_eq!(*ef_search, Some(200));
                 assert!(top_k.is_none());
             }
@@ -1028,7 +1030,9 @@ mod tests {
         )
         .unwrap();
         match &q.patterns[0] {
-            Pattern::VectorSimilar { top_k, ef_search, .. } => {
+            Pattern::VectorSimilar {
+                top_k, ef_search, ..
+            } => {
                 assert_eq!(*top_k, Some(10));
                 assert!(ef_search.is_none());
             }

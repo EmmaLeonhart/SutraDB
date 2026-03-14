@@ -59,8 +59,7 @@ pub fn execute_with_vectors(
 
     // Evaluate each pattern
     for pattern in &query.patterns {
-        let (new_results, new_scores) =
-            evaluate_pattern(pattern, &results, &scores, &mut ctx)?;
+        let (new_results, new_scores) = evaluate_pattern(pattern, &results, &scores, &mut ctx)?;
         results = new_results;
         scores = new_scores;
     }
@@ -347,9 +346,7 @@ fn apply_order_by(
     for clause in order_by {
         if let Some(vs) = &clause.vector_score {
             let pred_id = resolve_term(&vs.predicate, &HashMap::new(), ctx.dict, ctx.prefixes)?
-                .ok_or_else(|| {
-                    SparqlError::Vector("VECTOR_SCORE predicate not found".into())
-                })?;
+                .ok_or_else(|| SparqlError::Vector("VECTOR_SCORE predicate not found".into()))?;
 
             if ctx.vectors.has_index(pred_id) {
                 let var_name = match &vs.subject {
@@ -411,7 +408,11 @@ fn apply_order_by(
                 val_a.cmp(&val_b)
             };
 
-            let cmp = if clause.descending { cmp.reverse() } else { cmp };
+            let cmp = if clause.descending {
+                cmp.reverse()
+            } else {
+                cmp
+            };
             if cmp != std::cmp::Ordering::Equal {
                 return cmp;
             }
@@ -794,11 +795,7 @@ mod tests {
 
         // doc1 (cosine ~1.0) and doc2 (cosine ~0.99) should match; doc3 (cosine ~0.0) should not
         assert!(result.rows.len() >= 2);
-        let doc_ids: Vec<TermId> = result
-            .rows
-            .iter()
-            .map(|r| *r.get("doc").unwrap())
-            .collect();
+        let doc_ids: Vec<TermId> = result.rows.iter().map(|r| *r.get("doc").unwrap()).collect();
         assert!(doc_ids.contains(&doc1));
         assert!(doc_ids.contains(&doc2));
         assert!(!doc_ids.contains(&doc3));

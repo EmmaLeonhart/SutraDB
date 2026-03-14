@@ -109,7 +109,11 @@ fn parse_literal(bytes: &[u8], pos: &mut usize) -> Option<String> {
         // Language-tagged literal: @lang
         *pos += 1; // skip '@'
         let lang_start = *pos;
-        while *pos < bytes.len() && bytes[*pos] != b' ' && bytes[*pos] != b'\t' && bytes[*pos] != b'.' {
+        while *pos < bytes.len()
+            && bytes[*pos] != b' '
+            && bytes[*pos] != b'\t'
+            && bytes[*pos] != b'.'
+        {
             *pos += 1;
         }
         let lang = std::str::from_utf8(&bytes[lang_start..*pos]).ok()?;

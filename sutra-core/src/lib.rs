@@ -12,7 +12,7 @@ pub use id::{
     decode_inline_boolean, decode_inline_integer, inline_boolean, inline_integer, inline_type,
     is_inline, quoted_triple_id, InlineType, TermDictionary, TermId, INVALID_ID,
 };
+pub use ntriples::parse_ntriples_line;
 pub use persistent::PersistentStore;
 pub use store::TripleStore;
-pub use ntriples::parse_ntriples_line;
 pub use triple::Triple;

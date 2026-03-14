@@ -109,8 +109,7 @@ fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResult
         .vectors
         .lock()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
-    let result =
-        sutra_sparql::execute_with_vectors(&query, &store, &dict, &mut vectors)?;
+    let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &mut vectors)?;
 
     let bindings: Vec<serde_json::Value> = result
         .rows
@@ -130,10 +129,7 @@ fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResult
                     .iter()
                     .map(|(k, v)| (k.clone(), serde_json::json!(*v)))
                     .collect();
-                obj.insert(
-                    "_scores".to_string(),
-                    serde_json::Value::Object(scores_obj),
-                );
+                obj.insert("_scores".to_string(), serde_json::Value::Object(scores_obj));
             }
             serde_json::Value::Object(obj)
         })
@@ -278,9 +274,15 @@ pub struct DeclareVectorRequest {
     pub metric: String,
 }
 
-fn default_m() -> usize { 16 }
-fn default_ef_construction() -> usize { 200 }
-fn default_metric() -> String { "cosine".to_string() }
+fn default_m() -> usize {
+    16
+}
+fn default_ef_construction() -> usize {
+    200
+}
+fn default_metric() -> String {
+    "cosine".to_string()
+}
 
 #[derive(Serialize)]
 pub struct DeclareVectorResponse {
@@ -298,10 +300,7 @@ async fn declare_vector_predicate(
         "euclidean" => sutra_hnsw::DistanceMetric::Euclidean,
         "dot" | "dotproduct" | "dot_product" => sutra_hnsw::DistanceMetric::DotProduct,
         other => {
-            return Err(ProtoError::BadRequest(format!(
-                "unknown metric: {}",
-                other
-            )));
+            return Err(ProtoError::BadRequest(format!("unknown metric: {}", other)));
         }
     };
 
@@ -519,7 +518,8 @@ mod tests {
         let state = test_state();
         let app = router(state.clone());
         // Insert the same triple that's already in the store
-        let body = "<http://example.org/Alice> <http://example.org/knows> <http://example.org/Bob> .\n";
+        let body =
+            "<http://example.org/Alice> <http://example.org/knows> <http://example.org/Bob> .\n";
         let req = Request::builder()
             .method("POST")
             .uri("/triples")

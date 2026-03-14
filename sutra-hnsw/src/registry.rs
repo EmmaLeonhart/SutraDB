@@ -251,9 +251,12 @@ mod tests {
         let mut reg = VectorRegistry::new();
         reg.declare(default_config(PRED_EMBEDDING, 3)).unwrap();
 
-        reg.insert(PRED_EMBEDDING, vec![1.0, 0.0, 0.0], 100).unwrap();
-        reg.insert(PRED_EMBEDDING, vec![0.0, 1.0, 0.0], 101).unwrap();
-        reg.insert(PRED_EMBEDDING, vec![0.0, 0.0, 1.0], 102).unwrap();
+        reg.insert(PRED_EMBEDDING, vec![1.0, 0.0, 0.0], 100)
+            .unwrap();
+        reg.insert(PRED_EMBEDDING, vec![0.0, 1.0, 0.0], 101)
+            .unwrap();
+        reg.insert(PRED_EMBEDDING, vec![0.0, 0.0, 1.0], 102)
+            .unwrap();
 
         let results = reg.search(PRED_EMBEDDING, &[1.0, 0.0, 0.0], 1, 10).unwrap();
         assert_eq!(results.len(), 1);
@@ -285,7 +288,8 @@ mod tests {
     fn delete_existing_triple() {
         let mut reg = VectorRegistry::new();
         reg.declare(default_config(PRED_EMBEDDING, 3)).unwrap();
-        reg.insert(PRED_EMBEDDING, vec![1.0, 0.0, 0.0], 100).unwrap();
+        reg.insert(PRED_EMBEDDING, vec![1.0, 0.0, 0.0], 100)
+            .unwrap();
 
         assert!(reg.delete(PRED_EMBEDDING, 100));
         assert_eq!(reg.get(PRED_EMBEDDING).unwrap().active_count(), 0);
@@ -310,9 +314,12 @@ mod tests {
         let mut reg = VectorRegistry::new();
         reg.declare(default_config(PRED_EMBEDDING, 3)).unwrap();
 
-        reg.insert(PRED_EMBEDDING, vec![1.0, 0.0, 0.0], 100).unwrap();
-        reg.insert(PRED_EMBEDDING, vec![0.9, 0.1, 0.0], 101).unwrap();
-        reg.insert(PRED_EMBEDDING, vec![0.0, 1.0, 0.0], 102).unwrap();
+        reg.insert(PRED_EMBEDDING, vec![1.0, 0.0, 0.0], 100)
+            .unwrap();
+        reg.insert(PRED_EMBEDDING, vec![0.9, 0.1, 0.0], 101)
+            .unwrap();
+        reg.insert(PRED_EMBEDDING, vec![0.0, 1.0, 0.0], 102)
+            .unwrap();
 
         reg.delete(PRED_EMBEDDING, 100);
 
@@ -330,7 +337,8 @@ mod tests {
         reg.declare(default_config(PRED_SUMMARY, 2)).unwrap();
 
         // Insert into different predicates with different dimensions
-        reg.insert(PRED_EMBEDDING, vec![1.0, 0.0, 0.0], 100).unwrap();
+        reg.insert(PRED_EMBEDDING, vec![1.0, 0.0, 0.0], 100)
+            .unwrap();
         reg.insert(PRED_SUMMARY, vec![1.0, 0.0], 200).unwrap();
 
         // Each index is independent

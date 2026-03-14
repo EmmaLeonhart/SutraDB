@@ -66,8 +66,7 @@ async fn main() -> anyhow::Result<()> {
 
             let mut parsed = sutra_sparql::parse(&query)?;
             sutra_sparql::optimize(&mut parsed);
-            let result =
-                sutra_sparql::execute_with_vectors(&parsed, &store, &dict, &mut vectors)?;
+            let result = sutra_sparql::execute_with_vectors(&parsed, &store, &dict, &mut vectors)?;
 
             println!("Columns: {:?}", result.columns);
             println!("Rows: {}", result.rows.len());
