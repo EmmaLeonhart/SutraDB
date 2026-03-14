@@ -187,7 +187,11 @@ pub fn quoted_triple_id(subject: TermId, predicate: TermId, object: TermId) -> T
     let hash = xxh3_64(&buf);
     // Ensure we never return 0 (INVALID_ID) or an inline-flagged value
     let id = hash & !INLINE_BIT;
-    if id == 0 { 1 } else { id }
+    if id == 0 {
+        1
+    } else {
+        id
+    }
 }
 
 #[cfg(test)]
@@ -222,7 +226,10 @@ mod tests {
         let mut dict = TermDictionary::new();
         for i in 0..100 {
             let id = dict.intern(&format!("http://example.org/{}", i));
-            assert!(!is_inline(id), "dictionary ID should not have inline bit set");
+            assert!(
+                !is_inline(id),
+                "dictionary ID should not have inline bit set"
+            );
         }
     }
 
@@ -267,10 +274,16 @@ mod tests {
         let min = -(1i64 << 55);
 
         assert!(inline_integer(max).is_some());
-        assert_eq!(decode_inline_integer(inline_integer(max).unwrap()), Some(max));
+        assert_eq!(
+            decode_inline_integer(inline_integer(max).unwrap()),
+            Some(max)
+        );
 
         assert!(inline_integer(min).is_some());
-        assert_eq!(decode_inline_integer(inline_integer(min).unwrap()), Some(min));
+        assert_eq!(
+            decode_inline_integer(inline_integer(min).unwrap()),
+            Some(min)
+        );
 
         // Out of range
         assert!(inline_integer(max + 1).is_none());

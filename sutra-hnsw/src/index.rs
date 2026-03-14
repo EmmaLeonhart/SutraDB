@@ -149,8 +149,7 @@ impl HnswIndex {
         self.rng_state ^= self.rng_state >> 7;
         self.rng_state ^= self.rng_state << 17;
         let r = (self.rng_state as f64) / (u64::MAX as f64);
-        let l = (-r.ln() * self.ml).floor() as u8;
-        l
+        (-r.ln() * self.ml).floor() as u8
     }
 
     /// Insert a vector into the index, associated with the given triple ID.
@@ -192,7 +191,11 @@ impl HnswIndex {
         let ef = self.config.ef_construction;
         for layer in (0..=std::cmp::min(new_layer, self.max_layer) as usize).rev() {
             let candidates = self.search_layer_internal(new_idx, current_ep, ef, layer as u8);
-            let max_conn = if layer == 0 { self.config.m0 } else { self.config.m };
+            let max_conn = if layer == 0 {
+                self.config.m0
+            } else {
+                self.config.m
+            };
             let neighbors = self.select_neighbors(&candidates, max_conn);
 
             // Set this node's neighbors at this layer
@@ -300,17 +303,11 @@ impl HnswIndex {
 
     // --- Internal helpers ---
 
-    /// Compute score between node at `query_idx` and node at `target_idx`.
-    fn score_nodes(&self, query_idx: u32, target_idx: u32) -> f32 {
-        self.config.metric.score(
-            &self.nodes[query_idx as usize].vector,
-            &self.nodes[target_idx as usize].vector,
-        )
-    }
-
     /// Compute score between a raw vector and a node.
     fn score_vec_node(&self, query: &[f32], target_idx: u32) -> f32 {
-        self.config.metric.score(query, &self.nodes[target_idx as usize].vector)
+        self.config
+            .metric
+            .score(query, &self.nodes[target_idx as usize].vector)
     }
 
     /// Greedy search: find the single closest non-deleted node to `query_idx` at `layer`.
@@ -450,7 +447,10 @@ impl HnswIndex {
         let mut scored: Vec<(f32, u32)> = neighbors
             .iter()
             .map(|&n| {
-                let score = self.config.metric.score(&node_vec, &self.nodes[n as usize].vector);
+                let score = self
+                    .config
+                    .metric
+                    .score(&node_vec, &self.nodes[n as usize].vector);
                 (score, n)
             })
             .collect();
@@ -565,7 +565,9 @@ mod tests {
         let mut index = make_index(3);
         for i in 0..20 {
             let angle = (i as f32) * 0.3;
-            index.insert(vec![angle.cos(), angle.sin(), 0.0], 100 + i).unwrap();
+            index
+                .insert(vec![angle.cos(), angle.sin(), 0.0], 100 + i)
+                .unwrap();
         }
 
         let results = index.search(&[1.0, 0.0, 0.0], 5, 20).unwrap();
@@ -581,9 +583,9 @@ mod tests {
     fn search_similarity_ordering() {
         let mut index = make_index(2);
         // Insert vectors at known angles
-        index.insert(vec![1.0, 0.0], 100).unwrap();  // 0°
-        index.insert(vec![0.7, 0.7], 101).unwrap();  // ~45°
-        index.insert(vec![0.0, 1.0], 102).unwrap();  // 90°
+        index.insert(vec![1.0, 0.0], 100).unwrap(); // 0°
+        index.insert(vec![0.7, 0.7], 101).unwrap(); // ~45°
+        index.insert(vec![0.0, 1.0], 102).unwrap(); // 90°
         index.insert(vec![-1.0, 0.0], 103).unwrap(); // 180°
 
         let results = index.search(&[1.0, 0.0], 4, 10).unwrap();

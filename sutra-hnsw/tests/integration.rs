@@ -55,7 +55,9 @@ fn search_after_many_deletions() {
     // Insert 50 vectors
     for i in 0..50u64 {
         let angle = (i as f32) * 0.1;
-        index.insert(vec![angle.cos(), angle.sin(), 0.0], i).unwrap();
+        index
+            .insert(vec![angle.cos(), angle.sin(), 0.0], i)
+            .unwrap();
     }
 
     // Delete half of them
@@ -68,7 +70,11 @@ fn search_after_many_deletions() {
     // Search should still work and return only non-deleted
     let results = index.search(&[1.0, 0.0, 0.0], 10, 30).unwrap();
     for r in &results {
-        assert!(r.triple_id % 2 == 1, "got deleted triple_id {}", r.triple_id);
+        assert!(
+            r.triple_id % 2 == 1,
+            "got deleted triple_id {}",
+            r.triple_id
+        );
     }
 }
 

@@ -84,10 +84,7 @@ impl TripleStore {
         hi[0..8].copy_from_slice(&subject.to_be_bytes());
         hi[8..24].fill(0xFF);
 
-        self.spo
-            .range(lo..=hi)
-            .map(Triple::from_spo_key)
-            .collect()
+        self.spo.range(lo..=hi).map(Triple::from_spo_key).collect()
     }
 
     /// Find all triples with the given predicate.
@@ -99,10 +96,7 @@ impl TripleStore {
         hi[0..8].copy_from_slice(&predicate.to_be_bytes());
         hi[8..24].fill(0xFF);
 
-        self.pos
-            .range(lo..=hi)
-            .map(Triple::from_pos_key)
-            .collect()
+        self.pos.range(lo..=hi).map(Triple::from_pos_key).collect()
     }
 
     /// Find all triples with the given object.
@@ -114,10 +108,7 @@ impl TripleStore {
         hi[0..8].copy_from_slice(&object.to_be_bytes());
         hi[8..24].fill(0xFF);
 
-        self.osp
-            .range(lo..=hi)
-            .map(Triple::from_osp_key)
-            .collect()
+        self.osp.range(lo..=hi).map(Triple::from_osp_key).collect()
     }
 
     /// Find all triples with the given subject and predicate.
@@ -131,10 +122,7 @@ impl TripleStore {
         hi[8..16].copy_from_slice(&predicate.to_be_bytes());
         hi[16..24].fill(0xFF);
 
-        self.spo
-            .range(lo..=hi)
-            .map(Triple::from_spo_key)
-            .collect()
+        self.spo.range(lo..=hi).map(Triple::from_spo_key).collect()
     }
 
     /// Iterate all triples in SPO order.

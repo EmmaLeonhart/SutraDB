@@ -107,7 +107,7 @@ pub enum DistanceMetric {
 impl DistanceMetric {
     /// Preprocess a vector before insertion according to this metric.
     /// For Cosine, this normalizes the vector. For others, it's a no-op.
-    pub fn preprocess(&self, vector: &mut Vec<f32>) {
+    pub fn preprocess(&self, vector: &mut [f32]) {
         if *self == DistanceMetric::Cosine {
             normalize(vector);
         }

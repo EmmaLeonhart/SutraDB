@@ -47,7 +47,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Auto-format and check
-        run: |
-          cargo fmt --all
-          git diff --exit-code || echo "::warning::Code was not formatted. Run 'cargo fmt' locally."
+      - run: cargo fmt --all -- --check

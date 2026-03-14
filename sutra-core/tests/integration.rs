@@ -26,7 +26,10 @@ fn full_roundtrip_with_dictionary() {
     assert_eq!(results[0].object, bob);
 
     // Resolve back to strings
-    assert_eq!(dict.resolve(results[0].object), Some("http://example.org/Bob"));
+    assert_eq!(
+        dict.resolve(results[0].object),
+        Some("http://example.org/Bob")
+    );
 }
 
 #[test]
@@ -45,7 +48,9 @@ fn rdf_star_quoted_triples() {
 
     // Annotate the quoted triple with confidence (RDF-star)
     let conf_value = inline_integer(91).unwrap();
-    store.insert(Triple::new(qt_id, confidence, conf_value)).unwrap();
+    store
+        .insert(Triple::new(qt_id, confidence, conf_value))
+        .unwrap();
 
     // Query: what annotations exist on the quoted triple?
     let annotations = store.find_by_subject(qt_id);
@@ -67,7 +72,9 @@ fn inline_literals_in_triples() {
     let active_val = inline_boolean(true);
 
     store.insert(Triple::new(alice, age, age_val)).unwrap();
-    store.insert(Triple::new(alice, active, active_val)).unwrap();
+    store
+        .insert(Triple::new(alice, active, active_val))
+        .unwrap();
 
     // Query Alice's age
     let age_triples = store.find_by_subject_predicate(alice, age);
@@ -100,13 +107,16 @@ fn bulk_insert_and_query() {
 
     // Each person knows the next
     for i in 0..99 {
-        store.insert(Triple::new(people[i], knows, people[i + 1])).unwrap();
+        store
+            .insert(Triple::new(people[i], knows, people[i + 1]))
+            .unwrap();
     }
 
     assert_eq!(store.len(), 199); // 100 type + 99 knows
 
     // All instances of Person
-    let persons = store.find_by_predicate(rdf_type)
+    let persons = store
+        .find_by_predicate(rdf_type)
         .into_iter()
         .filter(|t| t.object == person)
         .count();
