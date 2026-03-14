@@ -10,11 +10,12 @@
 
 SutraDB is a single-purpose database. Its only job is to store triples and answer queries over them as fast as possible, at any scale. The database is isomorphic with reality — it stores what you put in, nothing more. OWL reasoning is planned as an opt-in query-time layer that never modifies stored data. RDFS inference is out of scope.
 
-**Three non-negotiable properties:**
+**Four non-negotiable properties:**
 
 1. Any traversal, of any depth, across the entire database, must be expressible in a single query.
 2. Vectors are triples. A vector embedding is just an attribute of a node or an edge — stored, indexed, and queried the same way as any other predicate.
 3. The database stays lean. Complexity is the enemy of performance. Every feature must justify its presence in terms of query throughput or data model expressiveness.
+4. **Serverless by default, server when needed.** Like SQLite, SutraDB can be embedded directly in your application — just open a `.sdb` file. No daemon, no port, no configuration. When you need HTTP access, multi-client concurrency, or a SPARQL endpoint, start it in server mode. Same storage format either way.
 
 ---
 

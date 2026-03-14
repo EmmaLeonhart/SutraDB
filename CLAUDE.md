@@ -31,6 +31,8 @@ These are non-negotiable. Do not add features that violate them.
 
 4. **Lean by default.** Every feature must justify itself. Complexity is the enemy of performance. When in doubt, push it to the application layer.
 
+5. **Serverless by default, server when needed.** Like SQLite, SutraDB can be embedded directly — just open a `.sdb` file. No daemon, no config. Server mode (HTTP/SPARQL endpoint) is opt-in via `sutra serve`. Same `.sdb` storage format either way.
+
 ---
 
 ## Crate Structure

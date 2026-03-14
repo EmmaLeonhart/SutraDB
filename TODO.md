@@ -151,3 +151,6 @@ This is the first real-world test: load the triples, attach the 1024-dim embeddi
 - [x] Reference architecture → Oxigraph (https://github.com/oxigraph/oxigraph) as implementation reference for storage, indexing, and SPARQL patterns
 - [x] RDF data model → RDF-star (superset of RDF 1.2). Triple terms allowed in any position. Direct edge annotation is the natural pattern for vector/embedding work.
 - [x] Vector SPARQL integration → VECTOR_SIMILAR, VECTOR_SCORE, VectorRegistry, ORDER BY, UNION all implemented (135→156 tests)
+- [x] Data insertion endpoints → POST /triples, POST /vectors/declare, POST /vectors, N-Triples parser
+- [x] First real data load → 82K triples + 79K vectors from embedding-mapping project loaded and queryable
+- [x] Deployment model → Serverless by default (.sdb file, like SQLite), server mode opt-in (sutra serve). File extension: .sdb
