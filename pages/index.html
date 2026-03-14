@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SutraDB &mdash; RDF-star Triplestore with Native Vector Indexing</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79c0ff;
+            --green: #3fb950;
+            --orange: #d29922;
+            --purple: #bc8cff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+        .hero {
+            text-align: center;
+            padding: 80px 20px 60px;
+            border-bottom: 1px solid var(--border);
+        }
+        .hero h1 {
+            font-size: 3em;
+            font-weight: 700;
+            margin-bottom: 16px;
+            letter-spacing: -0.02em;
+        }
+        .hero h1 span { color: var(--accent); }
+        .hero .tagline {
+            font-size: 1.3em;
+            color: var(--text-muted);
+            max-width: 700px;
+            margin: 0 auto 32px;
+        }
+        .hero .badges {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 32px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        .badge-rust { background: #3e2723; color: #ff8a65; }
+        .badge-license { background: #1a237e; color: #82b1ff; }
+        .badge-superset { background: #1b5e20; color: #81c784; }
+
+        .cta {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 28px;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .btn:hover { text-decoration: none; transform: translateY(-1px); }
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg);
+        }
+        .btn-primary:hover { background: var(--accent-hover); color: var(--bg); }
+        .btn-secondary {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .features {
+            padding: 60px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .features h2 {
+            text-align: center;
+            font-size: 1.8em;
+            margin-bottom: 40px;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .feature-card h3 {
+            font-size: 1.1em;
+            margin-bottom: 8px;
+        }
+        .feature-card h3 .icon { margin-right: 8px; }
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.95em;
+        }
+
+        .superset {
+            padding: 60px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .superset h2 {
+            text-align: center;
+            font-size: 1.8em;
+            margin-bottom: 16px;
+        }
+        .superset .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 40px;
+            font-size: 1.05em;
+        }
+        .superset-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        @media (max-width: 600px) {
+            .superset-grid { grid-template-columns: 1fr; }
+        }
+        .superset-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .superset-card h3 { margin-bottom: 12px; }
+        .superset-card .standard { color: var(--text-muted); }
+        .superset-card .plus { color: var(--green); font-weight: 600; }
+
+        .code-example {
+            padding: 60px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .code-example h2 {
+            text-align: center;
+            font-size: 1.8em;
+            margin-bottom: 32px;
+        }
+        pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            overflow-x: auto;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+        .code-label {
+            color: var(--text-muted);
+            font-size: 0.85em;
+            margin-bottom: 8px;
+        }
+        .kw { color: var(--purple); }
+        .fn { color: var(--accent); }
+        .str { color: var(--green); }
+        .cmt { color: var(--text-muted); }
+
+        .download {
+            padding: 60px 0;
+            text-align: center;
+        }
+        .download h2 {
+            font-size: 1.8em;
+            margin-bottom: 16px;
+        }
+        .download p {
+            color: var(--text-muted);
+            margin-bottom: 32px;
+            font-size: 1.05em;
+        }
+        .download-options {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .download-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px 32px;
+            min-width: 200px;
+        }
+        .download-card h3 { margin-bottom: 8px; }
+        .download-card .os { color: var(--text-muted); font-size: 0.9em; margin-bottom: 16px; }
+        .download-card code {
+            display: block;
+            background: var(--bg);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.85em;
+            color: var(--green);
+        }
+
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+            font-size: 0.9em;
+            border-top: 1px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+
+<div class="hero">
+    <h1><span>Sutra</span>DB</h1>
+    <p class="tagline">
+        A lean RDF-star triplestore with native HNSW vector indexing.
+        Graph traversal and vector similarity in a single SPARQL query.
+    </p>
+    <div class="badges">
+        <span class="badge badge-rust">Written in Rust</span>
+        <span class="badge badge-license">Apache 2.0</span>
+        <span class="badge badge-superset">Superset of W3C Standards</span>
+    </div>
+    <div class="cta">
+        <a href="#download" class="btn btn-primary">Download</a>
+        <a href="https://github.com/EmmaLeonhart/SutraDB" class="btn btn-secondary">View on GitHub</a>
+    </div>
+</div>
+
+<div class="features">
+    <div class="container">
+        <h2>Why SutraDB?</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3><span class="icon">&#x1f517;</span> Vectors Are Triples</h3>
+                <p>Vector embeddings are stored as RDF triples and indexed by HNSW. Not a sidecar &mdash; a first-class part of the graph. One query language for both.</p>
+            </div>
+            <div class="feature-card">
+                <h3><span class="icon">&#x1f50d;</span> Hybrid SPARQL</h3>
+                <p>VECTOR_SIMILAR and VECTOR_SCORE extend standard SPARQL. Traverse the graph, jump into vector space, come back &mdash; all in one query.</p>
+            </div>
+            <div class="feature-card">
+                <h3><span class="icon">&#x1f4e6;</span> Serverless by Default</h3>
+                <p>Like SQLite for graph+vector data. Open a .sdb file, query it. No daemon, no config. Server mode is opt-in when you need HTTP access.</p>
+            </div>
+            <div class="feature-card">
+                <h3><span class="icon">&#x2b50;</span> RDF-star Native</h3>
+                <p>Triples about triples, natively. Annotate edges with confidence scores, embeddings, provenance &mdash; no reification hacks.</p>
+            </div>
+            <div class="feature-card">
+                <h3><span class="icon">&#x26a1;</span> Lean &amp; Fast</h3>
+                <p>SPO/POS/OSP indexes on interned u64 IDs. HNSW with cosine/euclidean/dot product. No bloat, no ORMs, no magic.</p>
+            </div>
+            <div class="feature-card">
+                <h3><span class="icon">&#x1f310;</span> Standards Compatible</h3>
+                <p>A superset of RDF 1.2 and SPARQL 1.1. Any valid standard query works. Extensions add what the standards can't express.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="superset">
+    <div class="container">
+        <h2>A Superset, Not a Fork</h2>
+        <p class="subtitle">Everything the W3C standards do, plus what they can't.</p>
+        <div class="superset-grid">
+            <div class="superset-card">
+                <h3>Data Model</h3>
+                <p class="standard">RDF 1.2: triple terms in object position only</p>
+                <p class="plus">+ SutraDB: triple terms in any position (RDF-star)</p>
+                <p class="plus">+ Native vector literals (sutra:f32vec)</p>
+                <p class="plus">+ HNSW index per vector predicate</p>
+            </div>
+            <div class="superset-card">
+                <h3>Query Language</h3>
+                <p class="standard">SPARQL 1.1: SELECT, FILTER, OPTIONAL, UNION...</p>
+                <p class="plus">+ VECTOR_SIMILAR() &mdash; ANN search in graph patterns</p>
+                <p class="plus">+ VECTOR_SCORE() &mdash; similarity ranking in ORDER BY</p>
+                <p class="plus">+ ef:= and k:= query hints for HNSW tuning</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="code-example">
+    <div class="container">
+        <h2>Graph + Vector in One Query</h2>
+        <p class="code-label">Find academic papers similar to a query vector that cite papers by a specific author:</p>
+<pre><span class="kw">PREFIX</span> ex: &lt;http://example.org/&gt;
+
+<span class="kw">SELECT</span> ?paper ?title <span class="kw">WHERE</span> {
+  <span class="cmt"># Jump into vector space: find similar papers</span>
+  <span class="fn">VECTOR_SIMILAR</span>(?paper ex:hasEmbedding
+    <span class="str">"0.23 -0.11 0.87 ..."</span>^^sutra:f32vec, 0.85)
+
+  <span class="cmt"># Back to graph: filter by citation chain</span>
+  ?paper ex:cites ?cited .
+  ?cited ex:author &lt;http://example.org/Vaswani&gt; .
+  ?paper ex:title ?title .
+} <span class="kw">ORDER BY DESC</span>(<span class="fn">VECTOR_SCORE</span>(?paper ex:hasEmbedding
+    <span class="str">"0.23 -0.11 0.87 ..."</span>^^sutra:f32vec))
+<span class="kw">LIMIT</span> 10</pre>
+    </div>
+</div>
+
+<div class="download" id="download">
+    <div class="container">
+        <h2>Get SutraDB</h2>
+        <p>SutraDB is in early development. Download the latest build or compile from source.</p>
+        <div class="download-options">
+            <div class="download-card">
+                <h3>Windows</h3>
+                <p class="os">x86_64</p>
+                <a href="https://github.com/EmmaLeonhart/SutraDB/releases" class="btn btn-primary">Download .exe</a>
+            </div>
+            <div class="download-card">
+                <h3>From Source</h3>
+                <p class="os">Any platform with Rust</p>
+                <code>cargo install --git https://github.com/EmmaLeonhart/SutraDB sutra-cli</code>
+            </div>
+        </div>
+        <p style="margin-top: 32px; color: var(--text-muted); font-size: 0.9em;">
+            File format: <strong>.sdb</strong> &mdash; a superset of RDF containing triples + HNSW vector indexes.<br>
+            Start a server: <code style="background: var(--surface); padding: 2px 8px; border-radius: 4px;">sutra serve --port 3030</code>
+            &nbsp;|&nbsp;
+            Query directly: <code style="background: var(--surface); padding: 2px 8px; border-radius: 4px;">sutra query "SELECT * WHERE { ?s ?p ?o } LIMIT 10"</code>
+        </p>
+    </div>
+</div>
+
+<footer>
+    <p>SutraDB is open source under the Apache 2.0 license.</p>
+    <p style="margin-top: 8px;">
+        <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a> &middot;
+        <a href="https://github.com/EmmaLeonhart/SutraDB/blob/main/docs/architecture.md">Architecture</a> &middot;
+        <a href="https://github.com/EmmaLeonhart/SutraDB/blob/main/TODO.md">Roadmap</a>
+    </p>
+</footer>
+
+</body>
+</html>
