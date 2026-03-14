@@ -70,13 +70,24 @@ pub fn execute_with_vectors(
         apply_order_by(&mut results, &mut scores, &query.order_by, &mut ctx)?;
     }
 
-    // Apply DISTINCT
+    // Apply DISTINCT (only considers projected variables, per SPARQL spec)
     if query.distinct {
         let mut seen = std::collections::HashSet::new();
         let mut keep = Vec::new();
+        let proj_vars = &query.projection;
         for (i, row) in results.iter().enumerate() {
-            let mut key: Vec<_> = row.iter().collect();
-            key.sort_by_key(|(k, _)| (*k).clone());
+            let key: Vec<_> = if proj_vars.is_empty() {
+                // SELECT * — compare all variables
+                let mut pairs: Vec<_> = row.iter().collect();
+                pairs.sort_by_key(|(k, _)| (*k).clone());
+                pairs.into_iter().map(|(k, v)| (k.clone(), *v)).collect()
+            } else {
+                // Compare only projected variables
+                proj_vars
+                    .iter()
+                    .map(|v| (v.clone(), row.get(v).copied().unwrap_or(0)))
+                    .collect()
+            };
             let key_str = format!("{:?}", key);
             if seen.insert(key_str) {
                 keep.push(i);
