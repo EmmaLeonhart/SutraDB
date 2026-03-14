@@ -20,7 +20,17 @@
       "WebSearch",
       "Bash(cargo test:*)",
       "Bash(find:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(wc:*)",
+      "Bash(python:*)",
+      "Bash(cd:*)",
+      "Bash(curl:*)",
+      "Bash(grep:*)",
+      "Bash(where.exe fuseki-server:*)",
+      "Read(//c/Users/Immanuelle/**)",
+      "Read(//c//**)",
+      "Bash(ls:*)",
+      "Bash(du:*)"
     ]
   }
 }
