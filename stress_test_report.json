@@ -1,0 +1,84 @@
+{
+  "timestamp": "2026-03-14T15:16:49",
+  "data": {
+    "entities": 100000,
+    "triples": 500303,
+    "vectors": 1000000,
+    "dimensions": 128,
+    "entity_types": 10
+  },
+  "queries": [
+    {
+      "name": "Full table scan (all triples)",
+      "status": "OK",
+      "time": 2.2239465713500977,
+      "rows": 100
+    },
+    {
+      "name": "All Person entities",
+      "status": "OK",
+      "time": 0.005599021911621094,
+      "rows": 100
+    },
+    {
+      "name": "2-hop: Person \u2192 livesIn \u2192 City \u2192 locatedIn \u2192 Country",
+      "status": "OK",
+      "time": 8.562980651855469,
+      "rows": 50
+    },
+    {
+      "name": "3-hop: Person \u2192 worksAt \u2192 Company \u2192 locatedIn \u2192 City \u2192 locatedIn \u2192 Country",
+      "status": "ERROR",
+      "time": 300.01029109954834,
+      "rows": 0
+    },
+    {
+      "name": "VECTOR_SIMILAR: Find entities similar to Person#0",
+      "status": "OK",
+      "time": 281.0057818889618,
+      "rows": 20
+    },
+    {
+      "name": "VECTOR_SIMILAR: Find entities similar to Mountain#50",
+      "status": "OK",
+      "time": 0.0021386146545410156,
+      "rows": 0
+    },
+    {
+      "name": "WORMHOLE: Graph\u2192Vector\u2192Graph (type\u2192vectorSearch\u2192type check)",
+      "status": "OK",
+      "time": 0.002065420150756836,
+      "rows": 0
+    },
+    {
+      "name": "WORMHOLE: Vector\u2192Graph (vectorSearch\u2192locatedIn\u2192country)",
+      "status": "OK",
+      "time": 0.0010678768157958984,
+      "rows": 0
+    },
+    {
+      "name": "WORMHOLE: Graph\u2192Vector\u2192Graph\u2192Graph (type+vector\u2192livesIn\u2192locatedIn)",
+      "status": "OK",
+      "time": 23.07614231109619,
+      "rows": 0
+    },
+    {
+      "name": "UNION + VECTOR: People who wrote books OR work at universities, similar to query",
+      "status": "OK",
+      "time": 0.0025086402893066406,
+      "rows": 0
+    },
+    {
+      "name": "DISTINCT entities by type",
+      "status": "OK",
+      "time": 0.09699630737304688,
+      "rows": 10
+    },
+    {
+      "name": "Large result: all Person\u2192knows\u2192Person relationships",
+      "status": "OK",
+      "time": 0.011281967163085938,
+      "rows": 1000
+    }
+  ]
+}
