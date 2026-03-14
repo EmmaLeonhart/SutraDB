@@ -1,0 +1,1 @@
+This is the directory that the small promotional website will be available at
