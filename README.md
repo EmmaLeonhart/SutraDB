@@ -8,7 +8,7 @@ SutraDB is a single-purpose database: store triples, answer queries, at any scal
 
 ### Core principles
 
-1. **No inference, no reasoning.** The database stores what you put in. OWL, RDFS, and all reasoning belong in the application layer.
+1. **Store first, reason second.** The database stores what you put in. OWL reasoning is planned as an opt-in query-time layer; RDFS inference is out of scope.
 2. **Vectors are triples.** A vector embedding is an attribute of a node or edge, stored via a typed predicate and indexed by HNSW — not a separate system.
 3. **Full traversal in a single query.** Any traversal of any depth must be expressible in one SPARQL query.
 4. **Lean by default.** Every feature must justify itself. Complexity is the enemy of performance.
@@ -56,4 +56,4 @@ See `docs/architecture.md` for the full design document.
 
 ## License
 
-Apache 2.0 (tentative — see open questions in architecture doc).
+Apache 2.0

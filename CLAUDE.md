@@ -23,7 +23,7 @@ Full architecture: see `docs/architecture.md`.
 
 These are non-negotiable. Do not add features that violate them.
 
-1. **No inference, no reasoning.** The database stores what you put in. OWL, RDFS, and all reasoning belong in the application layer. The database is isomorphic with reality, not an interpreter of it.
+1. **Store first, reason second.** The database stores what you put in. OWL support is planned as a query-time layer — the store itself remains a faithful mirror of reality. RDFS inference is out of scope; OWL reasoning will be opt-in and never modify stored data.
 
 2. **Vectors are triples.** A vector embedding is an attribute of a node or edge, stored via a predicate typed `sutra:f32vec`. It is indexed by HNSW, but it is not a separate system — it is just another index alongside SPO/POS/OSP.
 
@@ -159,7 +159,7 @@ ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^sutra:f32vec))
 
 Do not implement these without explicit instruction:
 
-- OWL / RDFS inference or reasoning
+- RDFS inference
 - Built-in graph algorithms (PageRank, community detection, etc.)
 - Multi-model query compatibility (SQL, Cypher, Gremlin)
 - Distributed execution / sharding
@@ -174,7 +174,7 @@ Do not implement these without explicit instruction:
 - **LSM-tree**: build from scratch vs. wrap RocksDB/sled?
 - **HNSW compaction**: what threshold triggers a background pass to clean deleted nodes?
 - **SPARQL property paths** (`+`, `*`, `?`): traversal strategy for cycles on large graphs?
-- **License**: Apache 2.0 (patent grant) vs MIT (simplicity)?
+- ~~**License**: Apache 2.0 (patent grant) vs MIT (simplicity)?~~ **Resolved: Apache 2.0.**
 
 ---
 

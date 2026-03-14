@@ -1,13 +1,14 @@
 # SutraDB — Architecture
 
 > A lean, high-performance RDF-star triplestore with native vector indexing and hybrid SPARQL.
+> Influenced by Qdrant's vector indexing approach, unified into a triplestore.
 > Draft v0.1
 
 ---
 
 ## 1. Design Philosophy
 
-SutraDB is a single-purpose database. Its only job is to store triples and answer queries over them as fast as possible, at any scale. No inference engine. No reasoning layer. No OWL. The database is isomorphic with reality — it stores what you put in, nothing more. All semantics belong to the application.
+SutraDB is a single-purpose database. Its only job is to store triples and answer queries over them as fast as possible, at any scale. The database is isomorphic with reality — it stores what you put in, nothing more. OWL reasoning is planned as an opt-in query-time layer that never modifies stored data. RDFS inference is out of scope.
 
 **Three non-negotiable properties:**
 
@@ -192,7 +193,7 @@ sutra-cli/       # CLI: import, export, query, benchmark
 
 These will not be implemented without explicit instruction. They cannot be handled better at the database layer than at the application layer:
 
-- OWL / RDFS inference or reasoning
+- RDFS inference
 - Built-in graph algorithms (PageRank, community detection, etc.)
 - Multi-model query compatibility (SQL, Cypher, Gremlin)
 - Distributed execution / sharding
@@ -209,4 +210,4 @@ These are unresolved architecture decisions that must be answered before or duri
 - **LSM-tree**: build from scratch vs. wrap RocksDB/sled? Wrapping is weeks faster to prototype but hides tuning knobs and adds a dependency.
 - **HNSW compaction**: lazy deletion degrades index quality over time. What threshold triggers a background compaction pass to clean deleted nodes?
 - **SPARQL property paths** (`+`, `*`, `?`): traversal strategy for cycles on large graphs — what prevents unbounded recursion?
-- **License**: Apache 2.0 (explicit patent grant, attribution requirements) vs MIT (simpler)? Both permissive.
+- ~~**License**: Apache 2.0 vs MIT?~~ **Resolved: Apache 2.0.** Consistent with Qdrant's licensing.
