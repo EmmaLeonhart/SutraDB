@@ -1,5 +1,5 @@
 [package]
-name = "vektor-hnsw"
+name = "sutra-hnsw"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,9 +12,9 @@ serde = { workspace = true }
 tracing.workspace = true
 memmap2.workspace = true
 xxhash-rust.workspace = true
-vektor-core.workspace = true
+sutra-core.workspace = true
 
-# NOTE: vektor-sparql must NEVER appear here.
+# NOTE: sutra-sparql must NEVER appear here.
 
 [dev-dependencies]
 criterion.workspace = true

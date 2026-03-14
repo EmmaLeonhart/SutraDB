@@ -1,12 +1,21 @@
-# Vektor — Claude Code Context
+# SutraDB — Claude Code Context
 
 ## What This Is
 
-Vektor is a lean, high-performance RDF-star triplestore written in Rust with native HNSW vector indexing and a hybrid SPARQL extension. It is a single-purpose database: store triples, answer queries, at any scale.
+SutraDB is a lean, high-performance RDF-star triplestore written in Rust with native HNSW vector indexing and a hybrid SPARQL extension. It is a single-purpose database: store triples, answer queries, at any scale.
 
 It is **not** a combination of existing databases. It replaces both a vector database (e.g. Qdrant) and a SPARQL triplestore (e.g. Apache Jena Fuseki) with a single unified system where vectors are just triples.
 
 Full architecture: see `docs/architecture.md`.
+
+---
+
+## Workflow Rules
+
+- **Commit early and often.** Every meaningful change gets a commit with a clear message explaining *why*, not just what.
+- **Do not enter planning-only modes.** All thinking must produce files and commits. If scope is unclear, create a `planning/` directory and write `.md` files there instead of using an internal planning mode.
+- **Keep this file up to date.** As the project takes shape, record architectural decisions, conventions, and anything needed to work effectively in this repo.
+- **Update README.md regularly.** It should always reflect the current state of the project for human readers.
 
 ---
 
@@ -16,7 +25,7 @@ These are non-negotiable. Do not add features that violate them.
 
 1. **No inference, no reasoning.** The database stores what you put in. OWL, RDFS, and all reasoning belong in the application layer. The database is isomorphic with reality, not an interpreter of it.
 
-2. **Vectors are triples.** A vector embedding is an attribute of a node or edge, stored via a predicate typed `vektor:f32vec`. It is indexed by HNSW, but it is not a separate system — it is just another index alongside SPO/POS/OSP.
+2. **Vectors are triples.** A vector embedding is an attribute of a node or edge, stored via a predicate typed `sutra:f32vec`. It is indexed by HNSW, but it is not a separate system — it is just another index alongside SPO/POS/OSP.
 
 3. **Full traversal in a single query.** Any traversal of any depth across the entire database must be expressible in one SPARQL query. This is the whole point of a graph database.
 
@@ -27,19 +36,18 @@ These are non-negotiable. Do not add features that violate them.
 ## Crate Structure
 
 ```
-vektor/
-├── vektor-core/      # Triple storage engine, LSM indexes, IRI interning, RDF-star IDs
-├── vektor-hnsw/      # HNSW index, vector literal type, predicate index registry
-├── vektor-sparql/    # SPARQL 1.1 parser, query planner, executor, hybrid extension
-├── vektor-proto/     # SPARQL HTTP protocol, Graph Store Protocol, REST API
-└── vektor-cli/       # CLI tools: import, export, query, benchmark
+sutra-core/      # Triple storage engine, LSM indexes, IRI interning, RDF-star IDs
+sutra-hnsw/      # HNSW index, vector literal type, predicate index registry
+sutra-sparql/    # SPARQL 1.1 parser, query planner, executor, hybrid extension
+sutra-proto/     # SPARQL HTTP protocol, Graph Store Protocol, REST API
+sutra-cli/       # CLI tools: import, export, query, benchmark
 ```
 
 **Dependency rules:**
-- `vektor-hnsw` has **zero** dependency on `vektor-sparql`. It is a pure data structure crate.
-- `vektor-sparql` depends on both `vektor-core` and `vektor-hnsw`.
-- `vektor-proto` depends on `vektor-sparql`.
-- `vektor-cli` depends on `vektor-proto` and `vektor-sparql`.
+- `sutra-hnsw` has **zero** dependency on `sutra-sparql`. It is a pure data structure crate.
+- `sutra-sparql` depends on both `sutra-core` and `sutra-hnsw`.
+- `sutra-proto` depends on `sutra-sparql`.
+- `sutra-cli` depends on `sutra-proto` and `sutra-sparql`.
 
 ---
 
@@ -50,25 +58,25 @@ All data is RDF-star triples. Any position (subject, predicate, object) can be a
 
 ```turtle
 # Embedding on a node
-:paper_42 :hasEmbedding "0.23 -0.11 0.87 ..."^^vektor:f32vec .
+:paper_42 :hasEmbedding "0.23 -0.11 0.87 ..."^^sutra:f32vec .
 
 # Embedding on an edge (RDF-star)
-<< :paper_42 :discusses :TransformerArchitecture >> :hasEmbedding "0.23 -0.11 ..."^^vektor:f32vec .
+<< :paper_42 :discusses :TransformerArchitecture >> :hasEmbedding "0.23 -0.11 ..."^^sutra:f32vec .
 << :paper_42 :discusses :TransformerArchitecture >> :confidence 0.91 .
 ```
 
 ### Vector Literals
-- Type: `vektor:f32vec` — a fixed-dimension array of f32
+- Type: `sutra:f32vec` — a fixed-dimension array of f32
 - Dimensionality is declared per predicate at schema time and enforced on insert
 - Mismatched dimensions = hard error
 - The database is model-agnostic: raw floats only, no embedding model metadata
 
 ### Schema Declaration
 ```turtle
-vektor:declareVectorPredicate :hasEmbedding ;
-    vektor:dimensions 1536 ;
-    vektor:hnswM 16 ;
-    vektor:hnswEfConstruction 200 .
+sutra:declareVectorPredicate :hasEmbedding ;
+    sutra:dimensions 1536 ;
+    sutra:hnswM 16 ;
+    sutra:hnswEfConstruction 200 .
 ```
 
 ---
@@ -130,14 +138,14 @@ struct HnswNode {
 SELECT ?doc ?entity WHERE {
   ?entity rdf:type :Person .
   ?doc :mentions ?entity .
-  VECTOR_SIMILAR(?doc :hasEmbedding "..."^^vektor:f32vec, 0.85)
+  VECTOR_SIMILAR(?doc :hasEmbedding "..."^^sutra:f32vec, 0.85)
 }
 
 # With explicit ef_search hint
-VECTOR_SIMILAR(?doc :hasEmbedding "..."^^vektor:f32vec, 0.85, ef:=200)
+VECTOR_SIMILAR(?doc :hasEmbedding "..."^^sutra:f32vec, 0.85, ef:=200)
 
 # Score in ORDER BY
-ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^vektor:f32vec))
+ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^sutra:f32vec))
 ```
 
 ### Query planner heuristic (v0.1)
@@ -174,7 +182,7 @@ Do not implement these without explicit instruction:
 
 - Rust edition: 2021
 - Use `thiserror` for error types
-- Use `tokio` for async runtime in `vektor-proto`
+- Use `tokio` for async runtime in `sutra-proto`
 - No `unwrap()` in library code — propagate errors
 - All public API must have doc comments
 - Benchmarks go in `benches/` using `criterion`

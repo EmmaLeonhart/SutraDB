@@ -1,13 +1,13 @@
-# Vektor — Architecture
+# SutraDB — Architecture
 
-> A lean, high-performance RDF-star triplestore with native vector indexing and hybrid SPARQL.  
+> A lean, high-performance RDF-star triplestore with native vector indexing and hybrid SPARQL.
 > Draft v0.1
 
 ---
 
 ## 1. Design Philosophy
 
-Vektor is a single-purpose database. Its only job is to store triples and answer queries over them as fast as possible, at any scale. No inference engine. No reasoning layer. No OWL. The database is isomorphic with reality — it stores what you put in, nothing more. All semantics belong to the application.
+SutraDB is a single-purpose database. Its only job is to store triples and answer queries over them as fast as possible, at any scale. No inference engine. No reasoning layer. No OWL. The database is isomorphic with reality — it stores what you put in, nothing more. All semantics belong to the application.
 
 **Three non-negotiable properties:**
 
@@ -25,10 +25,10 @@ All data is stored as RDF-star triples: subject, predicate, object — where any
 
 ```turtle
 # Embedding on a node
-:paper_42 :hasEmbedding "0.23 -0.11 0.87 ..."^^vektor:f32vec .
+:paper_42 :hasEmbedding "0.23 -0.11 0.87 ..."^^sutra:f32vec .
 
 # Embedding on a relationship (RDF-star)
-<< :paper_42 :discusses :TransformerArchitecture >> :hasEmbedding "0.23 -0.11 ..."^^vektor:f32vec .
+<< :paper_42 :discusses :TransformerArchitecture >> :hasEmbedding "0.23 -0.11 ..."^^sutra:f32vec .
 << :paper_42 :discusses :TransformerArchitecture >> :confidence 0.91 .
 ```
 
@@ -36,7 +36,7 @@ RDF-star means provenance, confidence scores, and vector embeddings on edges are
 
 ### 2.2 Vector Literals
 
-A new literal type, `vektor:f32vec`, stores a fixed-dimension array of 32-bit floats. The database treats this type specially:
+A new literal type, `sutra:f32vec`, stores a fixed-dimension array of 32-bit floats. The database treats this type specially:
 
 - At schema declaration time, dimensionality is registered for a given predicate.
 - An HNSW index is automatically built and maintained over all triples with that predicate.
@@ -46,10 +46,10 @@ A new literal type, `vektor:f32vec`, stores a fixed-dimension array of 32-bit fl
 **Schema declaration:**
 
 ```turtle
-vektor:declareVectorPredicate :hasEmbedding ;
-    vektor:dimensions 1536 ;
-    vektor:hnswM 16 ;
-    vektor:hnswEfConstruction 200 .
+sutra:declareVectorPredicate :hasEmbedding ;
+    sutra:dimensions 1536 ;
+    sutra:hnswM 16 ;
+    sutra:hnswEfConstruction 200 .
 ```
 
 ---
@@ -141,18 +141,18 @@ A new operator added to the SPARQL graph pattern language:
 SELECT ?doc ?entity WHERE {
   ?entity rdf:type :Person .
   ?doc :mentions ?entity .
-  VECTOR_SIMILAR(?doc :hasEmbedding "..."^^vektor:f32vec, 0.85)
+  VECTOR_SIMILAR(?doc :hasEmbedding "..."^^sutra:f32vec, 0.85)
 }
 
 # With explicit ef_search hint
-VECTOR_SIMILAR(?doc :hasEmbedding "..."^^vektor:f32vec, 0.85, ef:=200)
+VECTOR_SIMILAR(?doc :hasEmbedding "..."^^sutra:f32vec, 0.85, ef:=200)
 
 # Similarity score in ORDER BY
 SELECT ?paper WHERE {
   :TransformerArchitecture :influences+ ?concept .
   ?paper :discusses ?concept .
-  VECTOR_SIMILAR(?paper :hasEmbedding "..."^^vektor:f32vec, 0.80)
-} ORDER BY DESC(VECTOR_SCORE(?paper :hasEmbedding "..."^^vektor:f32vec))
+  VECTOR_SIMILAR(?paper :hasEmbedding "..."^^sutra:f32vec, 0.80)
+} ORDER BY DESC(VECTOR_SCORE(?paper :hasEmbedding "..."^^sutra:f32vec))
 ```
 
 `VECTOR_SIMILAR` takes a subject variable, a vector predicate, a query vector literal, and a similarity threshold. It returns all subject IRIs whose embedding exceeds the threshold, ranked by cosine similarity.
@@ -173,19 +173,18 @@ Adaptive execution (runtime reordering based on observed intermediate cardinalit
 ## 6. Crate Architecture
 
 ```
-vektor/
-├── vektor-core/      # Triple storage, LSM indexes, IRI interning, RDF-star IDs
-├── vektor-hnsw/      # HNSW index, vector literal type, predicate index registry
-├── vektor-sparql/    # SPARQL 1.1 parser, planner, executor, hybrid extension
-├── vektor-proto/     # SPARQL HTTP protocol, Graph Store Protocol, REST API
-└── vektor-cli/       # CLI: import, export, query, benchmark
+sutra-core/      # Triple storage, LSM indexes, IRI interning, RDF-star IDs
+sutra-hnsw/      # HNSW index, vector literal type, predicate index registry
+sutra-sparql/    # SPARQL 1.1 parser, planner, executor, hybrid extension
+sutra-proto/     # SPARQL HTTP protocol, Graph Store Protocol, REST API
+sutra-cli/       # CLI: import, export, query, benchmark
 ```
 
 **Hard dependency rules:**
-- `vektor-hnsw` → **no dependency on `vektor-sparql`**. Pure data structure crate.
-- `vektor-sparql` → depends on `vektor-core` + `vektor-hnsw`
-- `vektor-proto` → depends on `vektor-sparql`
-- `vektor-cli` → depends on `vektor-proto` + `vektor-sparql`
+- `sutra-hnsw` → **no dependency on `sutra-sparql`**. Pure data structure crate.
+- `sutra-sparql` → depends on `sutra-core` + `sutra-hnsw`
+- `sutra-proto` → depends on `sutra-sparql`
+- `sutra-cli` → depends on `sutra-proto` + `sutra-sparql`
 
 ---
 

@@ -1,16 +1,7 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-build/
-*.egg
-.eggs/
-
-# Virtual environments
-.venv/
-venv/
-env/
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock
 
 # IDE
 .vscode/
@@ -25,3 +16,6 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Claude artifacts (kept in git history, not needed in tree)
+mnt/

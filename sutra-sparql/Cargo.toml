@@ -1,21 +1,21 @@
 [package]
-name = "vektor-core"
+name = "sutra-sparql"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Triple storage engine, LSM indexes, IRI interning, RDF-star ID scheme"
+description = "SPARQL 1.1 parser, query planner, executor, and hybrid VECTOR_SIMILAR extension"
 
 [dependencies]
 thiserror.workspace = true
 anyhow.workspace = true
 serde = { workspace = true }
 tracing.workspace = true
-memmap2.workspace = true
-xxhash-rust.workspace = true
+sutra-core.workspace = true
+sutra-hnsw.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
 
 [[bench]]
-name = "triple_insert"
+name = "sparql_query"
 harness = false

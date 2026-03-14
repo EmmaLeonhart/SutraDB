@@ -1,11 +1,10 @@
 [workspace]
-name = "vektor"
 members = [
-    "vektor-core",
-    "vektor-hnsw",
-    "vektor-sparql",
-    "vektor-proto",
-    "vektor-cli",
+    "sutra-core",
+    "sutra-hnsw",
+    "sutra-sparql",
+    "sutra-proto",
+    "sutra-cli",
 ]
 resolver = "2"
 
@@ -14,7 +13,7 @@ version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 authors = []
-repository = ""
+repository = "https://github.com/EmmaLeonhart/SutraDB"
 description = "A lean RDF-star triplestore with native HNSW vector indexing and hybrid SPARQL"
 
 [workspace.dependencies]
@@ -33,7 +32,7 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# HTTP (vektor-proto)
+# HTTP (sutra-proto)
 axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["trace", "cors"] }
@@ -52,15 +51,10 @@ clap = { version = "4", features = ["derive"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # Intra-workspace
-vektor-core   = { path = "vektor-core" }
-vektor-hnsw   = { path = "vektor-hnsw" }
-vektor-sparql = { path = "vektor-sparql" }
-vektor-proto  = { path = "vektor-proto" }
-
-# ── Per-crate Cargo.toml stubs below (inline for reference) ──────────────────
-# Each crate declares its own [package] inheriting workspace.package fields,
-# and lists only the workspace.dependencies it actually uses.
-# See each crate's Cargo.toml for specifics.
+sutra-core   = { path = "sutra-core" }
+sutra-hnsw   = { path = "sutra-hnsw" }
+sutra-sparql = { path = "sutra-sparql" }
+sutra-proto  = { path = "sutra-proto" }
 
 [profile.release]
 opt-level = 3

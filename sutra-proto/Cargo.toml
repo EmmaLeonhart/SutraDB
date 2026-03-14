@@ -1,13 +1,9 @@
 [package]
-name = "vektor-cli"
+name = "sutra-proto"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "CLI tools: import, export, query, benchmark"
-
-[[bin]]
-name = "vektor"
-path = "src/main.rs"
+description = "SPARQL HTTP protocol, SPARQL Graph Store Protocol, REST API"
 
 [dependencies]
 thiserror.workspace = true
@@ -17,7 +13,9 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tokio.workspace = true
-clap.workspace = true
-vektor-core.workspace = true
-vektor-sparql.workspace = true
-vektor-proto.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+hyper.workspace = true
+sutra-core.workspace = true
+sutra-sparql.workspace = true
