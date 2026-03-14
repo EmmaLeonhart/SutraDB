@@ -15,7 +15,12 @@
       "Bash(where.exe cargo:*)",
       "Read(//c/Users/Immanuelle/Documents/Github/MusubiDB/$HOME/.cargo/bin/**)",
       "Read(//c/Users/Immanuelle/.cargo/bin//**)",
-      "Bash(export:*)"
+      "Bash(export:*)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "Bash(cargo test:*)",
+      "Bash(find:*)",
+      "Bash(cargo build:*)"
     ]
   }
 }
