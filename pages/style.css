@@ -17,8 +17,9 @@ nav {
     padding: 12px 24px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 24px; font-size: 0.9em;
 }
-nav .logo { font-weight: 700; font-size: 1.1em; }
+nav .logo { font-weight: 700; font-size: 1.1em; text-decoration: none !important; }
 nav .logo span { color: var(--accent); }
+nav .logo::before { content: '\1F4DC '; }
 nav a { color: var(--muted); }
 nav a:hover { color: var(--text); text-decoration: none; }
 nav a.active { color: var(--accent); }
