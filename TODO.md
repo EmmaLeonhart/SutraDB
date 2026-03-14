@@ -2,22 +2,36 @@
 
 ## Priority 1: Vector SPARQL Integration
 
-The HNSW index and SPARQL engine both exist — they need to be connected.
+The HNSW index and SPARQL engine are now connected.
 
-- [ ] Add `VECTOR_SIMILAR` as a recognized pattern in the SPARQL parser
-- [ ] Add `VECTOR_SCORE` as a recognized function in the SPARQL parser
-- [ ] Wire VECTOR_SIMILAR into the query executor (call HnswIndex.search())
-- [ ] Planner integration: detect bound/unbound subject for execution order
-- [ ] Support `ef:=N` hint parameter for per-query ef_search tuning
-- [ ] Support `k:=N` top-K mode (no threshold, return top K)
-- [ ] Parse `sutra:f32vec` typed literals into actual float arrays
-- [ ] Schema declaration support (`sutra:declareVectorPredicate`)
-- [ ] Predicate-to-HnswIndex registry (map predicate IDs to their HNSW indexes)
+- [x] Add `VECTOR_SIMILAR` as a recognized pattern in the SPARQL parser
+- [x] Add `VECTOR_SCORE` as a recognized function in the SPARQL parser
+- [x] Wire VECTOR_SIMILAR into the query executor (call HnswIndex.search())
+- [x] Planner integration: detect bound/unbound subject for execution order
+- [x] Support `ef:=N` hint parameter for per-query ef_search tuning
+- [x] Support `k:=N` top-K mode (no threshold, return top K)
+- [x] Parse `sutra:f32vec` typed literals into actual float arrays
+- [ ] Schema declaration support (`sutra:declareVectorPredicate`) via SPARQL or config
+- [x] Predicate-to-HnswIndex registry (map predicate IDs to their HNSW indexes)
 
-## Priority 2: SPARQL Completeness
+## Priority 2: Data Ingestion — Experiment-Ready
 
-- [ ] ORDER BY clause (ASC/DESC on variables and expressions)
-- [ ] UNION patterns
+Minimum viable path to loading real data (e.g. embedding-mapping project).
+
+- [ ] N-Triples (.nt) parser for bulk import
+- [ ] Turtle (.ttl) parser for bulk import
+- [ ] NumPy (.npz) vector import — load embeddings from embedding-mapping project
+- [ ] `sutra import` CLI command (`sutra import data.nt`, `sutra import --vectors embeddings.npz`)
+- [ ] Wire PersistentStore to HTTP server (currently in-memory only)
+- [ ] Vector predicate declaration via config file or SPARQL syntax
+- [ ] SPARQL Update (INSERT DATA, DELETE DATA, DELETE/INSERT WHERE)
+- [ ] Bulk vector insert endpoint (POST vectors via HTTP)
+- [ ] Streaming import (line-by-line for large files)
+
+## Priority 3: SPARQL Completeness
+
+- [x] ORDER BY clause (ASC/DESC on variables and expressions)
+- [x] UNION patterns
 - [ ] BIND / VALUES
 - [ ] GROUP BY / HAVING / aggregates (COUNT, SUM, AVG, MIN, MAX)
 - [ ] Property paths (`+`, `*`, `?`) for multi-hop traversal
@@ -27,7 +41,7 @@ The HNSW index and SPARQL engine both exist — they need to be connected.
 - [ ] ASK queries (boolean existence check)
 - [ ] DESCRIBE queries
 
-## Priority 3: String and Function Support
+## Priority 4: String and Function Support
 
 - [ ] String functions: CONTAINS, STRSTARTS, STRENDS, STRLEN, SUBSTR
 - [ ] REGEX filter support
@@ -39,7 +53,7 @@ The HNSW index and SPARQL engine both exist — they need to be connected.
 - [ ] Arithmetic in expressions (+, -, *, /)
 - [ ] Boolean operators in FILTER (&&, ||, !)
 
-## Priority 4: Storage Engine
+## Priority 5: Storage Engine
 
 - [x] ~~LSM-tree decision~~ → Resolved: using sled for v0.1
 - [ ] Integrate PersistentStore with the HTTP server (currently server uses in-memory only)
@@ -49,18 +63,6 @@ The HNSW index and SPARQL engine both exist — they need to be connected.
 - [ ] Transaction support (atomic multi-triple inserts)
 - [ ] Write-ahead log (WAL) for crash recovery
 - [ ] Benchmark sled vs RocksDB for triple workloads
-
-## Priority 5: Data Ingestion
-
-- [ ] Turtle (.ttl) parser for bulk import
-- [ ] N-Triples (.nt) parser for bulk import
-- [ ] N-Quads (.nq) parser for named graphs
-- [ ] RDF/XML parser (or use an existing crate)
-- [ ] JSON-LD parser
-- [ ] SPARQL Update (INSERT DATA, DELETE DATA, DELETE/INSERT WHERE)
-- [ ] Graph Store Protocol (PUT/POST/DELETE graphs via HTTP)
-- [ ] Bulk import CLI command (`sutra import data.ttl`)
-- [ ] Streaming import (line-by-line for large files)
 
 ## Priority 6: HTTP Protocol
 
@@ -73,7 +75,16 @@ The HNSW index and SPARQL engine both exist — they need to be connected.
 - [ ] Query timeout enforcement
 - [ ] SPARQL service description endpoint
 
-## Priority 7: OWL Support
+## Priority 7: Distribution & Ecosystem
+
+- [ ] Docker image on Docker Hub — one-command deployment (`docker run sutradb`)
+- [ ] Protégé compatibility — OWL ontology editing via Protégé connected to SutraDB
+- [ ] N-Quads (.nq) parser for named graphs
+- [ ] RDF/XML parser (or use Oxigraph's oxrdfxml crate)
+- [ ] JSON-LD parser (or use Oxigraph's oxjsonld crate)
+- [ ] Graph Store Protocol (PUT/POST/DELETE graphs via HTTP)
+
+## Priority 8: OWL Support
 
 OWL is planned as an opt-in query-time layer (not stored inference).
 
@@ -86,7 +97,7 @@ OWL is planned as an opt-in query-time layer (not stored inference).
 - [ ] Reasoning toggle per-query (opt-in, not default)
 - [ ] Materialization option (precompute inferences into stored triples)
 
-## Priority 8: Performance
+## Priority 9: Performance
 
 - [ ] Benchmarks with criterion (triple insert, query, HNSW search)
 - [ ] SIMD distance functions (AVX2/SSE/NEON) for vector operations
@@ -97,7 +108,7 @@ OWL is planned as an opt-in query-time layer (not stored inference).
 - [ ] Connection pooling for persistent store
 - [ ] Prefix compression for IRI storage (common prefixes stored once)
 
-## Priority 9: Tooling
+## Priority 10: Tooling
 
 - [ ] `sutra import` CLI command
 - [ ] `sutra export` CLI command (dump to Turtle/N-Triples)
@@ -106,6 +117,18 @@ OWL is planned as an opt-in query-time layer (not stored inference).
 - [ ] Docker image
 - [ ] Configuration file (TOML) for server settings
 - [ ] Logging configuration (structured JSON logs)
+
+## Test Data: embedding-mapping Project
+
+The `embedding-mapping` project (`C:\Users\Immanuelle\Documents\Github\embedding-mapping`) has real data ready to load:
+
+- **triples.nt** — 733KB of N-Triples RDF (Wikidata triples about mountains, shrines, geography)
+- **geodesics.ttl** — 3.6MB Turtle RDF (8,832 geodesic objects with distance metrics)
+- **embeddings.npz** — 585MB NumPy file (79,318 vectors × 1024 dimensions, mxbai-embed-large model)
+- **embedding_index.json** — maps vector positions to (QID, text, type)
+- **items.json** — 28,307 Wikidata items with labels, aliases, and triples
+
+This is the first real-world test: load the triples, attach the 1024-dim embeddings, and run combined graph+vector SPARQL queries over the data.
 
 ## Open Architecture Questions
 
@@ -127,3 +150,4 @@ OWL is planned as an opt-in query-time layer (not stored inference).
 - [x] Query language policy → SPARQL primary, Cypher planned as wrapper. SQL and MongoQL permanently out of scope.
 - [x] Reference architecture → Oxigraph (https://github.com/oxigraph/oxigraph) as implementation reference for storage, indexing, and SPARQL patterns
 - [x] RDF data model → RDF-star (superset of RDF 1.2). Triple terms allowed in any position. Direct edge annotation is the natural pattern for vector/embedding work.
+- [x] Vector SPARQL integration → VECTOR_SIMILAR, VECTOR_SCORE, VectorRegistry, ORDER BY, UNION all implemented (135→156 tests)
