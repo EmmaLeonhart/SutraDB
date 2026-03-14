@@ -34,7 +34,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # HTTP (sutra-proto)
 axum = "0.7"
-tower = "0.4"
+tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 hyper = { version = "1", features = ["full"] }
 
@@ -44,6 +44,9 @@ sled = "0.34"           # embedded key-value store for persistent indexes
 
 # Hashing
 xxhash-rust = { version = "0.8", features = ["xxh3"] }  # content-addressed triple IDs
+
+# URL encoding
+urlencoding = "2"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
