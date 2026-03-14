@@ -20,6 +20,7 @@ nav {
 nav .logo { font-weight: 700; font-size: 1.1em; text-decoration: none !important; }
 nav .logo span { color: var(--accent); }
 nav .logo::before { content: '\1F4DC '; }
+nav { flex-wrap: wrap; }
 nav a { color: var(--muted); }
 nav a:hover { color: var(--text); text-decoration: none; }
 nav a.active { color: var(--accent); }

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The .sdb File Format &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav>
+    <a href="../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../protocols/">Protocols</a>
+    <a href="../sparql/">SPARQL</a>
+    <a href="../rdf/">RDF</a>
+    <a href="../owl/">OWL</a>
+    <a href="../serverless/">Serverless</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>The <span>.sdb</span> File Format</h1>
+        <p class="subtitle">A single file containing triples, vector indexes, and everything needed to query a graph+vector database.</p>
+    </div>
+
+    <h2>Why a New Format?</h2>
+
+    <p>Existing RDF serialization formats (Turtle, N-Triples, JSON-LD, RDF/XML) are <strong>text-based exchange formats</strong>. They can represent triples, but they cannot represent:</p>
+
+    <ul>
+        <li>Pre-built indexes (SPO, POS, OSP) for fast query execution</li>
+        <li>HNSW vector indexes with their graph structure and parameters</li>
+        <li>Interned term dictionaries (IRI &rarr; u64 mappings)</li>
+        <li>Vector predicate declarations and metadata</li>
+    </ul>
+
+    <p>The <code>.sdb</code> format stores all of this in a single file. It's not a serialization format &mdash; it's a <strong>database file</strong>, like SQLite's <code>.db</code> or <code>.sqlite</code>.</p>
+
+    <div class="callout green">
+        <strong>Import/export still uses standard formats</strong>
+        You import data into a <code>.sdb</code> file using standard formats (N-Triples, Turtle). You export using standard formats. The <code>.sdb</code> file is the live database, not an interchange format.
+    </div>
+
+    <h2>What's Inside a .sdb File</h2>
+
+    <table>
+        <tr><th>Component</th><th>Purpose</th><th>Structure</th></tr>
+        <tr>
+            <td><strong>SPO Index</strong></td>
+            <td>Subject &rarr; Predicate &rarr; Object lookups</td>
+            <td>Sorted B-tree of 24-byte keys (3 &times; u64, big-endian)</td>
+        </tr>
+        <tr>
+            <td><strong>POS Index</strong></td>
+            <td>Predicate &rarr; Object &rarr; Subject (type lookups, vector reverse traversal)</td>
+            <td>Same structure, different key order</td>
+        </tr>
+        <tr>
+            <td><strong>OSP Index</strong></td>
+            <td>Object &rarr; Subject &rarr; Predicate (reverse traversal)</td>
+            <td>Same structure, different key order</td>
+        </tr>
+        <tr>
+            <td><strong>Term Dictionary</strong></td>
+            <td>Bidirectional IRI/literal &harr; u64 ID mapping</td>
+            <td>Forward map (string &rarr; ID) + reverse map (ID &rarr; string)</td>
+        </tr>
+        <tr>
+            <td><strong>HNSW Index(es)</strong></td>
+            <td>One per declared vector predicate</td>
+            <td>Multi-layer proximity graph with node vectors, neighbor lists, and metadata</td>
+        </tr>
+        <tr>
+            <td><strong>Metadata</strong></td>
+            <td>Vector predicate declarations, index parameters (M, ef_construction, dimensions)</td>
+            <td>Key-value store</td>
+        </tr>
+    </table>
+
+    <h2>Comparison with Other Formats</h2>
+
+    <h3>vs. RDF Serialization Formats</h3>
+
+    <table>
+        <tr><th>Format</th><th>Type</th><th>Indexes</th><th>Vectors</th><th>Queryable</th><th>Use Case</th></tr>
+        <tr>
+            <td><strong>.sdb</strong></td>
+            <td>Database file</td>
+            <td><span class="badge badge-green">Yes (3)</span></td>
+            <td><span class="badge badge-green">Yes (HNSW)</span></td>
+            <td><span class="badge badge-green">Directly</span></td>
+            <td>Live database, serverless access</td>
+        </tr>
+        <tr>
+            <td>.ttl (Turtle)</td>
+            <td>Text exchange</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">Must parse first</span></td>
+            <td>Human-readable data exchange</td>
+        </tr>
+        <tr>
+            <td>.nt (N-Triples)</td>
+            <td>Text exchange</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">Must parse first</span></td>
+            <td>Streaming import, line-by-line</td>
+        </tr>
+        <tr>
+            <td>.jsonld (JSON-LD)</td>
+            <td>Text exchange</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">Must parse first</span></td>
+            <td>Web APIs, JavaScript</td>
+        </tr>
+        <tr>
+            <td>.rdf (RDF/XML)</td>
+            <td>Text exchange</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">Must parse first</span></td>
+            <td>Legacy XML systems</td>
+        </tr>
+    </table>
+
+    <h3>vs. Other Database Files</h3>
+
+    <table>
+        <tr><th>Format</th><th>Data Model</th><th>Vectors</th><th>Query Language</th></tr>
+        <tr>
+            <td><strong>.sdb (SutraDB)</strong></td>
+            <td>RDF-star triples</td>
+            <td><span class="badge badge-green">Native HNSW</span></td>
+            <td>SPARQL + vector extensions</td>
+        </tr>
+        <tr>
+            <td>.db / .sqlite (SQLite)</td>
+            <td>Relational tables</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td>SQL</td>
+        </tr>
+        <tr>
+            <td>TDB2 (Jena)</td>
+            <td>RDF quads</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td>SPARQL (requires Fuseki server)</td>
+        </tr>
+        <tr>
+            <td>.oxigraph (Oxigraph)</td>
+            <td>RDF 1.2</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td>SPARQL</td>
+        </tr>
+    </table>
+
+    <h2>The .sdb Name</h2>
+
+    <p>The extension <code>.sdb</code> stands for <strong>Sutra Database</strong>. We chose a distinct extension rather than reusing <code>.db</code> or <code>.rdf</code> because:</p>
+
+    <ul>
+        <li>It contains more than standard RDF &mdash; vector indexes, HNSW graphs, and term dictionaries</li>
+        <li>It should not be confused with SQLite (<code>.db</code>) or RDF serialization (<code>.rdf</code>)</li>
+        <li>File managers and tools can associate <code>.sdb</code> specifically with SutraDB</li>
+        <li>It signals to users that this is a superset format &mdash; standard RDF data plus native vector infrastructure</li>
+    </ul>
+
+    <h2>Working with .sdb Files</h2>
+
+<pre><code><span class="cmt"># Create a new database</span>
+sutra import data.nt --data my_graph.sdb
+
+<span class="cmt"># Query it directly (serverless)</span>
+sutra query "SELECT * WHERE { ?s ?p ?o } LIMIT 10" --data my_graph.sdb
+
+<span class="cmt"># Start a server for HTTP access</span>
+sutra serve --port 3030 --data my_graph.sdb
+
+<span class="cmt"># Copy/backup: it's just a file</span>
+cp my_graph.sdb backup_2024.sdb
+
+<span class="cmt"># Export back to standard RDF</span>
+sutra export --format turtle --data my_graph.sdb > export.ttl</code></pre>
+
+</div>
+
+<footer>
+    <a href="../">Home</a> &middot;
+    <a href="../protocols/">Protocols</a> &middot;
+    <a href="../sparql/">SPARQL</a> &middot;
+    <a href="../rdf/">RDF</a> &middot;
+    <a href="../owl/">OWL</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

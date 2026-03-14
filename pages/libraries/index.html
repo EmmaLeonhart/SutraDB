@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Libraries &amp; Extensions &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav>
+    <a href="../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../protocols/">Protocols</a>
+    <a href="../sparql/">SPARQL</a>
+    <a href="../rdf/">RDF</a>
+    <a href="../owl/">OWL</a>
+    <a href="../serverless/">Serverless</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>Libraries &amp; <span>Extensions</span></h1>
+        <p class="subtitle">Official SDKs, tools, and integrations for SutraDB &mdash; all in one monorepo.</p>
+    </div>
+
+    <div class="callout green">
+        <strong>Monorepo approach</strong>
+        All SDKs and extensions live in a single repository with CI/CD that builds and publishes to each platform's package registry. One repo, one set of tests, one release cycle.
+    </div>
+
+    <h2>Client SDKs</h2>
+
+    <p>Official client libraries for connecting to SutraDB from any language. Each SDK provides:</p>
+    <ul>
+        <li>SPARQL query execution (including VECTOR_SIMILAR extensions)</li>
+        <li>Triple insertion (N-Triples format)</li>
+        <li>Vector predicate declaration and vector insertion</li>
+        <li>Health checks and connection management</li>
+    </ul>
+
+    <table>
+        <tr><th>Language</th><th>Package</th><th>Registry</th><th>Status</th></tr>
+        <tr>
+            <td><strong>Rust</strong></td>
+            <td><code>sutra-sdk</code></td>
+            <td><a href="https://crates.io">crates.io</a></td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>Python</strong></td>
+            <td><code>sutra-sdk</code></td>
+            <td><a href="https://pypi.org">PyPI</a></td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>TypeScript / JavaScript</strong></td>
+            <td><code>@sutradb/sdk</code></td>
+            <td><a href="https://www.npmjs.com">npm</a></td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>Java</strong></td>
+            <td><code>org.sutradb:sutra-sdk</code></td>
+            <td><a href="https://central.sonatype.com">Maven Central</a></td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>C# / .NET</strong></td>
+            <td><code>SutraDB.SDK</code></td>
+            <td><a href="https://www.nuget.org">NuGet</a></td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>Go</strong></td>
+            <td><code>github.com/EmmaLeonhart/sutradb-go-sdk</code></td>
+            <td>Go modules</td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+    </table>
+
+    <h3>SDK Usage Pattern</h3>
+
+    <p>All SDKs follow the same pattern regardless of language:</p>
+
+    <div class="comparison">
+        <div class="card">
+            <h4>Python</h4>
+<pre><code>from sutra_sdk import SutraClient
+
+db = SutraClient("http://localhost:3030")
+
+# Insert triples
+db.insert_triples("""
+  :Alice :knows :Bob .
+  :Bob :knows :Carol .
+""")
+
+# Declare vector predicate
+db.declare_vector("ex:embedding", 1024)
+
+# Insert vector
+db.insert_vector("ex:embedding",
+  "ex:Alice", [0.1, 0.2, ...])
+
+# Query with VECTOR_SIMILAR
+results = db.sparql("""
+  SELECT ?person WHERE {
+    VECTOR_SIMILAR(?person ex:embedding
+      "0.1 0.2 ..."^^sutra:f32vec, 0.8)
+  }
+""")</code></pre>
+        </div>
+        <div class="card">
+            <h4>TypeScript</h4>
+<pre><code>import { SutraClient } from '@sutradb/sdk';
+
+const db = new SutraClient('http://localhost:3030');
+
+// Insert triples
+await db.insertTriples(`
+  :Alice :knows :Bob .
+  :Bob :knows :Carol .
+`);
+
+// Declare vector predicate
+await db.declareVector('ex:embedding', 1024);
+
+// Insert vector
+await db.insertVector('ex:embedding',
+  'ex:Alice', [0.1, 0.2, ...]);
+
+// Query with VECTOR_SIMILAR
+const results = await db.sparql(`
+  SELECT ?person WHERE {
+    VECTOR_SIMILAR(?person ex:embedding
+      "0.1 0.2 ..."^^sutra:f32vec, 0.8)
+  }
+`);</code></pre>
+        </div>
+    </div>
+
+    <h2>Extensions &amp; Integrations</h2>
+
+    <table>
+        <tr><th>Extension</th><th>Description</th><th>Status</th></tr>
+        <tr>
+            <td><strong>Prot&eacute;g&eacute; Plugin</strong></td>
+            <td>Connect the <a href="https://protege.stanford.edu/">Prot&eacute;g&eacute;</a> OWL ontology editor to SutraDB. Author ontologies visually, query the live database, browse inferred triples. Since SutraDB supports OWL reasoning (planned), Prot&eacute;g&eacute; becomes a natural companion for schema design.</td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>Docker Image</strong></td>
+            <td>Official Docker image on Docker Hub. <code>docker run sutradb/sutra --port 3030</code> for instant deployment.</td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>Jupyter Integration</strong></td>
+            <td>Python magics for SPARQL queries in Jupyter notebooks. <code>%%sparql</code> cell magic, inline result rendering, vector visualization.</td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>LangChain / LlamaIndex</strong></td>
+            <td>SutraDB as a vector store + knowledge graph for RAG pipelines. Combined retrieval: semantic similarity + graph context in one call.</td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+    </table>
+
+    <h2>Monorepo Structure</h2>
+
+    <p>All SDKs and extensions are developed in a single monorepo with shared CI:</p>
+
+<pre><code>sutradb-sdks/
+  sdks/
+    rust/           # sutra-sdk (crates.io)
+    python/         # sutra-sdk (PyPI)
+    typescript/     # @sutradb/sdk (npm)
+    java/           # org.sutradb:sutra-sdk (Maven)
+    dotnet/         # SutraDB.SDK (NuGet)
+    go/             # sutradb-go-sdk (Go modules)
+  extensions/
+    protege/        # Prot&eacute;g&eacute; plugin (Java)
+    jupyter/        # Jupyter magics (Python)
+    langchain/      # LangChain integration (Python)
+    docker/         # Dockerfile + Docker Hub CI
+  .github/
+    workflows/
+      publish-pypi.yml
+      publish-npm.yml
+      publish-crates.yml
+      publish-nuget.yml
+      publish-maven.yml
+      publish-docker.yml</code></pre>
+
+    <p>GitHub Actions automatically builds and publishes each SDK when a release tag is pushed. All SDKs share the same version number and are released together.</p>
+
+    <h2>Contributing</h2>
+
+    <p>SDKs are thin HTTP clients &mdash; they wrap the REST API (<code>/sparql</code>, <code>/triples</code>, <code>/vectors</code>). Adding a new language SDK is straightforward:</p>
+
+    <ol>
+        <li>Implement the HTTP client (GET/POST to the SutraDB endpoints)</li>
+        <li>Add SPARQL result parsing (JSON format)</li>
+        <li>Add type-safe wrappers for vector operations</li>
+        <li>Write tests against a running SutraDB instance</li>
+        <li>Add a CI workflow for the language's package registry</li>
+    </ol>
+
+    <p>All SDKs test against the same SutraDB binary, ensuring consistency across languages.</p>
+
+</div>
+
+<footer>
+    <a href="../">Home</a> &middot;
+    <a href="../protocols/">Protocols</a> &middot;
+    <a href="../sparql/">SPARQL</a> &middot;
+    <a href="../rdf/">RDF</a> &middot;
+    <a href="../owl/">OWL</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

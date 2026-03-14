@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graph + Vector Databases Explained &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav>
+    <a href="../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../protocols/">Protocols</a>
+    <a href="../sparql/">SPARQL</a>
+    <a href="../rdf/">RDF</a>
+    <a href="../owl/">OWL</a>
+    <a href="../serverless/">Serverless</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>Graph + Vector <span>Databases</span></h1>
+        <p class="subtitle">What they are, why they matter, and how SutraDB combines them into one system.</p>
+    </div>
+
+    <h2>If You're Coming from SQL</h2>
+
+    <p>Most developers know SQL databases (PostgreSQL, MySQL, SQLite). Data lives in <strong>tables with rows and columns</strong>. This works great when your data fits neatly into a spreadsheet shape. But some data doesn't.</p>
+
+    <div class="comparison">
+        <div class="card">
+            <h4>SQL Database (Tables)</h4>
+<pre><code>| person_id | name  | knows_id |
+|-----------|-------|----------|
+| 1         | Alice | 2        |
+| 2         | Bob   | 3        |
+| 3         | Carol | 1        |</code></pre>
+            <p style="color:var(--muted);font-size:0.9em;">Relationships require JOIN operations. Following a chain of connections (who does Alice know, and who do they know?) requires nested JOINs that get exponentially slower.</p>
+        </div>
+        <div class="card">
+            <h4>Graph Database (Triples)</h4>
+<pre><code>Alice  knows  Bob .
+Bob    knows  Carol .
+Carol  knows  Alice .
+Alice  type   Person .
+Bob    type   Person .</code></pre>
+            <p style="color:var(--muted);font-size:0.9em;">Relationships are the data. Following a chain of any length is a single query. No JOINs, no schema to define upfront. Add new relationship types anytime.</p>
+        </div>
+    </div>
+
+    <h3>When to use what</h3>
+
+    <table>
+        <tr><th>Your data looks like...</th><th>Use</th></tr>
+        <tr><td>Spreadsheets, invoices, accounting</td><td>SQL (PostgreSQL, SQLite)</td></tr>
+        <tr><td>Documents, nested JSON, catalogs</td><td>Document DB (MongoDB)</td></tr>
+        <tr><td>Relationships, networks, knowledge, ontologies</td><td><strong>Graph DB (SutraDB)</strong></td></tr>
+        <tr><td>Embeddings, similarity search, recommendations</td><td><strong>Vector DB (SutraDB)</strong></td></tr>
+    </table>
+
+    <h2>If You're Coming from MongoDB</h2>
+
+    <p>MongoDB stores <strong>documents</strong> &mdash; nested JSON objects. It's schema-flexible and fast for key-based lookups. But it goes in almost the opposite direction from a graph database:</p>
+
+    <div class="comparison">
+        <div class="card">
+            <h4>MongoDB (Documents)</h4>
+<pre><code>{
+  "name": "Alice",
+  "knows": ["Bob", "Carol"],
+  "interests": ["ML", "RDF"]
+}</code></pre>
+            <p style="color:var(--muted);font-size:0.9em;">Data is <strong>denormalized</strong> &mdash; everything about Alice is in one document. Traversing relationships means looking up other documents by reference. No native relationship traversal.</p>
+        </div>
+        <div class="card">
+            <h4>SutraDB (Graph)</h4>
+<pre><code>Alice knows Bob .
+Alice knows Carol .
+Alice interest ML .
+Alice interest RDF .
+Bob knows Carol .
+Bob interest Databases .</code></pre>
+            <p style="color:var(--muted);font-size:0.9em;">Data is <strong>normalized into relationships</strong>. "Alice knows Bob and Bob knows Carol" is a two-hop traversal in one query. The shape of the data IS the query path.</p>
+        </div>
+    </div>
+
+    <p>MongoDB optimizes for "give me everything about this one document." Graph databases optimize for "follow connections between things." These are fundamentally different access patterns.</p>
+
+    <h2>What Is a Vector Database?</h2>
+
+    <p>A vector database stores <strong>embeddings</strong> &mdash; arrays of numbers that represent the "meaning" of text, images, or other data in a high-dimensional space. Things with similar meanings have similar vectors.</p>
+
+<pre><code><span class="cmt">-- These vectors are close together (similar meaning):</span>
+"king"     &rarr; [0.82, 0.11, -0.03, 0.45, ...]  (1024 numbers)
+"monarch"  &rarr; [0.79, 0.13, -0.01, 0.42, ...]
+"queen"    &rarr; [0.75, 0.15,  0.08, 0.41, ...]
+
+<span class="cmt">-- This vector is far away (different meaning):</span>
+"bicycle"  &rarr; [-0.12, 0.67, 0.33, -0.21, ...]</code></pre>
+
+    <p>Vector databases let you ask: <strong>"Find me things similar to this."</strong> This is how semantic search, recommendation engines, and RAG (retrieval-augmented generation) work.</p>
+
+    <p>Standalone vector databases (Qdrant, Pinecone, Weaviate) store vectors and let you search them. But they don't understand relationships between the things those vectors represent.</p>
+
+    <h2>The Problem: Two Databases</h2>
+
+    <p>Today, if you want both graph traversal and vector similarity, you need two separate databases:</p>
+
+    <ol>
+        <li>A <strong>triplestore</strong> (Apache Jena, Oxigraph, Neo4j) for your knowledge graph</li>
+        <li>A <strong>vector database</strong> (Qdrant, Pinecone, Weaviate) for your embeddings</li>
+    </ol>
+
+    <p>Then your application has to:</p>
+    <ul>
+        <li>Keep them in sync (insert into both, delete from both)</li>
+        <li>Translate IDs between systems</li>
+        <li>Execute multi-step queries manually: query one database, take the results, query the other</li>
+        <li>Handle consistency problems when one update succeeds but the other fails</li>
+    </ul>
+
+    <div class="callout orange">
+        <strong>This is the problem SutraDB solves</strong>
+        Instead of bolting a vector database onto a graph database (or vice versa), SutraDB makes vectors a native part of the graph. One database, one query, one source of truth.
+    </div>
+
+    <h2>SutraDB: One Database for Both</h2>
+
+    <p>In SutraDB, a vector embedding is just another <strong>triple</strong> &mdash; a relationship between an entity and its embedding:</p>
+
+<pre><code><span class="cmt">-- Regular graph data:</span>
+:paper42  rdf:type     :Paper .
+:paper42  :title       "Attention Is All You Need" .
+:paper42  :author      :Vaswani .
+:paper42  :cites       :paper17 .
+
+<span class="cmt">-- The embedding is also a triple:</span>
+:paper42  :hasEmbedding  <span class="str">"0.23 -0.11 0.87 ..."</span>^^sutra:f32vec .</code></pre>
+
+    <p>The vector is stored in the same database, indexed by the same system, and queryable in the same language. No sync, no translation, no second database.</p>
+
+    <h2>Vector Hopping: Wormhole Queries</h2>
+
+    <p>The unique capability this unlocks is <strong>vector hopping</strong> &mdash; traversing between graph space and vector space within a single query. We call these "wormhole queries" because they let you jump through a shortcut in the data space.</p>
+
+    <h3>How it works</h3>
+
+    <p>Imagine you have a knowledge graph of academic papers with their relationships (citations, authors, topics) and their embeddings (semantic meaning of the paper's content).</p>
+
+    <div class="callout purple">
+        <strong>Traditional approach (two databases):</strong>
+        <ol>
+            <li>Query the vector DB: "find papers similar to this embedding" &rarr; get IDs</li>
+            <li>Take those IDs to the graph DB: "which of these papers cite papers by Vaswani?" &rarr; filter</li>
+            <li>Take filtered IDs back to graph DB: "get titles and authors" &rarr; display</li>
+        </ol>
+        Three queries, two databases, application-layer glue code.
+    </div>
+
+    <div class="callout green">
+        <strong>SutraDB (one query):</strong>
+<pre><code>SELECT ?paper ?title WHERE {
+  VECTOR_SIMILAR(?paper :hasEmbedding "..."^^sutra:f32vec, 0.8)
+  ?paper :cites ?cited .
+  ?cited :author :Vaswani .
+  ?paper :title ?title .
+} ORDER BY DESC(VECTOR_SCORE(?paper :hasEmbedding "..."^^sutra:f32vec))
+LIMIT 10</code></pre>
+        One query. Graph traversal and vector search interleaved. The query planner decides the optimal execution order.
+    </div>
+
+    <h3>Types of wormhole traversals</h3>
+
+    <table>
+        <tr><th>Pattern</th><th>Description</th><th>Example</th></tr>
+        <tr>
+            <td><strong>Vector &rarr; Graph</strong></td>
+            <td>Start with similarity search, then traverse graph</td>
+            <td>"Find entities similar to X, then get their properties"</td>
+        </tr>
+        <tr>
+            <td><strong>Graph &rarr; Vector</strong></td>
+            <td>Traverse graph first, then filter by vector similarity</td>
+            <td>"Get all Papers by this author, rank by similarity to my query"</td>
+        </tr>
+        <tr>
+            <td><strong>Graph &rarr; Vector &rarr; Graph</strong></td>
+            <td>Traverse, hop through vector space, traverse again</td>
+            <td>"Find this author's papers, find similar papers, get their authors"</td>
+        </tr>
+        <tr>
+            <td><strong>Vector &rarr; Graph &rarr; Vector</strong></td>
+            <td>Search, traverse, search again</td>
+            <td>"Find similar entities, follow links, find similar neighbors"</td>
+        </tr>
+    </table>
+
+    <h2>Entity Resolution via Vectors</h2>
+
+    <p>An important property: in SutraDB, <strong>multiple entities can share the same vector</strong>. This enables automatic entity resolution through vector search.</p>
+
+<pre><code><span class="cmt">-- Two different entities, same word, same embedding:</span>
+:bank_financial  :hasEmbedding  <span class="str">"0.5 0.3 ..."</span>^^sutra:f32vec .
+:bank_river      :hasEmbedding  <span class="str">"0.5 0.3 ..."</span>^^sutra:f32vec .
+
+<span class="cmt">-- A vector search for "bank" returns BOTH entities.</span>
+<span class="cmt">-- Then graph patterns disambiguate:</span>
+SELECT ?entity ?type WHERE {
+  VECTOR_SIMILAR(?entity :hasEmbedding <span class="str">"..."</span>^^sutra:f32vec, 0.9)
+  ?entity rdf:type ?type .
+}
+<span class="cmt">-- Returns: bank_financial (type: FinancialInstitution)</span>
+<span class="cmt">--          bank_river (type: GeographicFeature)</span></code></pre>
+
+    <p>The vector search finds candidates; the graph structure resolves ambiguity. This is how you combine the fuzzy power of embeddings with the precise structure of a knowledge graph.</p>
+
+    <h2>How HNSW Indexing Works</h2>
+
+    <p>SutraDB uses <strong>HNSW (Hierarchical Navigable Small World)</strong> for vector search. Here's the intuition:</p>
+
+    <ol>
+        <li>Imagine all your vectors as points in a high-dimensional space</li>
+        <li>HNSW builds a multi-layer graph connecting nearby points</li>
+        <li>The top layer has few points, widely spaced &mdash; good for big jumps</li>
+        <li>The bottom layer has all points, densely connected &mdash; good for precision</li>
+        <li>To search: start at the top, greedily follow connections downward, getting closer to the target at each layer</li>
+    </ol>
+
+    <p>This gives O(log n) search time instead of O(n) brute force. For 1 million vectors, that's ~20 comparisons instead of 1 million.</p>
+
+    <p>Key parameters you can tune per predicate:</p>
+
+    <table>
+        <tr><th>Parameter</th><th>Effect</th><th>Default</th></tr>
+        <tr><td><code>M</code></td><td>Connections per node. Higher = better recall, more memory</td><td>16</td></tr>
+        <tr><td><code>ef_construction</code></td><td>Build-time beam width. Higher = better index quality, slower builds</td><td>200</td></tr>
+        <tr><td><code>ef_search</code></td><td>Query-time beam width. Tunable per query via <code>ef:=N</code> hint</td><td>200</td></tr>
+    </table>
+
+</div>
+
+<footer>
+    <a href="../">Home</a> &middot;
+    <a href="../protocols/">Protocols</a> &middot;
+    <a href="../sparql/">SPARQL</a> &middot;
+    <a href="../rdf/">RDF</a> &middot;
+    <a href="../owl/">OWL</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>
