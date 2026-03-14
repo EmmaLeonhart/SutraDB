@@ -352,23 +352,42 @@ pub struct InsertVectorResponse {
 }
 
 /// POST /vectors — insert a vector embedding for a subject on a predicate.
+///
+/// Every vector is also a triple: `<subject> <predicate> <vector_literal>`.
+/// The vector is stored in the HNSW index AND as a triple in the triple store.
+/// This ensures triples always outnumber or equal vectors in a proper database.
 async fn insert_vector(
     State(state): State<Arc<AppState>>,
     Json(req): Json<InsertVectorRequest>,
 ) -> Result<Json<InsertVectorResponse>, ProtoError> {
-    let (predicate_id, subject_id) = {
+    let (predicate_id, subject_id, object_id) = {
         let mut dict = state
             .dict
             .lock()
             .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
         let p = dict.intern(&req.predicate);
         let s = dict.intern(&req.subject);
-        (p, s)
+        // Store the vector literal as a dictionary term for the triple's object
+        let vec_str: Vec<String> = req.vector.iter().map(|f| format!("{:.6}", f)).collect();
+        let literal = format!("\"{}\"^^<http://sutra.dev/f32vec>", vec_str.join(" "));
+        let o = dict.intern(&literal);
+        (p, s, o)
     };
 
-    // Use quoted_triple_id as the vector's triple identity
-    let triple_id = sutra_core::quoted_triple_id(subject_id, predicate_id, 0);
+    // The triple ID is the subject_id — vectors are keyed by the entity they belong to
+    let triple_id = subject_id;
 
+    // Insert the triple: <subject> <predicate> <vector_literal>
+    {
+        let mut store = state
+            .store
+            .lock()
+            .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
+        // Ignore duplicate triple errors (idempotent)
+        let _ = store.insert(sutra_core::Triple::new(subject_id, predicate_id, object_id));
+    }
+
+    // Insert into HNSW index
     let mut vectors = state
         .vectors
         .lock()
