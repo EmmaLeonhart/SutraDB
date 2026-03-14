@@ -54,7 +54,7 @@ pub fn is_inline(id: TermId) -> bool {
 /// Returns `None` if out of range.
 pub fn inline_integer(value: i64) -> Option<TermId> {
     // 56-bit signed range: -(2^55) to (2^55 - 1)
-    if value < -(1i64 << 55) || value >= (1i64 << 55) {
+    if !(-(1i64 << 55)..(1i64 << 55)).contains(&value) {
         return None;
     }
     let payload = (value as u64) & PAYLOAD_MASK;

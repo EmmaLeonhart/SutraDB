@@ -13,8 +13,8 @@
 //! - A HashMap maps triple_id → node_idx for O(1) deletion lookups.
 //! - The RNG is seeded per-index for reproducible layer assignment.
 
-use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 
 use sutra_core::TermId;
 
@@ -57,7 +57,12 @@ impl HnswConfig {
     }
 
     /// Create a config with a specific distance metric.
-    pub fn with_metric(m: usize, ef_construction: usize, dimensions: usize, metric: DistanceMetric) -> Self {
+    pub fn with_metric(
+        m: usize,
+        ef_construction: usize,
+        dimensions: usize,
+        metric: DistanceMetric,
+    ) -> Self {
         Self {
             m,
             m0: m * 2,
@@ -225,7 +230,12 @@ impl HnswIndex {
     ///
     /// `ef_search` controls the beam width (higher = better recall, slower).
     /// The query vector is preprocessed according to the distance metric.
-    pub fn search(&mut self, query: &[f32], k: usize, ef_search: usize) -> Result<Vec<SearchResult>> {
+    pub fn search(
+        &mut self,
+        query: &[f32],
+        k: usize,
+        ef_search: usize,
+    ) -> Result<Vec<SearchResult>> {
         if query.len() != self.config.dimensions {
             return Err(HnswError::DimensionMismatch {
                 expected: self.config.dimensions,
@@ -258,7 +268,11 @@ impl HnswIndex {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(k);
         Ok(results)
     }
@@ -342,7 +356,13 @@ impl HnswIndex {
     }
 
     /// Beam search at a single layer (using node index for query).
-    fn search_layer_internal(&mut self, query_idx: u32, start: u32, ef: usize, layer: u8) -> Vec<(f32, u32)> {
+    fn search_layer_internal(
+        &mut self,
+        query_idx: u32,
+        start: u32,
+        ef: usize,
+        layer: u8,
+    ) -> Vec<(f32, u32)> {
         let query_vec = self.nodes[query_idx as usize].vector.clone();
         self.search_layer_by_vec(&query_vec, start, ef, layer)
     }
@@ -350,7 +370,13 @@ impl HnswIndex {
     /// Beam search at a single layer using a raw query vector.
     ///
     /// Uses a reusable visited list to avoid allocation on the hot path.
-    fn search_layer_by_vec(&mut self, query: &[f32], start: u32, ef: usize, layer: u8) -> Vec<(f32, u32)> {
+    fn search_layer_by_vec(
+        &mut self,
+        query: &[f32],
+        start: u32,
+        ef: usize,
+        layer: u8,
+    ) -> Vec<(f32, u32)> {
         // Resize and clear visited list
         let n = self.nodes.len();
         self.visited.resize(n, false);
@@ -495,7 +521,13 @@ mod tests {
     fn dimension_mismatch_insert() {
         let mut index = make_index(3);
         let result = index.insert(vec![1.0, 0.0], 100);
-        assert!(matches!(result, Err(HnswError::DimensionMismatch { expected: 3, got: 2 })));
+        assert!(matches!(
+            result,
+            Err(HnswError::DimensionMismatch {
+                expected: 3,
+                got: 2
+            })
+        ));
     }
 
     #[test]
