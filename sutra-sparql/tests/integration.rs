@@ -93,21 +93,36 @@ fn academic_graph() -> (TripleStore, TermDictionary, VectorRegistry) {
         })
         .unwrap();
 
+    // Vector objects — each paper links to its vector via a triple
+    let v1 = dict.intern("\"vec_p1\"^^<http://sutra.dev/f32vec>");
+    let v2 = dict.intern("\"vec_p2\"^^<http://sutra.dev/f32vec>");
+    let v3 = dict.intern("\"vec_p3\"^^<http://sutra.dev/f32vec>");
+    let v4 = dict.intern("\"vec_p4\"^^<http://sutra.dev/f32vec>");
+    let v5 = dict.intern("\"vec_p5\"^^<http://sutra.dev/f32vec>");
+
+    // Triples linking papers to their vector objects
+    store.insert(Triple::new(p1, has_embedding, v1)).unwrap();
+    store.insert(Triple::new(p2, has_embedding, v2)).unwrap();
+    store.insert(Triple::new(p3, has_embedding, v3)).unwrap();
+    store.insert(Triple::new(p4, has_embedding, v4)).unwrap();
+    store.insert(Triple::new(p5, has_embedding, v5)).unwrap();
+
     // NLP papers get similar embeddings, non-NLP papers get different ones
+    // HNSW is keyed by the vector object ID
     vectors
-        .insert(has_embedding, vec![0.9, 0.1, 0.0, 0.0], p1)
+        .insert(has_embedding, vec![0.9, 0.1, 0.0, 0.0], v1)
         .unwrap(); // attention
     vectors
-        .insert(has_embedding, vec![0.85, 0.15, 0.0, 0.0], p2)
+        .insert(has_embedding, vec![0.85, 0.15, 0.0, 0.0], v2)
         .unwrap(); // bert
     vectors
-        .insert(has_embedding, vec![0.8, 0.2, 0.0, 0.0], p3)
+        .insert(has_embedding, vec![0.8, 0.2, 0.0, 0.0], v3)
         .unwrap(); // gpt
     vectors
-        .insert(has_embedding, vec![0.0, 0.0, 0.9, 0.1], p4)
+        .insert(has_embedding, vec![0.0, 0.0, 0.9, 0.1], v4)
         .unwrap(); // cooking
     vectors
-        .insert(has_embedding, vec![0.0, 0.0, 0.1, 0.9], p5)
+        .insert(has_embedding, vec![0.0, 0.0, 0.1, 0.9], v5)
         .unwrap(); // gardening
 
     (store, dict, vectors)

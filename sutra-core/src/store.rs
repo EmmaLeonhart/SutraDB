@@ -125,6 +125,21 @@ impl TripleStore {
         self.spo.range(lo..=hi).map(Triple::from_spo_key).collect()
     }
 
+    /// Find all triples with the given predicate and object.
+    /// Uses the POS index for efficient lookup.
+    pub fn find_by_predicate_object(&self, predicate: TermId, object: TermId) -> Vec<Triple> {
+        let mut lo = [0u8; 24];
+        lo[0..8].copy_from_slice(&predicate.to_be_bytes());
+        lo[8..16].copy_from_slice(&object.to_be_bytes());
+
+        let mut hi = [0u8; 24];
+        hi[0..8].copy_from_slice(&predicate.to_be_bytes());
+        hi[8..16].copy_from_slice(&object.to_be_bytes());
+        hi[16..24].fill(0xFF);
+
+        self.pos.range(lo..=hi).map(Triple::from_pos_key).collect()
+    }
+
     /// Iterate all triples in SPO order.
     pub fn iter(&self) -> impl Iterator<Item = Triple> + '_ {
         self.spo.iter().map(Triple::from_spo_key)

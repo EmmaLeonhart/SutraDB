@@ -102,11 +102,12 @@ HNSW is the correct choice over IVF-flat or ANNOY because it supports **incremen
 
 ### 4.3 Integration with the Triple Store
 
-Each HNSW index is keyed by **triple ID**, not by a standalone vector ID. This is the critical integration point:
+Each HNSW index is keyed by the **vector object's TermId** — the vector literal is a primitive value in the graph, like a string or integer. This is the critical integration point:
 
-- **Insert**: vector is extracted and inserted into the predicate's HNSW index under the triple's SPO identity.
+- **Insert**: the vector literal is interned as a term, a triple `<subject> <predicate> <vector>` is created, and the vector is inserted into the predicate's HNSW index under the object's TermId.
+- **Multiple subjects**: two entities can point to the same vector (e.g. "bank" the financial institution and "bank" the riverbank sharing an embedding). The HNSW index stores the vector once; the triple store links multiple subjects to it.
 - **Delete**: the corresponding HNSW node is marked deleted (lazy deletion — HNSW supports this natively without graph restructuring).
-- **Query**: HNSW returns a ranked list of triple IDs, which are joined against the SPARQL binding table like any other index result.
+- **Query**: HNSW returns a ranked list of vector object IDs. The executor joins these back through the triple store's POS index to find which subjects connect to those vectors. A vector never exists without at least one triple pointing to it.
 
 The HNSW index is a first-class index alongside SPO/POS/OSP — the query planner sees it as just another access path, not a foreign system.
 

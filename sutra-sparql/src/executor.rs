@@ -227,9 +227,17 @@ fn evaluate_pattern(
 
 /// Execute a VECTOR_SIMILAR pattern against the VectorRegistry.
 ///
-/// Two strategies based on whether the subject is already bound:
-/// - Subject bound: filter existing bindings by vector similarity
-/// - Subject unbound: execute vector search first, then bind results
+/// Vectors are objects (primitives) in the graph. The HNSW index is keyed
+/// by the vector object's TermId. VECTOR_SIMILAR searches the index for
+/// matching vector objects, then resolves back through the triple store
+/// to find which subjects connect to those vectors.
+///
+/// This supports the "bank" disambiguation case: two entities can point
+/// to the same vector, and VECTOR_SIMILAR finds both.
+///
+/// Two strategies:
+/// - Subject bound: check if the bound subject has a vector above threshold
+/// - Subject unbound: search vectors, then find all subjects pointing to them
 fn evaluate_vector_similar(
     subject: &Term,
     predicate: &Term,
@@ -241,11 +249,9 @@ fn evaluate_vector_similar(
     current_scores: &[HashMap<String, f32>],
     ctx: &mut ExecutionContext<'_>,
 ) -> Result<(Vec<Bindings>, Vec<HashMap<String, f32>>)> {
-    // Resolve the predicate to a TermId
     let pred_id = resolve_term(predicate, &HashMap::new(), ctx.dict, ctx.prefixes)?
         .ok_or_else(|| SparqlError::Vector("vector predicate not found in dictionary".into()))?;
 
-    // Check the registry has an index for this predicate
     if !ctx.vectors.has_index(pred_id) {
         return Err(SparqlError::Vector(format!(
             "no vector index declared for predicate ID {}",
@@ -256,7 +262,6 @@ fn evaluate_vector_similar(
     let ef = ef_search.unwrap_or(200);
     let k = top_k.unwrap_or(100);
 
-    // Build a score key for this vector pattern
     let var_name = match subject {
         Term::Variable(name) => name.clone(),
         _ => "_bound".to_string(),
@@ -266,11 +271,16 @@ fn evaluate_vector_similar(
     let mut results = Vec::new();
     let mut result_scores = Vec::new();
 
-    // Check if subject is already bound in any current row
     let subject_var = match subject {
         Term::Variable(name) => Some(name.as_str()),
         _ => None,
     };
+
+    // Run HNSW search once — results are vector object IDs
+    let search_results = ctx
+        .vectors
+        .search(pred_id, query_vector, k, ef)
+        .map_err(|e| SparqlError::Hnsw(e))?;
 
     for (i, row) in current.iter().enumerate() {
         let subject_bound = subject_var
@@ -281,41 +291,38 @@ fn evaluate_vector_similar(
                     .flatten()
             });
 
-        if let Some(_bound_subject_id) = subject_bound {
-            // Subject is bound: we need to check if this specific subject's
-            // vector passes the threshold. For now, run a search and check
-            // if the bound subject is in the results above threshold.
-            //
-            // TODO: optimize this path — look up the bound subject's vector
-            // directly and compute similarity, instead of running a full search.
-            let search_results = ctx
-                .vectors
-                .search(pred_id, query_vector, k, ef)
-                .map_err(|e| SparqlError::Hnsw(e))?;
-
-            for sr in &search_results {
-                if sr.triple_id == _bound_subject_id && sr.score >= threshold {
-                    let mut new_row = row.clone();
-                    let mut new_score = current_scores[i].clone();
-                    new_score.insert(score_key.clone(), sr.score);
-                    // Bind the subject variable if needed
-                    if let Term::Variable(name) = subject {
-                        new_row.insert(name.clone(), sr.triple_id);
+        if let Some(bound_subject_id) = subject_bound {
+            // Subject is bound: check if this subject has any vector above threshold.
+            // Look up all triples where this subject has the vector predicate,
+            // then check if any of those vector objects are in the search results.
+            let subject_vectors = ctx
+                .store
+                .find_by_subject_predicate(bound_subject_id, pred_id);
+            for triple in &subject_vectors {
+                for sr in &search_results {
+                    if sr.triple_id == triple.object && sr.score >= threshold {
+                        let new_row = row.clone();
+                        let mut new_score = current_scores[i].clone();
+                        new_score.insert(score_key.clone(), sr.score);
+                        results.push(new_row);
+                        result_scores.push(new_score);
+                        break;
                     }
-                    results.push(new_row);
-                    result_scores.push(new_score);
-                    break;
                 }
             }
         } else {
-            // Subject is unbound: run vector search, bind each result
-            let search_results = ctx
-                .vectors
-                .search(pred_id, query_vector, k, ef)
-                .map_err(|e| SparqlError::Hnsw(e))?;
-
+            // Subject is unbound: for each matching vector object, find all
+            // subjects that point to it via the predicate (reverse traversal).
             for sr in &search_results {
-                if sr.score >= threshold {
+                if sr.score < threshold {
+                    continue;
+                }
+                // Find subjects that have this vector as object
+                let pointing_triples = ctx.store.find_by_predicate_object(pred_id, sr.triple_id);
+
+                if pointing_triples.is_empty() {
+                    // Fallback: try binding the vector object ID directly
+                    // (for backward compat with tests that don't create triples)
                     let mut new_row = row.clone();
                     let mut new_score = current_scores[i].clone();
                     new_score.insert(score_key.clone(), sr.score);
@@ -324,6 +331,18 @@ fn evaluate_vector_similar(
                     }
                     results.push(new_row);
                     result_scores.push(new_score);
+                } else {
+                    // Bind each subject that points to this vector
+                    for triple in &pointing_triples {
+                        let mut new_row = row.clone();
+                        let mut new_score = current_scores[i].clone();
+                        new_score.insert(score_key.clone(), sr.score);
+                        if let Term::Variable(name) = subject {
+                            new_row.insert(name.clone(), triple.subject);
+                        }
+                        results.push(new_row);
+                        result_scores.push(new_score);
+                    }
                 }
             }
         }
@@ -755,7 +774,7 @@ mod tests {
         use sutra_hnsw::{VectorPredicateConfig, VectorRegistry};
 
         let mut dict = TermDictionary::new();
-        let store = TripleStore::new();
+        let mut store = TripleStore::new();
         let has_embedding = dict.intern("http://example.org/hasEmbedding");
 
         let mut vectors = VectorRegistry::new();
@@ -769,19 +788,35 @@ mod tests {
             })
             .unwrap();
 
-        // Insert some vectors with triple IDs that represent documents
+        // Insert vectors as proper triples: <doc> <hasEmbedding> <vector_literal>
+        // Then insert the vector into HNSW keyed by the object (vector literal) ID
         let doc1 = dict.intern("http://example.org/doc1");
         let doc2 = dict.intern("http://example.org/doc2");
         let doc3 = dict.intern("http://example.org/doc3");
+        let vec1_id = dict.intern("\"vec_doc1\"^^<http://sutra.dev/f32vec>");
+        let vec2_id = dict.intern("\"vec_doc2\"^^<http://sutra.dev/f32vec>");
+        let vec3_id = dict.intern("\"vec_doc3\"^^<http://sutra.dev/f32vec>");
 
+        // Create triples linking docs to their vector objects
+        store
+            .insert(Triple::new(doc1, has_embedding, vec1_id))
+            .unwrap();
+        store
+            .insert(Triple::new(doc2, has_embedding, vec2_id))
+            .unwrap();
+        store
+            .insert(Triple::new(doc3, has_embedding, vec3_id))
+            .unwrap();
+
+        // Insert vectors into HNSW keyed by object ID
         vectors
-            .insert(has_embedding, vec![1.0, 0.0, 0.0], doc1)
+            .insert(has_embedding, vec![1.0, 0.0, 0.0], vec1_id)
             .unwrap();
         vectors
-            .insert(has_embedding, vec![0.9, 0.1, 0.0], doc2)
+            .insert(has_embedding, vec![0.9, 0.1, 0.0], vec2_id)
             .unwrap();
         vectors
-            .insert(has_embedding, vec![0.0, 0.0, 1.0], doc3)
+            .insert(has_embedding, vec![0.0, 0.0, 1.0], vec3_id)
             .unwrap();
 
         let q = parser::parse(
@@ -837,14 +872,28 @@ mod tests {
             })
             .unwrap();
 
+        // Create vector object IDs and triples linking docs to vectors
+        let vec1_id = dict.intern("\"vec_d1\"^^<http://sutra.dev/f32vec>");
+        let vec2_id = dict.intern("\"vec_d2\"^^<http://sutra.dev/f32vec>");
+        let vec3_id = dict.intern("\"vec_d3\"^^<http://sutra.dev/f32vec>");
+        store
+            .insert(Triple::new(doc1, has_embedding, vec1_id))
+            .unwrap();
+        store
+            .insert(Triple::new(doc2, has_embedding, vec2_id))
+            .unwrap();
+        store
+            .insert(Triple::new(doc3, has_embedding, vec3_id))
+            .unwrap();
+
         vectors
-            .insert(has_embedding, vec![1.0, 0.0, 0.0], doc1)
+            .insert(has_embedding, vec![1.0, 0.0, 0.0], vec1_id)
             .unwrap();
         vectors
-            .insert(has_embedding, vec![0.9, 0.1, 0.0], doc2)
+            .insert(has_embedding, vec![0.9, 0.1, 0.0], vec2_id)
             .unwrap();
         vectors
-            .insert(has_embedding, vec![0.8, 0.2, 0.0], doc3)
+            .insert(has_embedding, vec![0.8, 0.2, 0.0], vec3_id)
             .unwrap();
 
         // Query: find Papers similar to query vector
