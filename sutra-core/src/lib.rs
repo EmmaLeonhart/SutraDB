@@ -2,6 +2,7 @@
 
 pub mod error;
 pub mod id;
+pub mod persistent;
 pub mod store;
 pub mod triple;
 
@@ -10,5 +11,6 @@ pub use id::{
     decode_inline_boolean, decode_inline_integer, inline_boolean, inline_integer, inline_type,
     is_inline, quoted_triple_id, InlineType, TermDictionary, TermId, INVALID_ID,
 };
+pub use persistent::PersistentStore;
 pub use store::TripleStore;
 pub use triple::Triple;

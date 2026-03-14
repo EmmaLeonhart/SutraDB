@@ -40,6 +40,7 @@ hyper = { version = "1", features = ["full"] }
 
 # Storage
 memmap2 = "0.9"         # memory-mapped files for HNSW arena
+sled = "0.34"           # embedded key-value store for persistent indexes
 
 # Hashing
 xxhash-rust = { version = "0.8", features = ["xxh3"] }  # content-addressed triple IDs

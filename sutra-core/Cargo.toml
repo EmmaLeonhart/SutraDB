@@ -12,6 +12,7 @@ serde = { workspace = true }
 tracing.workspace = true
 memmap2.workspace = true
 xxhash-rust.workspace = true
+sled.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

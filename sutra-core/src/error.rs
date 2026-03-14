@@ -20,6 +20,10 @@ pub enum CoreError {
     /// Storage I/O error.
     #[error("storage error: {0}")]
     Storage(#[from] std::io::Error),
+
+    /// Sled storage error.
+    #[error("sled error: {0}")]
+    Sled(#[from] sled::Error),
 }
 
 pub type Result<T> = std::result::Result<T, CoreError>;
