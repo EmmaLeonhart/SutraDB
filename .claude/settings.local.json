@@ -33,7 +33,8 @@
       "Bash(du:*)",
       "Bash(taskkill:*)",
       "Bash(git tag:*)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "Bash(for f:*)"
     ]
   }
 }
