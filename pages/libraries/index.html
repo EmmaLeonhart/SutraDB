@@ -43,41 +43,47 @@
     </ul>
 
     <table>
-        <tr><th>Language</th><th>Package</th><th>Registry</th><th>Status</th></tr>
-        <tr>
-            <td><strong>Rust</strong></td>
-            <td><code>sutradb</code></td>
-            <td><a href="https://crates.io">crates.io</a></td>
-            <td><span class="badge badge-orange">Planned</span></td>
-        </tr>
+        <tr><th>Language</th><th>Package Name</th><th>Registry</th><th>Install</th><th>Status</th></tr>
         <tr>
             <td><strong>Python</strong></td>
             <td><code>sutradb</code></td>
             <td><a href="https://pypi.org">PyPI</a></td>
+            <td><code>pip install sutradb</code></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>TypeScript / JavaScript</strong></td>
             <td><code>sutradb</code></td>
             <td><a href="https://www.npmjs.com">npm</a></td>
+            <td><code>npm install sutradb</code></td>
+            <td><span class="badge badge-orange">Planned</span></td>
+        </tr>
+        <tr>
+            <td><strong>Rust</strong></td>
+            <td><code>sutradb</code></td>
+            <td><a href="https://crates.io">crates.io</a></td>
+            <td><code>cargo add sutradb</code></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>Java</strong></td>
-            <td><code>org.sutradb:sutradb</code></td>
+            <td><code>dev.sutradb:sutradb-java</code></td>
             <td><a href="https://central.sonatype.com">Maven Central</a></td>
+            <td>Maven/Gradle dependency</td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>C# / .NET</strong></td>
-            <td><code>SutraDB</code></td>
+            <td><code>SutraDB.Client</code></td>
             <td><a href="https://www.nuget.org">NuGet</a></td>
+            <td><code>dotnet add package SutraDB.Client</code></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
         <tr>
             <td><strong>Go</strong></td>
-            <td><code>github.com/EmmaLeonhart/sutradb-go</code></td>
-            <td>Go modules</td>
+            <td><code>sutradb</code></td>
+            <td><a href="https://pkg.go.dev">pkg.go.dev</a></td>
+            <td><code>go get github.com/EmmaLeonhart/SutraDB/sdks/go</code></td>
             <td><span class="badge badge-orange">Planned</span></td>
         </tr>
     </table>
@@ -175,12 +181,12 @@ const results = await db.sparql(`
 
 <pre><code>SutraDB/
   sdks/
-    rust/           # sutradb (crates.io)
     python/         # sutradb (PyPI)
     typescript/     # sutradb (npm)
-    java/           # org.sutradb:sutradb (Maven)
-    dotnet/         # SutraDB (NuGet)
-    go/             # sutradb-go (Go modules)
+    rust/           # sutradb (crates.io)
+    java/           # dev.sutradb:sutradb-java (Maven Central)
+    dotnet/         # SutraDB.Client (NuGet)
+    go/             # github.com/EmmaLeonhart/SutraDB/sdks/go
   extensions/
     protege/        # Prot&eacute;g&eacute; plugin (Java)
     jupyter/        # Jupyter magics (Python)
