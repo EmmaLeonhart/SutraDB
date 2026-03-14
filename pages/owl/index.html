@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OWL Reasoning &mdash; SutraDB</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav>
+    <a href="../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../protocols/">Protocols</a>
+    <a href="../sparql/">SPARQL</a>
+    <a href="../rdf/">RDF</a>
+    <a href="../owl/" class="active">OWL</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>OWL <span>Reasoning</span></h1>
+        <p class="subtitle">Opt-in, query-time ontology reasoning &mdash; planned, not yet implemented.</p>
+    </div>
+
+    <div class="callout orange">
+        <strong>Status: Planned</strong>
+        OWL reasoning is on the roadmap but not yet implemented. This page describes the design philosophy and planned approach.
+    </div>
+
+    <h2>What Is OWL?</h2>
+
+    <p>The <strong>Web Ontology Language (OWL)</strong> is a W3C standard for defining ontologies &mdash; formal descriptions of the types, properties, and relationships in a domain. OWL lets you express things like:</p>
+
+    <ul>
+        <li><strong>Class hierarchies</strong>: "A Mountain is a subclass of LandForm"</li>
+        <li><strong>Property hierarchies</strong>: "hasMother is a subproperty of hasParent"</li>
+        <li><strong>Equivalences</strong>: "Homo sapiens is equivalent to Human"</li>
+        <li><strong>Inverse properties</strong>: "isPartOf is the inverse of hasPart"</li>
+        <li><strong>Restrictions</strong>: "Every University has at least one Student"</li>
+    </ul>
+
+    <p>When an OWL reasoner processes these declarations, it can <strong>infer</strong> new facts. For example, if you know ":MountEverest rdf:type :Mountain" and ":Mountain rdfs:subClassOf :LandForm", the reasoner infers ":MountEverest rdf:type :LandForm".</p>
+
+    <h2>SutraDB's Approach</h2>
+
+    <p>SutraDB's core philosophy is <strong>"store first, reason second."</strong> The database stores exactly what you put in &mdash; nothing more. OWL reasoning is planned as an <strong>opt-in, query-time layer</strong> that never modifies stored data.</p>
+
+    <div class="comparison">
+        <div class="card">
+            <h4>Typical Approach (Not Ours)</h4>
+            <p>Many triplestores pre-compute all inferences and store them as additional triples (materialization). This means:</p>
+            <ul>
+                <li>Insert is slow (triggers reasoning)</li>
+                <li>Storage bloats (inferred triples can 10x the data)</li>
+                <li>Hard to tell which facts are stored vs. inferred</li>
+                <li>Changing the ontology requires full recomputation</li>
+            </ul>
+        </div>
+        <div class="card">
+            <h4>SutraDB's Approach</h4>
+            <p>Reasoning happens at query time, on demand:</p>
+            <ul>
+                <li>Insert is fast (no reasoning overhead)</li>
+                <li>Storage stays lean (only explicit facts)</li>
+                <li>Inferred facts are clearly distinguished</li>
+                <li>Ontology changes take effect immediately</li>
+                <li>Opt-in per query (disable for raw data access)</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>Configurable reasoning</h3>
+
+    <p>The planned design lets you control reasoning per-query. When reasoning is off (the default), SutraDB behaves as a pure RDF-star store. When on, the query engine expands patterns to include inferred facts:</p>
+
+<pre><code><span class="cmt">-- Without reasoning: only explicit Mountain instances</span>
+<span class="kw">SELECT</span> ?mountain <span class="kw">WHERE</span> {
+  ?mountain a ex:Mountain .
+}
+
+<span class="cmt">-- With reasoning enabled: includes anything that is a subclass</span>
+<span class="cmt">-- of Mountain (e.g. Volcano, if Volcano rdfs:subClassOf Mountain)</span>
+<span class="cmt">-- Syntax TBD, possibly via query hint or PRAGMA</span></code></pre>
+
+    <h2>Planned OWL Features</h2>
+
+    <table>
+        <tr><th>Feature</th><th>OWL Construct</th><th>What It Does</th></tr>
+        <tr>
+            <td>Class hierarchy</td>
+            <td><code>rdfs:subClassOf</code></td>
+            <td>If A subClassOf B and X rdf:type A, infer X rdf:type B</td>
+        </tr>
+        <tr>
+            <td>Property hierarchy</td>
+            <td><code>rdfs:subPropertyOf</code></td>
+            <td>If P1 subPropertyOf P2 and X P1 Y, infer X P2 Y</td>
+        </tr>
+        <tr>
+            <td>Equivalence</td>
+            <td><code>owl:equivalentClass</code></td>
+            <td>Two classes treated as the same for type queries</td>
+        </tr>
+        <tr>
+            <td>Same identity</td>
+            <td><code>owl:sameAs</code></td>
+            <td>Two IRIs refer to the same real-world entity</td>
+        </tr>
+        <tr>
+            <td>Inverse properties</td>
+            <td><code>owl:inverseOf</code></td>
+            <td>If P1 inverseOf P2 and X P1 Y, infer Y P2 X</td>
+        </tr>
+        <tr>
+            <td>Restrictions</td>
+            <td><code>owl:someValuesFrom</code></td>
+            <td>Constrain what values a property can take for a class</td>
+        </tr>
+    </table>
+
+    <h2>Why Not RDFS?</h2>
+
+    <p>SutraDB explicitly does <strong>not</strong> implement RDFS inference as a separate layer. RDFS inference (domain/range propagation, subclass/subproperty closure) is a subset of what OWL provides. Rather than implementing two reasoning systems, SutraDB plans to implement the useful subset of OWL that covers all RDFS use cases, with a single toggle.</p>
+
+    <h2>OWL and Vectors</h2>
+
+    <p>An interesting future direction is combining OWL reasoning with vector search. For example:</p>
+
+<pre><code><span class="cmt">-- "Find things similar to this embedding that are Landforms"</span>
+<span class="cmt">-- With OWL reasoning on, this includes Mountains, Volcanoes,</span>
+<span class="cmt">-- Plateaus, etc. (all subclasses of LandForm)</span>
+<span class="kw">SELECT</span> ?entity <span class="kw">WHERE</span> {
+  <span class="fn">VECTOR_SIMILAR</span>(?entity ex:hasEmbedding <span class="str">"..."</span>^^sutra:f32vec, 0.8)
+  ?entity a ex:LandForm .  <span class="cmt">-- expanded by reasoning</span>
+}</code></pre>
+
+    <p>The query planner would execute the vector search first (fast, narrows to candidates), then check type membership with OWL expansion (includes subclasses). This is the full power of hybrid graph+vector+ontology queries.</p>
+
+    <h2>Prot&eacute;g&eacute; Compatibility</h2>
+
+    <p>SutraDB plans to be compatible with <a href="https://protege.stanford.edu/">Prot&eacute;g&eacute;</a>, the standard OWL ontology editor. This means:</p>
+    <ul>
+        <li>OWL ontologies authored in Prot&eacute;g&eacute; can be loaded into SutraDB</li>
+        <li>Class hierarchies, property definitions, and restrictions are recognized</li>
+        <li>Prot&eacute;g&eacute; can connect to SutraDB's SPARQL endpoint for querying</li>
+    </ul>
+    <p>This is planned for after the core OWL reasoning layer is implemented.</p>
+
+</div>
+
+<footer>
+    <a href="../">Home</a> &middot;
+    <a href="../protocols/">Protocols</a> &middot;
+    <a href="../sparql/">SPARQL</a> &middot;
+    <a href="../rdf/">RDF</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

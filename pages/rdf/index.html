@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RDF &amp; RDF-star &mdash; SutraDB</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav>
+    <a href="../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../protocols/">Protocols</a>
+    <a href="../sparql/">SPARQL</a>
+    <a href="../rdf/" class="active">RDF</a>
+    <a href="../owl/">OWL</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>RDF, RDF 1.2, and <span>RDF-star</span></h1>
+        <p class="subtitle">Why SutraDB uses RDF-star &mdash; the most expressive superset of the W3C data model.</p>
+    </div>
+
+    <h2>The Three Levels of RDF</h2>
+
+    <p>The RDF data model has evolved through three stages. Each is a strict superset of the one before:</p>
+
+    <div style="text-align: center; margin: 32px 0; font-size: 1.1em;">
+        <span class="badge badge-purple" style="font-size: 1em; padding: 6px 16px;">RDF-star</span>
+        &nbsp; &supset; &nbsp;
+        <span class="badge badge-green" style="font-size: 1em; padding: 6px 16px;">RDF 1.2</span>
+        &nbsp; &supset; &nbsp;
+        <span class="badge badge-orange" style="font-size: 1em; padding: 6px 16px;">Legacy RDF 1.1</span>
+    </div>
+
+    <h3>Legacy RDF 1.1</h3>
+
+    <p>The original W3C standard. Data is organized as <strong>triples</strong>: (subject, predicate, object). Simple and powerful, but with one major limitation &mdash; if you want to make a statement <em>about</em> a statement, you need <strong>reification</strong>, which is verbose and awkward:</p>
+
+<pre><code><span class="cmt">-- The fact:</span>
+:Alice :knows :Bob .
+
+<span class="cmt">-- To say "Alice knows Bob with 90% confidence" in legacy RDF:</span>
+:statement1 rdf:type rdf:Statement .
+:statement1 rdf:subject :Alice .
+:statement1 rdf:predicate :knows .
+:statement1 rdf:object :Bob .
+:statement1 :confidence 0.9 .
+<span class="cmt">-- That's 5 triples to annotate one fact!</span></code></pre>
+
+    <h3>RDF 1.2 (W3C Working Draft)</h3>
+
+    <p>The W3C's in-progress update to RDF. Introduces <strong>triple terms</strong> &mdash; a triple can be referenced as a value, but <em>only in the object position</em>:</p>
+
+<pre><code><span class="cmt">-- The fact:</span>
+:Alice :knows :Bob .
+
+<span class="cmt">-- In RDF 1.2, annotate via rdf:reifies:</span>
+:statement1 rdf:reifies &lt;&lt; :Alice :knows :Bob &gt;&gt; .
+:statement1 :confidence 0.9 .
+<span class="cmt">-- Better (3 triples), but the triple term can only be an object</span></code></pre>
+
+    <div class="callout orange">
+        <strong>RDF 1.2 restriction</strong>
+        Triple terms can only appear in object position. You cannot write <code>&lt;&lt; :Alice :knows :Bob &gt;&gt; :confidence 0.9</code> directly &mdash; you need the intermediate <code>rdf:reifies</code> node.
+    </div>
+
+    <h3>RDF-star (What SutraDB Uses)</h3>
+
+    <p>RDF-star removes the restriction. Triple terms can appear in <strong>any position</strong> &mdash; subject, predicate, or object. This is the most natural way to annotate triples:</p>
+
+<pre><code><span class="cmt">-- The fact:</span>
+:Alice :knows :Bob .
+
+<span class="cmt">-- In RDF-star, annotate directly:</span>
+&lt;&lt; :Alice :knows :Bob &gt;&gt; :confidence 0.9 .
+<span class="cmt">-- Just 2 triples. The triple IS the subject.</span></code></pre>
+
+    <p>This is especially powerful for vector embeddings on edges:</p>
+
+<pre><code><span class="cmt">-- An embedding on a relationship (RDF-star)</span>
+&lt;&lt; :paper42 :discusses :TransformerArchitecture &gt;&gt;
+    :hasEmbedding <span class="str">"0.23 -0.11 0.87 ..."</span>^^sutra:f32vec .
+&lt;&lt; :paper42 :discusses :TransformerArchitecture &gt;&gt;
+    :confidence 0.91 .</code></pre>
+
+    <h2>Comparison Table</h2>
+
+    <table>
+        <tr><th>Feature</th><th>Legacy RDF</th><th>RDF 1.2</th><th>RDF-star</th></tr>
+        <tr>
+            <td>Basic triples (S, P, O)</td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+        </tr>
+        <tr>
+            <td>Triple terms as objects</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+        </tr>
+        <tr>
+            <td>Triple terms as subjects</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+        </tr>
+        <tr>
+            <td>Direct edge annotation</td>
+            <td><span class="badge badge-red">Reification (verbose)</span></td>
+            <td><span class="badge badge-orange">Via rdf:reifies</span></td>
+            <td><span class="badge badge-green">Native</span></td>
+        </tr>
+        <tr>
+            <td>Triples to annotate one fact</td>
+            <td>5</td>
+            <td>3</td>
+            <td>2</td>
+        </tr>
+    </table>
+
+    <h2>Why RDF-star?</h2>
+
+    <p>SutraDB's primary use case is storing vector embeddings alongside graph structure. The <code>&lt;&lt; s p o &gt;&gt; :hasEmbedding ...</code> pattern is the natural representation for "this edge has an embedding." RDF 1.2's object-only restriction would require an extra indirection node for every annotated edge.</p>
+
+    <div class="callout green">
+        <strong>Full compatibility</strong>
+        Since RDF-star is a superset of RDF 1.2, which is a superset of legacy RDF, any existing RDF data works in SutraDB without modification. You only need RDF-star syntax when you want to annotate triples directly.
+    </div>
+
+    <h3>Practical impact</h3>
+
+    <ul>
+        <li><strong>Embeddings on edges</strong>: <code>&lt;&lt; :paper :cites :other &gt;&gt; :hasEmbedding "..."^^sutra:f32vec</code> &mdash; one triple, not three</li>
+        <li><strong>Provenance</strong>: <code>&lt;&lt; :Alice :birthDate "1990" &gt;&gt; :source :Wikipedia</code> &mdash; directly attach source to the fact</li>
+        <li><strong>Confidence scores</strong>: <code>&lt;&lt; :model :predicts :outcome &gt;&gt; :confidence 0.95</code> &mdash; annotate predictions with scores</li>
+        <li><strong>Temporal metadata</strong>: <code>&lt;&lt; :company :ceo :person &gt;&gt; :startDate "2020" ; :endDate "2023"</code></li>
+    </ul>
+
+    <h2>How SutraDB Stores RDF-star</h2>
+
+    <p>Quoted triples are handled efficiently using content-addressed hashing:</p>
+
+    <ol>
+        <li>Each IRI and literal is <strong>interned</strong> to a 64-bit integer ID at write time</li>
+        <li>A quoted triple <code>&lt;&lt; S P O &gt;&gt;</code> is hashed as <code>xxHash3(S_id, P_id, O_id) &rarr; u64</code></li>
+        <li>This hash becomes the triple term's ID, usable in any position in another triple</li>
+        <li>All indexes (SPO/POS/OSP) operate on u64 IDs &mdash; no string comparisons on the hot path</li>
+    </ol>
+
+    <p>Collision probability for xxHash3 on u64 is negligible at any realistic graph size.</p>
+
+    <h2>Oxigraph's Different Choice</h2>
+
+    <p><a href="https://github.com/oxigraph/oxigraph">Oxigraph</a>, the closest existing Rust triplestore, migrated from RDF-star to RDF 1.2 in v0.5. Their rationale was alignment with the W3C working draft. SutraDB took the opposite position: RDF-star's direct edge annotation is essential for the vector embedding use case, and since it's a superset, RDF 1.2 compatibility comes for free.</p>
+
+</div>
+
+<footer>
+    <a href="../">Home</a> &middot;
+    <a href="../protocols/">Protocols</a> &middot;
+    <a href="../sparql/">SPARQL</a> &middot;
+    <a href="../owl/">OWL</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPARQL &amp; Vector Extensions &mdash; SutraDB</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<nav>
+    <a href="../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../protocols/">Protocols</a>
+    <a href="../sparql/" class="active">SPARQL</a>
+    <a href="../rdf/">RDF</a>
+    <a href="../owl/">OWL</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>SPARQL &amp; <span>Vector Extensions</span></h1>
+        <p class="subtitle">A superset of SPARQL 1.1 &mdash; any standard query works, plus vector similarity search.</p>
+    </div>
+
+    <div class="callout green">
+        <strong>Backward compatible</strong>
+        Every valid SPARQL 1.1 query runs unchanged on SutraDB. The extensions below are purely additive &mdash; they add new operators that standard SPARQL cannot express.
+    </div>
+
+    <h2>Standard SPARQL 1.1 Support</h2>
+
+    <p>SutraDB implements the core of SPARQL 1.1 Query Language:</p>
+
+    <table>
+        <tr><th>Feature</th><th>Status</th></tr>
+        <tr><td>SELECT with projection, *, DISTINCT</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>Basic Graph Patterns (triple patterns)</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>PREFIX declarations</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>FILTER (=, !=, &lt;, &gt;, bound, !bound)</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>OPTIONAL</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>UNION</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>ORDER BY (ASC/DESC)</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>LIMIT / OFFSET</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td><code>a</code> shorthand for rdf:type</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>Typed literals, integer literals</td><td><span class="badge badge-green">Implemented</span></td></tr>
+        <tr><td>GROUP BY / HAVING / aggregates</td><td><span class="badge badge-orange">Planned</span></td></tr>
+        <tr><td>Property paths (+, *, ?)</td><td><span class="badge badge-orange">Planned</span></td></tr>
+        <tr><td>Subqueries</td><td><span class="badge badge-orange">Planned</span></td></tr>
+        <tr><td>CONSTRUCT / ASK / DESCRIBE</td><td><span class="badge badge-orange">Planned</span></td></tr>
+        <tr><td>String functions (CONTAINS, REGEX, etc.)</td><td><span class="badge badge-orange">Planned</span></td></tr>
+    </table>
+
+    <h2>Vector Extensions</h2>
+
+    <p>SutraDB adds two new operators to SPARQL for approximate nearest neighbor (ANN) search over vector embeddings. These operators integrate directly into graph patterns &mdash; you can traverse the graph, jump into vector space, and come back in a single query.</p>
+
+    <h3>VECTOR_SIMILAR</h3>
+
+    <p>Finds entities whose vector embeddings are similar to a query vector, above a cosine similarity threshold.</p>
+
+<pre><code><span class="cmt">-- Basic usage: find entities similar to a query vector</span>
+<span class="kw">SELECT</span> ?entity <span class="kw">WHERE</span> {
+  <span class="fn">VECTOR_SIMILAR</span>(?entity :hasEmbedding
+    <span class="str">"0.23 -0.11 0.87 ..."</span>^^sutra:f32vec, 0.85)
+}
+
+<span class="cmt">-- With ef_search hint (higher = better recall, slower)</span>
+<span class="fn">VECTOR_SIMILAR</span>(?entity :hasEmbedding
+    <span class="str">"..."</span>^^sutra:f32vec, 0.85, ef:=200)
+
+<span class="cmt">-- With top-K mode (return K nearest, ignore threshold)</span>
+<span class="fn">VECTOR_SIMILAR</span>(?entity :hasEmbedding
+    <span class="str">"..."</span>^^sutra:f32vec, 0.0, k:=10)</code></pre>
+
+    <h3>VECTOR_SCORE</h3>
+
+    <p>Returns the similarity score for ranking in ORDER BY clauses:</p>
+
+<pre><code><span class="kw">SELECT</span> ?paper <span class="kw">WHERE</span> {
+  ?paper a :Paper .
+  <span class="fn">VECTOR_SIMILAR</span>(?paper :hasEmbedding <span class="str">"..."</span>^^sutra:f32vec, 0.7)
+} <span class="kw">ORDER BY DESC</span>(<span class="fn">VECTOR_SCORE</span>(?paper :hasEmbedding <span class="str">"..."</span>^^sutra:f32vec))
+<span class="kw">LIMIT</span> 10</code></pre>
+
+    <h2>Wormhole Queries</h2>
+
+    <p>"Wormhole" queries traverse between graph space and vector space in a single query. This is what makes SutraDB unique &mdash; no other triplestore can express these patterns.</p>
+
+    <h3>Graph &rarr; Vector &rarr; Graph</h3>
+
+    <p>Start with a graph pattern, jump into vector space to find similar entities, then traverse back into the graph:</p>
+
+<pre><code><span class="cmt">-- Find papers by a specific author, then find papers with similar</span>
+<span class="cmt">-- embeddings, then get their titles</span>
+<span class="kw">SELECT</span> ?similar_paper ?title <span class="kw">WHERE</span> {
+  <span class="cmt">-- Graph: find papers by Vaswani</span>
+  ?original ex:author ex:Vaswani .
+
+  <span class="cmt">-- Vector: find papers with similar embeddings</span>
+  <span class="fn">VECTOR_SIMILAR</span>(?similar_paper ex:hasEmbedding
+    <span class="str">"..."</span>^^sutra:f32vec, 0.8)
+
+  <span class="cmt">-- Graph: get the title of the similar paper</span>
+  ?similar_paper ex:title ?title .
+}</code></pre>
+
+    <h3>Vector &rarr; Graph</h3>
+
+    <p>Start in vector space, then use graph patterns to filter or enrich:</p>
+
+<pre><code><span class="cmt">-- Find entities similar to a query, then check what type they are</span>
+<span class="kw">SELECT</span> ?entity ?type <span class="kw">WHERE</span> {
+  <span class="fn">VECTOR_SIMILAR</span>(?entity ex:hasEmbedding <span class="str">"..."</span>^^sutra:f32vec, 0.9)
+  ?entity a ?type .
+}</code></pre>
+
+    <h2>How Vectors Live in the Graph</h2>
+
+    <p>Vectors are not a separate system &mdash; they are <strong>primitive objects</strong> in the graph, like strings or integers. An entity connects to its vector via an ordinary triple:</p>
+
+<pre><code><span class="cmt">-- A vector is the object of a triple</span>
+:paper42 :hasEmbedding <span class="str">"0.23 -0.11 0.87 ..."</span>^^sutra:f32vec .
+
+<span class="cmt">-- Multiple entities can share the same vector (disambiguation)</span>
+:bank_financial :hasEmbedding <span class="str">"0.5 0.3 ..."</span>^^sutra:f32vec .
+:bank_river     :hasEmbedding <span class="str">"0.5 0.3 ..."</span>^^sutra:f32vec .</code></pre>
+
+    <p>When you run <code>VECTOR_SIMILAR</code>, it searches the HNSW index for matching vector objects, then follows the triples backward to find which entities connect to those vectors. This means:</p>
+    <ul>
+        <li>A vector never exists without at least one triple pointing to it</li>
+        <li>Triples always outnumber or equal vectors in a database</li>
+        <li>Vector search inherently does entity resolution &mdash; if two entities share a vector, both are returned</li>
+    </ul>
+
+    <h2>Query Planner</h2>
+
+    <p>The query planner automatically decides execution order based on pattern selectivity:</p>
+
+    <table>
+        <tr><th>Situation</th><th>Strategy</th></tr>
+        <tr>
+            <td>Subject <strong>unbound</strong> at VECTOR_SIMILAR</td>
+            <td>Execute vector search first (top-K), then evaluate graph patterns over candidates. Vector pattern gets weight 1 (highest priority).</td>
+        </tr>
+        <tr>
+            <td>Subject <strong>bound</strong> before VECTOR_SIMILAR</td>
+            <td>Execute graph patterns first to bind the subject, then filter by vector similarity. Vector pattern gets weight 5.</td>
+        </tr>
+        <tr>
+            <td>FILTER expressions</td>
+            <td>Pushed after their dependent variable bindings (weight 10).</td>
+        </tr>
+        <tr>
+            <td>OPTIONAL clauses</td>
+            <td>Always last (weight 20).</td>
+        </tr>
+    </table>
+
+    <h2>SPARQL Protocol</h2>
+
+    <p>SutraDB implements the SPARQL 1.1 Protocol over HTTP:</p>
+
+    <table>
+        <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+        <tr><td><code>/sparql</code></td><td>GET</td><td>Query via <code>?query=</code> URL parameter</td></tr>
+        <tr><td><code>/sparql</code></td><td>POST</td><td>Query in request body</td></tr>
+        <tr><td><code>/triples</code></td><td>POST</td><td>Bulk insert N-Triples data</td></tr>
+        <tr><td><code>/vectors/declare</code></td><td>POST</td><td>Declare a vector predicate with HNSW parameters</td></tr>
+        <tr><td><code>/vectors</code></td><td>POST</td><td>Insert a vector embedding (creates triple + HNSW entry)</td></tr>
+        <tr><td><code>/health</code></td><td>GET</td><td>Health check</td></tr>
+    </table>
+
+</div>
+
+<footer>
+    <a href="../">Home</a> &middot;
+    <a href="../protocols/">Protocols</a> &middot;
+    <a href="../rdf/">RDF</a> &middot;
+    <a href="../owl/">OWL</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>
