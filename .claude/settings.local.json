@@ -30,7 +30,8 @@
       "Read(//c/Users/Immanuelle/**)",
       "Read(//c//**)",
       "Bash(ls:*)",
-      "Bash(du:*)"
+      "Bash(du:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }
