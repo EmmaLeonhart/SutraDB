@@ -34,7 +34,10 @@
       "Bash(taskkill:*)",
       "Bash(git tag:*)",
       "Bash(cargo clippy:*)",
-      "Bash(for f:*)"
+      "Bash(for f:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:emmaleonhart.github.io)",
+      "WebFetch(domain:graphdb.ontotext.com)"
     ]
   }
 }
