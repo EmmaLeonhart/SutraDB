@@ -16,6 +16,14 @@ pub enum HnswError {
     /// The index is empty and cannot be searched.
     #[error("index is empty")]
     EmptyIndex,
+
+    /// A vector index has already been declared for this predicate.
+    #[error("predicate already declared as vector index: {0}")]
+    PredicateAlreadyDeclared(u64),
+
+    /// No vector index exists for this predicate.
+    #[error("no vector index for predicate: {0}")]
+    NoIndexForPredicate(u64),
 }
 
 pub type Result<T> = std::result::Result<T, HnswError>;

@@ -6,6 +6,6 @@ pub mod parser;
 pub mod planner;
 
 pub use error::{Result, SparqlError};
-pub use executor::{execute, Bindings, QueryResult};
+pub use executor::{execute, execute_with_vectors, Bindings, QueryResult};
 pub use parser::{parse, Query};
 pub use planner::optimize;

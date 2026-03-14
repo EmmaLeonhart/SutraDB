@@ -7,7 +7,7 @@
 //!
 //! Results are returned as JSON (application/sparql-results+json).
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::extract::{Query as AxumQuery, State};
 use axum::http::StatusCode;
@@ -19,6 +19,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 use sutra_core::{TermDictionary, TripleStore};
+use sutra_hnsw::VectorRegistry;
 
 use crate::error::ProtoError;
 
@@ -26,6 +27,7 @@ use crate::error::ProtoError;
 pub struct AppState {
     pub store: TripleStore,
     pub dict: TermDictionary,
+    pub vectors: Mutex<VectorRegistry>,
 }
 
 /// Build the axum router with all endpoints.
@@ -74,7 +76,6 @@ async fn sparql_post(
     State(state): State<Arc<AppState>>,
     body: String,
 ) -> Result<Json<SparqlResults>, ProtoError> {
-    // Support both raw query and URL-encoded form
     let query = if let Some(encoded) = body.strip_prefix("query=") {
         urlencoding::decode(encoded)
             .map_err(|e| ProtoError::BadRequest(format!("invalid encoding: {}", e)))?
@@ -89,18 +90,36 @@ async fn sparql_post(
 fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResults>, ProtoError> {
     let mut query = sutra_sparql::parse(query_str)?;
     sutra_sparql::optimize(&mut query);
-    let result = sutra_sparql::execute(&query, &state.store, &state.dict)?;
+
+    let mut vectors = state
+        .vectors
+        .lock()
+        .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
+    let result =
+        sutra_sparql::execute_with_vectors(&query, &state.store, &state.dict, &mut vectors)?;
 
     let bindings: Vec<serde_json::Value> = result
         .rows
         .iter()
-        .map(|row| {
+        .enumerate()
+        .map(|(i, row)| {
             let mut obj = serde_json::Map::new();
             for col in &result.columns {
                 if let Some(&id) = row.get(col) {
                     let value = resolve_term_to_json(id, &state.dict);
                     obj.insert(col.clone(), value);
                 }
+            }
+            // Include similarity scores if present
+            if !result.scores[i].is_empty() {
+                let scores_obj: serde_json::Map<String, serde_json::Value> = result.scores[i]
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::json!(*v)))
+                    .collect();
+                obj.insert(
+                    "_scores".to_string(),
+                    serde_json::Value::Object(scores_obj),
+                );
             }
             serde_json::Value::Object(obj)
         })
@@ -116,7 +135,6 @@ fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResult
 
 /// Convert a TermId back to a JSON value for the SPARQL results format.
 fn resolve_term_to_json(id: sutra_core::TermId, dict: &TermDictionary) -> serde_json::Value {
-    // Check if it's an inline integer
     if let Some(n) = sutra_core::decode_inline_integer(id) {
         return serde_json::json!({
             "type": "literal",
@@ -125,7 +143,6 @@ fn resolve_term_to_json(id: sutra_core::TermId, dict: &TermDictionary) -> serde_
         });
     }
 
-    // Check if it's an inline boolean
     if let Some(b) = sutra_core::decode_inline_boolean(id) {
         return serde_json::json!({
             "type": "literal",
@@ -134,7 +151,6 @@ fn resolve_term_to_json(id: sutra_core::TermId, dict: &TermDictionary) -> serde_
         });
     }
 
-    // Look up in dictionary
     if let Some(term) = dict.resolve(id) {
         if term.starts_with('"') {
             serde_json::json!({
@@ -178,7 +194,11 @@ mod tests {
 
         store.insert(Triple::new(alice, knows, bob)).unwrap();
 
-        Arc::new(AppState { store, dict })
+        Arc::new(AppState {
+            store,
+            dict,
+            vectors: Mutex::new(VectorRegistry::new()),
+        })
     }
 
     #[tokio::test]

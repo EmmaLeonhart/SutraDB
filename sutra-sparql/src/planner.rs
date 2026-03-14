@@ -62,8 +62,18 @@ fn pattern_weight(pattern: &Pattern, bound: &HashSet<String>) -> u32 {
             }
             w
         }
+        // VectorSimilar: weight depends on whether subject is already bound
+        Pattern::VectorSimilar { subject, .. } => {
+            if is_bound(subject, bound) {
+                5 // subject already bound: execute after graph patterns
+            } else {
+                1 // subject unbound: execute vector search first
+            }
+        }
         // FILTERs should come after the patterns that bind their variables
         Pattern::Filter(_) => 10,
+        // UNIONs after regular patterns, before OPTIONAL
+        Pattern::Union(_) => 15,
         // OPTIONALs should come last
         Pattern::Optional(_) => 20,
     }
@@ -93,9 +103,21 @@ fn collect_variables(pattern: &Pattern, vars: &mut HashSet<String>) {
                 vars.insert(name.clone());
             }
         }
+        Pattern::VectorSimilar { subject, .. } => {
+            if let Term::Variable(name) = subject {
+                vars.insert(name.clone());
+            }
+        }
         Pattern::Optional(inner) => {
             for p in inner {
                 collect_variables(p, vars);
+            }
+        }
+        Pattern::Union(branches) => {
+            for branch in branches {
+                for p in branch {
+                    collect_variables(p, vars);
+                }
             }
         }
         Pattern::Filter(_) => {}
@@ -143,6 +165,133 @@ mod tests {
         // Triple pattern should come before FILTER
         assert!(matches!(q.patterns[0], Pattern::Triple { .. }));
         assert!(matches!(q.patterns[1], Pattern::Filter(_)));
+    }
+
+    #[test]
+    fn vector_unbound_comes_first() {
+        // When subject is unbound, VectorSimilar should have weight 1 (comes first)
+        let mut q = Query {
+            prefixes: Default::default(),
+            projection: vec!["doc".into()],
+            distinct: false,
+            patterns: vec![
+                Pattern::Triple {
+                    subject: Term::Variable("doc".into()),
+                    predicate: Term::PrefixedName {
+                        prefix: String::new(),
+                        local: "mentions".into(),
+                    },
+                    object: Term::Variable("entity".into()),
+                },
+                Pattern::VectorSimilar {
+                    subject: Term::Variable("doc".into()),
+                    predicate: Term::PrefixedName {
+                        prefix: String::new(),
+                        local: "hasEmbedding".into(),
+                    },
+                    query_vector: vec![0.1, 0.2, 0.3],
+                    threshold: 0.85,
+                    ef_search: None,
+                    top_k: None,
+                },
+            ],
+            order_by: vec![],
+            limit: None,
+            offset: None,
+        };
+
+        optimize(&mut q);
+
+        // VectorSimilar with unbound subject (weight 1) should come before
+        // triple with 2 unbound vars (weight 2)
+        assert!(matches!(q.patterns[0], Pattern::VectorSimilar { .. }));
+        assert!(matches!(q.patterns[1], Pattern::Triple { .. }));
+    }
+
+    #[test]
+    fn vector_bound_comes_after_binding() {
+        // When subject is already bound by a fully-bound triple, VectorSimilar gets weight 5
+        let mut q = Query {
+            prefixes: Default::default(),
+            projection: vec!["doc".into()],
+            distinct: false,
+            patterns: vec![
+                Pattern::VectorSimilar {
+                    subject: Term::Variable("doc".into()),
+                    predicate: Term::PrefixedName {
+                        prefix: String::new(),
+                        local: "hasEmbedding".into(),
+                    },
+                    query_vector: vec![0.1, 0.2, 0.3],
+                    threshold: 0.85,
+                    ef_search: None,
+                    top_k: None,
+                },
+                Pattern::Triple {
+                    subject: Term::Iri("http://example.org/doc1".into()),
+                    predicate: Term::PrefixedName {
+                        prefix: String::new(),
+                        local: "type".into(),
+                    },
+                    object: Term::Iri("http://example.org/Document".into()),
+                },
+            ],
+            order_by: vec![],
+            limit: None,
+            offset: None,
+        };
+
+        optimize(&mut q);
+
+        // Fully bound triple (weight 0) comes first, then VectorSimilar (weight 1)
+        assert!(matches!(q.patterns[0], Pattern::Triple { .. }));
+        assert!(matches!(q.patterns[1], Pattern::VectorSimilar { .. }));
+    }
+
+    #[test]
+    fn union_comes_after_regular_patterns() {
+        let mut q = Query {
+            prefixes: Default::default(),
+            projection: vec!["s".into()],
+            distinct: false,
+            patterns: vec![
+                Pattern::Union(vec![
+                    vec![Pattern::Triple {
+                        subject: Term::Variable("s".into()),
+                        predicate: Term::A,
+                        object: Term::PrefixedName {
+                            prefix: String::new(),
+                            local: "Person".into(),
+                        },
+                    }],
+                    vec![Pattern::Triple {
+                        subject: Term::Variable("s".into()),
+                        predicate: Term::A,
+                        object: Term::PrefixedName {
+                            prefix: String::new(),
+                            local: "Organization".into(),
+                        },
+                    }],
+                ]),
+                Pattern::Triple {
+                    subject: Term::Variable("s".into()),
+                    predicate: Term::PrefixedName {
+                        prefix: String::new(),
+                        local: "name".into(),
+                    },
+                    object: Term::Variable("name".into()),
+                },
+            ],
+            order_by: vec![],
+            limit: None,
+            offset: None,
+        };
+
+        optimize(&mut q);
+
+        // Triple (weight 2) comes before Union (weight 15)
+        assert!(matches!(q.patterns[0], Pattern::Triple { .. }));
+        assert!(matches!(q.patterns[1], Pattern::Union(_)));
     }
 
     #[test]

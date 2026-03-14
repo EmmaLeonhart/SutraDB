@@ -13,6 +13,12 @@ pub enum SparqlError {
     #[error("query execution error: {0}")]
     Execution(String),
 
+    #[error("vector error: {0}")]
+    Vector(String),
+
+    #[error("HNSW error: {0}")]
+    Hnsw(#[from] sutra_hnsw::HnswError),
+
     #[error("core error: {0}")]
     Core(#[from] sutra_core::CoreError),
 }

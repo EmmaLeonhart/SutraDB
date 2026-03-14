@@ -1,6 +1,6 @@
 //! SutraDB CLI: server, query, import.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use clap::{Parser, Subcommand};
 
@@ -44,11 +44,11 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Serve { port, data_dir } => {
-            // For now use in-memory store; persistent store integration is future work
             let _ = data_dir;
             let state = Arc::new(sutra_proto::AppState {
                 store: sutra_core::TripleStore::new(),
                 dict: sutra_core::TermDictionary::new(),
+                vectors: Mutex::new(sutra_hnsw::VectorRegistry::new()),
             });
 
             let app = sutra_proto::router(state);
@@ -62,10 +62,12 @@ async fn main() -> anyhow::Result<()> {
             let _ = data_dir;
             let dict = sutra_core::TermDictionary::new();
             let store = sutra_core::TripleStore::new();
+            let mut vectors = sutra_hnsw::VectorRegistry::new();
 
             let mut parsed = sutra_sparql::parse(&query)?;
             sutra_sparql::optimize(&mut parsed);
-            let result = sutra_sparql::execute(&parsed, &store, &dict)?;
+            let result =
+                sutra_sparql::execute_with_vectors(&parsed, &store, &dict, &mut vectors)?;
 
             println!("Columns: {:?}", result.columns);
             println!("Rows: {}", result.rows.len());

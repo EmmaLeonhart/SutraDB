@@ -19,4 +19,5 @@ tower-http.workspace = true
 hyper.workspace = true
 urlencoding.workspace = true
 sutra-core.workspace = true
+sutra-hnsw.workspace = true
 sutra-sparql.workspace = true

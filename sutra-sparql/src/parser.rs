@@ -18,10 +18,28 @@ pub struct Query {
     pub distinct: bool,
     /// The WHERE clause patterns.
     pub patterns: Vec<Pattern>,
+    /// ORDER BY clauses.
+    pub order_by: Vec<OrderClause>,
     /// LIMIT clause.
     pub limit: Option<usize>,
     /// OFFSET clause.
     pub offset: Option<usize>,
+}
+
+/// An ORDER BY clause entry.
+#[derive(Debug, Clone)]
+pub struct OrderClause {
+    pub variable: String,
+    pub descending: bool,
+    pub vector_score: Option<VectorScoreExpr>,
+}
+
+/// A VECTOR_SCORE expression used in ORDER BY.
+#[derive(Debug, Clone)]
+pub struct VectorScoreExpr {
+    pub subject: Term,
+    pub predicate: Term,
+    pub query_vector: Vec<f32>,
 }
 
 /// A pattern in the WHERE clause.
@@ -37,6 +55,18 @@ pub enum Pattern {
     Optional(Vec<Pattern>),
     /// FILTER(expression)
     Filter(FilterExpr),
+    /// VECTOR_SIMILAR(?var predicate "vector"^^sutra:f32vec, threshold)
+    /// Optional hints: ef:=N, k:=N
+    VectorSimilar {
+        subject: Term,
+        predicate: Term,
+        query_vector: Vec<f32>,
+        threshold: f32,
+        ef_search: Option<usize>,
+        top_k: Option<usize>,
+    },
+    /// UNION { ... } { ... }
+    Union(Vec<Vec<Pattern>>),
 }
 
 /// A term in a triple pattern.
@@ -54,6 +84,8 @@ pub enum Term {
     TypedLiteral { value: String, datatype: String },
     /// An integer literal: 42
     IntegerLiteral(i64),
+    /// A vector literal: "0.1 0.2 0.3"^^sutra:f32vec
+    VectorLiteral(Vec<f32>),
     /// The special token `a` (shorthand for rdf:type)
     A,
 }
@@ -127,8 +159,16 @@ impl<'a> Parser<'a> {
         self.expect_char('}')?;
 
         // Parse solution modifiers
+        let mut order_by = Vec::new();
         let mut limit = None;
         let mut offset = None;
+
+        self.skip_whitespace();
+        if self.peek_keyword("ORDER") {
+            self.expect_keyword("ORDER")?;
+            self.expect_keyword("BY")?;
+            order_by = self.parse_order_by()?;
+        }
 
         self.skip_whitespace();
         while self.pos < self.input.len() {
@@ -149,6 +189,7 @@ impl<'a> Parser<'a> {
             projection,
             distinct,
             patterns,
+            order_by,
             limit,
             offset,
         })
@@ -201,6 +242,34 @@ impl<'a> Parser<'a> {
                 if self.peek_char() == Some('.') {
                     self.pos += 1;
                 }
+            } else if self.peek_keyword("VECTOR_SIMILAR") {
+                let vs = self.parse_vector_similar()?;
+                patterns.push(vs);
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
+            } else if self.peek_char() == Some('{') {
+                // Sub-group, possibly followed by UNION
+                let first_group = self.parse_group()?;
+                self.skip_whitespace();
+                if self.peek_keyword("UNION") {
+                    let mut branches = vec![first_group];
+                    while self.peek_keyword("UNION") {
+                        self.expect_keyword("UNION")?;
+                        let branch = self.parse_group()?;
+                        branches.push(branch);
+                        self.skip_whitespace();
+                    }
+                    patterns.push(Pattern::Union(branches));
+                } else {
+                    // Just a sub-group, flatten its patterns
+                    patterns.extend(first_group);
+                }
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
             } else {
                 // Triple pattern
                 let subject = self.parse_term()?;
@@ -226,6 +295,208 @@ impl<'a> Parser<'a> {
         Ok(patterns)
     }
 
+    fn parse_group(&mut self) -> Result<Vec<Pattern>> {
+        self.expect_char('{')?;
+        let patterns = self.parse_patterns()?;
+        self.expect_char('}')?;
+        Ok(patterns)
+    }
+
+    fn parse_vector_similar(&mut self) -> Result<Pattern> {
+        self.expect_keyword("VECTOR_SIMILAR")?;
+        self.expect_char('(')?;
+
+        let subject = self.parse_term()?;
+        self.skip_whitespace();
+        let predicate = self.parse_term()?;
+        self.skip_whitespace();
+
+        // Parse the vector literal: "0.1 0.2 0.3"^^<sutra:f32vec>
+        let query_vector = self.parse_vector_literal_value()?;
+        self.skip_whitespace();
+
+        self.expect_char(',')?;
+        self.skip_whitespace();
+
+        let threshold = self.parse_float()?;
+
+        // Parse optional hints: , ef:=N or , k:=N
+        let mut ef_search = None;
+        let mut top_k = None;
+        self.skip_whitespace();
+        while self.peek_char() == Some(',') {
+            self.pos += 1; // consume ','
+            self.skip_whitespace();
+            if self.peek_keyword("ef") {
+                self.expect_keyword("ef")?;
+                self.expect_char(':')?;
+                self.expect_char('=')?;
+                ef_search = Some(self.parse_integer()? as usize);
+            } else if self.peek_keyword("k") {
+                self.expect_keyword("k")?;
+                self.expect_char(':')?;
+                self.expect_char('=')?;
+                top_k = Some(self.parse_integer()? as usize);
+            } else {
+                return Err(self.error("expected 'ef' or 'k' hint in VECTOR_SIMILAR"));
+            }
+            self.skip_whitespace();
+        }
+
+        self.expect_char(')')?;
+
+        Ok(Pattern::VectorSimilar {
+            subject,
+            predicate,
+            query_vector,
+            threshold,
+            ef_search,
+            top_k,
+        })
+    }
+
+    /// Parse a vector literal string and its datatype, returning the parsed f32 values.
+    /// Expects: "0.1 0.2 0.3"^^<http://sutra.dev/f32vec> or "0.1 0.2 0.3"^^<sutra:f32vec>
+    fn parse_vector_literal_value(&mut self) -> Result<Vec<f32>> {
+        self.skip_whitespace();
+        self.expect_char('"')?;
+        let start = self.pos;
+        while self.pos < self.input.len() && self.input.as_bytes()[self.pos] as char != '"' {
+            self.pos += 1;
+        }
+        let value = self.input[start..self.pos].to_string();
+        self.expect_char('"')?;
+
+        // Expect ^^
+        if self.input.get(self.pos..self.pos + 2) != Some("^^") {
+            return Err(self.error("expected ^^ after vector literal string"));
+        }
+        self.pos += 2;
+
+        // Parse the datatype IRI
+        self.skip_whitespace();
+        let datatype = if self.peek_char() == Some('<') {
+            self.parse_iri_ref()?
+        } else {
+            // Try prefixed name like sutra:f32vec
+            let term = self.parse_prefixed_name()?;
+            match term {
+                Term::PrefixedName { prefix, local } => format!("{}:{}", prefix, local),
+                _ => return Err(self.error("expected IRI or prefixed name for vector datatype")),
+            }
+        };
+
+        // Validate the datatype
+        if datatype != "http://sutra.dev/f32vec" && datatype != "sutra:f32vec" {
+            return Err(self.error(&format!("expected sutra:f32vec datatype, got {}", datatype)));
+        }
+
+        // Parse the vector values
+        Self::parse_vector_string(&value)
+            .map_err(|msg| self.error(&msg))
+    }
+
+    fn parse_vector_string(s: &str) -> std::result::Result<Vec<f32>, String> {
+        s.split_whitespace()
+            .map(|v| v.parse::<f32>().map_err(|e| format!("invalid vector component '{}': {}", v, e)))
+            .collect()
+    }
+
+    fn parse_float(&mut self) -> Result<f32> {
+        self.skip_whitespace();
+        let start = self.pos;
+        if self.peek_char() == Some('-') {
+            self.pos += 1;
+        }
+        while self.pos < self.input.len() {
+            let ch = self.input.as_bytes()[self.pos] as char;
+            if ch.is_ascii_digit() || ch == '.' {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        self.input[start..self.pos]
+            .parse::<f32>()
+            .map_err(|_| self.error("expected floating point number"))
+    }
+
+    fn parse_order_by(&mut self) -> Result<Vec<OrderClause>> {
+        let mut clauses = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if self.pos >= self.input.len() {
+                break;
+            }
+            // Check if the next token is a solution modifier keyword rather than an order clause
+            if self.peek_keyword("LIMIT") || self.peek_keyword("OFFSET") {
+                break;
+            }
+
+            let descending;
+            if self.peek_keyword("ASC") {
+                self.expect_keyword("ASC")?;
+                descending = false;
+                self.expect_char('(')?;
+            } else if self.peek_keyword("DESC") {
+                self.expect_keyword("DESC")?;
+                descending = true;
+                self.expect_char('(')?;
+            } else if self.peek_char() == Some('?') {
+                // Bare variable, default ASC
+                let var = self.parse_variable_name()?;
+                clauses.push(OrderClause {
+                    variable: var,
+                    descending: false,
+                    vector_score: None,
+                });
+                continue;
+            } else {
+                break;
+            }
+
+            self.skip_whitespace();
+            // Check for VECTOR_SCORE inside the parens
+            if self.peek_keyword("VECTOR_SCORE") {
+                self.expect_keyword("VECTOR_SCORE")?;
+                self.expect_char('(')?;
+                let subject = self.parse_term()?;
+                self.skip_whitespace();
+                let predicate = self.parse_term()?;
+                self.skip_whitespace();
+                let query_vector = self.parse_vector_literal_value()?;
+                self.expect_char(')')?; // close VECTOR_SCORE
+                self.expect_char(')')?; // close ASC/DESC
+
+                // Use the subject variable name as the clause variable
+                let variable = match &subject {
+                    Term::Variable(name) => name.clone(),
+                    _ => "__vector_score__".to_string(),
+                };
+
+                clauses.push(OrderClause {
+                    variable,
+                    descending,
+                    vector_score: Some(VectorScoreExpr {
+                        subject,
+                        predicate,
+                        query_vector,
+                    }),
+                });
+            } else {
+                // Regular variable inside ASC/DESC
+                let var = self.parse_variable_name()?;
+                self.expect_char(')')?;
+                clauses.push(OrderClause {
+                    variable: var,
+                    descending,
+                    vector_score: None,
+                });
+            }
+        }
+        Ok(clauses)
+    }
+
     fn parse_term(&mut self) -> Result<Term> {
         self.skip_whitespace();
         match self.peek_char() {
@@ -241,6 +512,10 @@ impl<'a> Parser<'a> {
             Some(c) if c.is_ascii_digit() || c == '-' => {
                 let n = self.parse_integer()?;
                 Ok(Term::IntegerLiteral(n))
+            }
+            Some(':') => {
+                // Empty prefix: :localName
+                self.parse_prefixed_name()
             }
             Some(c) if c.is_ascii_alphabetic() || c == '_' => {
                 // Could be 'a' (rdf:type) or a prefixed name
@@ -380,6 +655,22 @@ impl<'a> Parser<'a> {
 
     fn parse_prefixed_name(&mut self) -> Result<Term> {
         let start = self.pos;
+        // Handle empty prefix case (e.g., :localName)
+        if self.peek_char() == Some(':') {
+            let prefix = String::new();
+            self.pos += 1;
+            let local_start = self.pos;
+            while self.pos < self.input.len() {
+                let ch = self.input.as_bytes()[self.pos] as char;
+                if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
+                    self.pos += 1;
+                } else {
+                    break;
+                }
+            }
+            let local = self.input[local_start..self.pos].to_string();
+            return Ok(Term::PrefixedName { prefix, local });
+        }
         while self.pos < self.input.len() {
             let ch = self.input.as_bytes()[self.pos] as char;
             if ch == ':' {
@@ -421,8 +712,41 @@ impl<'a> Parser<'a> {
         // Check for typed literal ^^
         if self.input.get(self.pos..self.pos + 2) == Some("^^") {
             self.pos += 2;
-            let datatype = self.parse_iri_ref()?;
-            Ok(Term::TypedLiteral { value, datatype })
+            // Check if it's a prefixed name or full IRI
+            self.skip_whitespace();
+            if self.peek_char() == Some('<') {
+                let datatype = self.parse_iri_ref()?;
+                if datatype == "http://sutra.dev/f32vec" {
+                    let vec = Self::parse_vector_string(&value)
+                        .map_err(|msg| self.error(&msg))?;
+                    Ok(Term::VectorLiteral(vec))
+                } else {
+                    Ok(Term::TypedLiteral { value, datatype })
+                }
+            } else {
+                // Try prefixed name
+                let saved_pos = self.pos;
+                match self.parse_prefixed_name() {
+                    Ok(Term::PrefixedName { ref prefix, ref local })
+                        if prefix == "sutra" && local == "f32vec" =>
+                    {
+                        let vec = Self::parse_vector_string(&value)
+                            .map_err(|msg| self.error(&msg))?;
+                        Ok(Term::VectorLiteral(vec))
+                    }
+                    Ok(Term::PrefixedName { prefix, local }) => {
+                        Ok(Term::TypedLiteral {
+                            value,
+                            datatype: format!("{}:{}", prefix, local),
+                        })
+                    }
+                    _ => {
+                        self.pos = saved_pos;
+                        let datatype = self.parse_iri_ref()?;
+                        Ok(Term::TypedLiteral { value, datatype })
+                    }
+                }
+            }
         } else {
             Ok(Term::Literal(value))
         }
@@ -647,5 +971,127 @@ mod tests {
     fn parse_error_on_invalid() {
         assert!(parse("INVALID QUERY").is_err());
         assert!(parse("SELECT WHERE { }").is_err());
+    }
+
+    #[test]
+    fn parse_vector_similar_with_threshold() {
+        let q = parse(
+            r#"SELECT ?doc WHERE { VECTOR_SIMILAR(?doc :hasEmbedding "0.1 0.2 0.3"^^<http://sutra.dev/f32vec>, 0.85) }"#,
+        )
+        .unwrap();
+        assert_eq!(q.patterns.len(), 1);
+        match &q.patterns[0] {
+            Pattern::VectorSimilar {
+                subject,
+                predicate,
+                query_vector,
+                threshold,
+                ef_search,
+                top_k,
+            } => {
+                assert_eq!(*subject, Term::Variable("doc".to_string()));
+                assert_eq!(
+                    *predicate,
+                    Term::PrefixedName {
+                        prefix: String::new(),
+                        local: "hasEmbedding".to_string()
+                    }
+                );
+                assert_eq!(query_vector, &[0.1f32, 0.2, 0.3]);
+                assert!((threshold - 0.85).abs() < f32::EPSILON);
+                assert!(ef_search.is_none());
+                assert!(top_k.is_none());
+            }
+            _ => panic!("expected VectorSimilar pattern"),
+        }
+    }
+
+    #[test]
+    fn parse_vector_similar_with_ef_hint() {
+        let q = parse(
+            r#"SELECT ?doc WHERE { VECTOR_SIMILAR(?doc :hasEmbedding "0.1 0.2"^^<http://sutra.dev/f32vec>, 0.9, ef:=200) }"#,
+        )
+        .unwrap();
+        match &q.patterns[0] {
+            Pattern::VectorSimilar { ef_search, top_k, .. } => {
+                assert_eq!(*ef_search, Some(200));
+                assert!(top_k.is_none());
+            }
+            _ => panic!("expected VectorSimilar pattern"),
+        }
+    }
+
+    #[test]
+    fn parse_vector_similar_with_k_hint() {
+        let q = parse(
+            r#"SELECT ?doc WHERE { VECTOR_SIMILAR(?doc :hasEmbedding "0.1 0.2"^^<http://sutra.dev/f32vec>, 0.9, k:=10) }"#,
+        )
+        .unwrap();
+        match &q.patterns[0] {
+            Pattern::VectorSimilar { top_k, ef_search, .. } => {
+                assert_eq!(*top_k, Some(10));
+                assert!(ef_search.is_none());
+            }
+            _ => panic!("expected VectorSimilar pattern"),
+        }
+    }
+
+    #[test]
+    fn parse_order_by_asc_desc() {
+        let q = parse("SELECT ?s ?name WHERE { ?s ?p ?name } ORDER BY ASC(?name)").unwrap();
+        assert_eq!(q.order_by.len(), 1);
+        assert_eq!(q.order_by[0].variable, "name");
+        assert!(!q.order_by[0].descending);
+        assert!(q.order_by[0].vector_score.is_none());
+
+        let q2 = parse("SELECT ?s ?name WHERE { ?s ?p ?name } ORDER BY DESC(?name)").unwrap();
+        assert_eq!(q2.order_by.len(), 1);
+        assert_eq!(q2.order_by[0].variable, "name");
+        assert!(q2.order_by[0].descending);
+    }
+
+    #[test]
+    fn parse_order_by_vector_score() {
+        let q = parse(
+            r#"SELECT ?doc WHERE { ?doc ?p ?o } ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "0.1 0.2 0.3"^^<http://sutra.dev/f32vec>))"#,
+        )
+        .unwrap();
+        assert_eq!(q.order_by.len(), 1);
+        assert!(q.order_by[0].descending);
+        let vs = q.order_by[0].vector_score.as_ref().unwrap();
+        assert_eq!(vs.subject, Term::Variable("doc".to_string()));
+        assert_eq!(vs.query_vector, vec![0.1f32, 0.2, 0.3]);
+    }
+
+    #[test]
+    fn parse_union() {
+        let q = parse(
+            "SELECT ?s WHERE { \
+             { ?s a :Person } UNION { ?s a :Organization } \
+             }",
+        )
+        .unwrap();
+        assert_eq!(q.patterns.len(), 1);
+        match &q.patterns[0] {
+            Pattern::Union(branches) => {
+                assert_eq!(branches.len(), 2);
+                assert_eq!(branches[0].len(), 1);
+                assert_eq!(branches[1].len(), 1);
+            }
+            _ => panic!("expected Union pattern"),
+        }
+    }
+
+    #[test]
+    fn parse_vector_literal_in_triple() {
+        let q = parse(
+            r#"SELECT ?s WHERE { ?s :hasEmbedding "0.5 -0.3 1.0"^^<http://sutra.dev/f32vec> }"#,
+        )
+        .unwrap();
+        if let Pattern::Triple { object, .. } = &q.patterns[0] {
+            assert_eq!(*object, Term::VectorLiteral(vec![0.5, -0.3, 1.0]));
+        } else {
+            panic!("expected triple pattern");
+        }
     }
 }

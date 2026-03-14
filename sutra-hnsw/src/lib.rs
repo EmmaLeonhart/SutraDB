@@ -5,10 +5,12 @@
 pub mod error;
 pub mod index;
 pub mod node;
+pub mod registry;
 pub mod vector;
 
 pub use error::{HnswError, Result};
 pub use index::{HnswConfig, HnswIndex, SearchResult};
+pub use registry::{VectorPredicateConfig, VectorRegistry};
 pub use vector::{
     cosine_similarity, dot_product, l2_norm, normalize, normalized, squared_euclidean,
     DistanceMetric,
