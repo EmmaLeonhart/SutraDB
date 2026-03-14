@@ -4,3 +4,8 @@ pub mod error;
 pub mod executor;
 pub mod parser;
 pub mod planner;
+
+pub use error::{Result, SparqlError};
+pub use executor::{execute, Bindings, QueryResult};
+pub use parser::{parse, Query};
+pub use planner::optimize;
