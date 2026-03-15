@@ -36,7 +36,7 @@ pub struct QueryResult {
 pub struct ExecutionContext<'a> {
     pub store: &'a TripleStore,
     pub dict: &'a TermDictionary,
-    pub vectors: &'a mut VectorRegistry,
+    pub vectors: &'a VectorRegistry,
     pub prefixes: &'a HashMap<String, String>,
     pub config: &'a DatabaseConfig,
 }
@@ -46,7 +46,7 @@ pub fn execute_with_vectors(
     query: &Query,
     store: &TripleStore,
     dict: &TermDictionary,
-    vectors: &mut VectorRegistry,
+    vectors: &VectorRegistry,
 ) -> Result<QueryResult> {
     let default_config = DatabaseConfig::default();
     execute_with_config(query, store, dict, vectors, &default_config)
@@ -57,7 +57,7 @@ pub fn execute_with_config(
     query: &Query,
     store: &TripleStore,
     dict: &TermDictionary,
-    vectors: &mut VectorRegistry,
+    vectors: &VectorRegistry,
     config: &DatabaseConfig,
 ) -> Result<QueryResult> {
     let mut ctx = ExecutionContext {

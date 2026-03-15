@@ -88,9 +88,6 @@ pub struct HnswIndex {
     ml: f64,
     /// RNG state for layer assignment (xorshift64).
     rng_state: u64,
-    /// Reusable visited list to avoid allocation on the search hot path.
-    /// Reset (cleared) before each search.
-    visited: Vec<bool>,
 }
 
 impl HnswIndex {
@@ -105,7 +102,6 @@ impl HnswIndex {
             max_layer: 0,
             ml,
             rng_state: 0x517cc1b727220a95, // well-distributed seed
-            visited: Vec::new(),
         }
     }
 
@@ -233,12 +229,10 @@ impl HnswIndex {
     ///
     /// `ef_search` controls the beam width (higher = better recall, slower).
     /// The query vector is preprocessed according to the distance metric.
-    pub fn search(
-        &mut self,
-        query: &[f32],
-        k: usize,
-        ef_search: usize,
-    ) -> Result<Vec<SearchResult>> {
+    /// Search is `&self` (not `&mut self`) so multiple threads can search
+    /// concurrently. The visited list is allocated per-call (following Qdrant's
+    /// thread-local pattern) instead of being stored in the struct.
+    pub fn search(&self, query: &[f32], k: usize, ef_search: usize) -> Result<Vec<SearchResult>> {
         if query.len() != self.config.dimensions {
             return Err(HnswError::DimensionMismatch {
                 expected: self.config.dimensions,
@@ -354,7 +348,7 @@ impl HnswIndex {
 
     /// Beam search at a single layer (using node index for query).
     fn search_layer_internal(
-        &mut self,
+        &self,
         query_idx: u32,
         start: u32,
         ef: usize,
@@ -366,20 +360,18 @@ impl HnswIndex {
 
     /// Beam search at a single layer using a raw query vector.
     ///
-    /// Uses a reusable visited list to avoid allocation on the hot path.
+    /// Visited list is allocated per-call (Qdrant pattern) so search is &self,
+    /// enabling concurrent reads without locking.
     fn search_layer_by_vec(
-        &mut self,
+        &self,
         query: &[f32],
         start: u32,
         ef: usize,
         layer: u8,
     ) -> Vec<(f32, u32)> {
-        // Resize and clear visited list
+        // Per-call visited list (not stored in struct — enables concurrent search)
         let n = self.nodes.len();
-        self.visited.resize(n, false);
-        for v in self.visited.iter_mut() {
-            *v = false;
-        }
+        let mut visited = vec![false; n];
 
         let start_score = self.score_vec_node(query, start);
 
@@ -388,7 +380,7 @@ impl HnswIndex {
         // results: min-heap — worst of the ef-best results is at top
         let mut results: BinaryHeap<Reverse<OrdF32Pair>> = BinaryHeap::new();
 
-        self.visited[start as usize] = true;
+        visited[start as usize] = true;
         candidates.push(OrdF32Pair(start_score, start));
         results.push(Reverse(OrdF32Pair(start_score, start)));
 
@@ -406,10 +398,10 @@ impl HnswIndex {
 
             for i in 0..neighbor_count {
                 let neighbor = self.nodes[c_idx as usize].neighbors[layer_idx][i];
-                if self.visited[neighbor as usize] {
+                if visited[neighbor as usize] {
                     continue;
                 }
-                self.visited[neighbor as usize] = true;
+                visited[neighbor as usize] = true;
 
                 let score = self.score_vec_node(query, neighbor);
                 let worst_result = results.peek().map(|r| r.0 .0).unwrap_or(f32::NEG_INFINITY);

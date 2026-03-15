@@ -10,7 +10,7 @@
 //!
 //! Results are returned as JSON (application/sparql-results+json).
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use axum::extract::{Query as AxumQuery, State};
 use axum::http::StatusCode;
@@ -27,10 +27,13 @@ use sutra_hnsw::VectorRegistry;
 use crate::error::ProtoError;
 
 /// Shared application state.
+///
+/// Uses RwLock for read-heavy workloads (concurrent SPARQL queries).
+/// Mutex for vectors because insert() needs &mut but search() is &self.
 pub struct AppState {
-    pub store: Mutex<TripleStore>,
-    pub dict: Mutex<TermDictionary>,
-    pub vectors: Mutex<VectorRegistry>,
+    pub store: RwLock<TripleStore>,
+    pub dict: RwLock<TermDictionary>,
+    pub vectors: RwLock<VectorRegistry>,
 }
 
 /// Build the axum router with all endpoints.
@@ -97,19 +100,20 @@ fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResult
     let mut query = sutra_sparql::parse(query_str)?;
     sutra_sparql::optimize(&mut query);
 
+    // Read locks: concurrent SPARQL queries don't block each other
     let store = state
         .store
-        .lock()
+        .read()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
     let dict = state
         .dict
-        .lock()
+        .read()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
-    let mut vectors = state
+    let vectors = state
         .vectors
-        .lock()
+        .read()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
-    let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &mut vectors)?;
+    let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &vectors)?;
 
     let bindings: Vec<serde_json::Value> = result
         .rows
@@ -200,11 +204,11 @@ async fn insert_triples(
 ) -> Result<Json<InsertTriplesResponse>, ProtoError> {
     let mut dict = state
         .dict
-        .lock()
+        .write()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
     let mut store = state
         .store
-        .lock()
+        .write()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
 
     let mut inserted = 0usize;
@@ -307,7 +311,7 @@ async fn declare_vector_predicate(
     let predicate_id = {
         let mut dict = state
             .dict
-            .lock()
+            .write()
             .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
         dict.intern(&req.predicate)
     };
@@ -322,7 +326,7 @@ async fn declare_vector_predicate(
 
     let mut vectors = state
         .vectors
-        .lock()
+        .write()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
     vectors
         .declare(config)
@@ -369,7 +373,7 @@ async fn insert_vector(
     let (predicate_id, subject_id, object_id) = {
         let mut dict = state
             .dict
-            .lock()
+            .write()
             .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
         let p = dict.intern(&req.predicate);
         let s = dict.intern(&req.subject);
@@ -384,7 +388,7 @@ async fn insert_vector(
     {
         let mut store = state
             .store
-            .lock()
+            .write()
             .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
         // Ignore duplicate triple errors (allows multiple subjects to point to same vector)
         let _ = store.insert(sutra_core::Triple::new(subject_id, predicate_id, object_id));
@@ -395,7 +399,7 @@ async fn insert_vector(
     // the HNSW insert may error — that's fine, the vector is already indexed.
     let mut vectors = state
         .vectors
-        .lock()
+        .write()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
     let _ = vectors.insert(predicate_id, req.vector, object_id);
 
@@ -429,9 +433,9 @@ mod tests {
         store.insert(Triple::new(alice, knows, bob)).unwrap();
 
         Arc::new(AppState {
-            store: Mutex::new(store),
-            dict: Mutex::new(dict),
-            vectors: Mutex::new(VectorRegistry::new()),
+            store: RwLock::new(store),
+            dict: RwLock::new(dict),
+            vectors: RwLock::new(VectorRegistry::new()),
         })
     }
 

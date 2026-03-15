@@ -179,9 +179,14 @@ Do not implement these without explicit instruction:
 
 ---
 
-## Reference Architecture: Oxigraph
+## Reference Architectures: Oxigraph + Qdrant
 
-[Oxigraph](https://github.com/oxigraph/oxigraph) is the closest existing Rust triplestore. Follow their proven patterns for storage, indexing, and SPARQL pipeline design where applicable. SutraDB's differentiator is native HNSW vector indexing — Oxigraph has no vector support.
+SutraDB draws from two Rust databases:
+
+- **[Oxigraph](https://github.com/oxigraph/oxigraph)** — Rust RDF triplestore. Reference for storage (RocksDB), indexing (SPO/POS/OSP), SPARQL pipeline (parser → optimizer → evaluator), snapshot-based transaction isolation.
+- **[Qdrant](https://github.com/qdrant/qdrant)** — Rust vector database. Reference for HNSW implementation (immutable GraphLayers for search, thread-local visited pools, per-node RwLock during construction), vector preprocessing (normalize-at-insert for cosine).
+
+SutraDB's differentiator: unifying both into one system where vectors are triples and the query planner treats HNSW as a 4th index type alongside SPO/POS/OSP.
 
 ---
 

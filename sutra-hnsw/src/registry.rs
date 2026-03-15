@@ -102,8 +102,10 @@ impl VectorRegistry {
     ///
     /// Returns an error if no index has been declared for the predicate,
     /// or if the query vector dimensions don't match.
+    /// Search is `&self` — concurrent reads are safe because the visited list
+    /// is allocated per-call inside HnswIndex::search (Qdrant pattern).
     pub fn search(
-        &mut self,
+        &self,
         predicate_id: TermId,
         query: &[f32],
         k: usize,
@@ -111,7 +113,7 @@ impl VectorRegistry {
     ) -> Result<Vec<SearchResult>> {
         let index = self
             .indexes
-            .get_mut(&predicate_id)
+            .get(&predicate_id)
             .ok_or(HnswError::NoIndexForPredicate(predicate_id))?;
         index.search(query, k, ef_search)
     }
