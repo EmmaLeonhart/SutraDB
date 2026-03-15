@@ -101,6 +101,82 @@ fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Resu
         }
     }
 
+    // DESCRIBE query: return all triples about the described resource
+    if query.query_type == QueryType::Describe {
+        let mut all_triples = Vec::new();
+        let mut all_scores = Vec::new();
+
+        for row in &results {
+            // For each result row, get the described resource
+            for var_or_iri in &query.projection {
+                let resource_id = if let Some(&id) = row.get(var_or_iri) {
+                    Some(id)
+                } else {
+                    // It's a direct IRI, not a variable
+                    ctx.dict.lookup(var_or_iri)
+                };
+
+                if let Some(id) = resource_id {
+                    // Get all triples where this is the subject
+                    for triple in ctx.store.find_by_subject(id) {
+                        let mut r = HashMap::new();
+                        r.insert("subject".to_string(), triple.subject);
+                        r.insert("predicate".to_string(), triple.predicate);
+                        r.insert("object".to_string(), triple.object);
+                        all_triples.push(r);
+                        all_scores.push(HashMap::new());
+                    }
+                    // Get all triples where this is the object
+                    for triple in ctx.store.find_by_object(id) {
+                        let mut r = HashMap::new();
+                        r.insert("subject".to_string(), triple.subject);
+                        r.insert("predicate".to_string(), triple.predicate);
+                        r.insert("object".to_string(), triple.object);
+                        all_triples.push(r);
+                        all_scores.push(HashMap::new());
+                    }
+                }
+            }
+        }
+
+        return Ok(QueryResult {
+            columns: vec!["subject".to_string(), "predicate".to_string(), "object".to_string()],
+            rows: all_triples,
+            scores: all_scores,
+        });
+    }
+
+    // CONSTRUCT query: instantiate template with each result row
+    if query.query_type == QueryType::Construct {
+        let mut constructed = Vec::new();
+        let mut constructed_scores = Vec::new();
+
+        for row in &results {
+            for pattern in &query.construct_template {
+                if let Pattern::Triple { subject, predicate, object } = pattern {
+                    let s = resolve_term(subject, row, ctx.dict, ctx.prefixes)?;
+                    let p = resolve_term(predicate, row, ctx.dict, ctx.prefixes)?;
+                    let o = resolve_term(object, row, ctx.dict, ctx.prefixes)?;
+
+                    if let (Some(s_id), Some(p_id), Some(o_id)) = (s, p, o) {
+                        let mut r = HashMap::new();
+                        r.insert("subject".to_string(), s_id);
+                        r.insert("predicate".to_string(), p_id);
+                        r.insert("object".to_string(), o_id);
+                        constructed.push(r);
+                        constructed_scores.push(HashMap::new());
+                    }
+                }
+            }
+        }
+
+        return Ok(QueryResult {
+            columns: vec!["subject".to_string(), "predicate".to_string(), "object".to_string()],
+            rows: constructed,
+            scores: constructed_scores,
+        });
+    }
+
     // ASK query: return a single boolean row
     if query.query_type == QueryType::Ask {
         let has_results = !results.is_empty();

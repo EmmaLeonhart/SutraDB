@@ -14,6 +14,8 @@ pub enum QueryType {
     Ask,
     InsertData,
     DeleteData,
+    Construct,
+    Describe,
 }
 
 /// An aggregate expression in the projection.
@@ -61,6 +63,8 @@ pub struct Query {
     pub patterns: Vec<Pattern>,
     /// GROUP BY variables.
     pub group_by: Vec<String>,
+    /// CONSTRUCT template patterns (only for CONSTRUCT queries).
+    pub construct_template: Vec<Pattern>,
     /// ORDER BY clauses.
     pub order_by: Vec<OrderClause>,
     /// LIMIT clause.
@@ -223,7 +227,7 @@ impl<'a> Parser<'a> {
             self.skip_whitespace();
         }
 
-        // Determine query type: SELECT, ASK, INSERT DATA, DELETE DATA
+        // Determine query type
         let query_type = if self.peek_keyword("ASK") {
             self.expect_keyword("ASK")?;
             QueryType::Ask
@@ -237,6 +241,12 @@ impl<'a> Parser<'a> {
             self.skip_whitespace();
             self.expect_keyword("DATA")?;
             QueryType::DeleteData
+        } else if self.peek_keyword("CONSTRUCT") {
+            self.expect_keyword("CONSTRUCT")?;
+            QueryType::Construct
+        } else if self.peek_keyword("DESCRIBE") {
+            self.expect_keyword("DESCRIBE")?;
+            QueryType::Describe
         } else {
             self.expect_keyword("SELECT")?;
             QueryType::Select
@@ -258,6 +268,28 @@ impl<'a> Parser<'a> {
             aggregates = aggs;
         }
 
+        // CONSTRUCT: parse template, then WHERE
+        let mut construct_template = Vec::new();
+        if query_type == QueryType::Construct {
+            self.skip_whitespace();
+            self.expect_char('{')?;
+            construct_template = self.parse_patterns()?;
+            self.expect_char('}')?;
+        }
+
+        // DESCRIBE: parse the resource term as a single-variable projection
+        if query_type == QueryType::Describe {
+            self.skip_whitespace();
+            if self.peek_char() == Some('?') {
+                projection = vec![self.parse_variable_name()?];
+            } else {
+                let term = self.parse_term()?;
+                if let Term::Iri(iri) = &term {
+                    projection = vec![iri.clone()];
+                }
+            }
+        }
+
         // For INSERT DATA / DELETE DATA, go straight to the { } block
         if query_type == QueryType::InsertData || query_type == QueryType::DeleteData {
             self.skip_whitespace();
@@ -273,6 +305,7 @@ impl<'a> Parser<'a> {
                 distinct: false,
                 patterns,
                 group_by: vec![],
+                construct_template: vec![],
                 order_by: vec![],
                 limit: None,
                 offset: None,
@@ -336,6 +369,7 @@ impl<'a> Parser<'a> {
             distinct,
             patterns,
             group_by,
+            construct_template,
             order_by,
             limit,
             offset,
