@@ -1,0 +1,398 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/graph_node.dart';
+import '../models/triple.dart';
+import '../services/connection_provider.dart';
+import '../theme/sutra_theme.dart';
+import '../widgets/graph_canvas.dart';
+
+/// Main graph visualization screen.
+///
+/// Loads triples from SutraDB and renders them as an interactive
+/// force-directed graph. Supports filtering by semantic/vector/all view modes.
+class GraphScreen extends StatefulWidget {
+  const GraphScreen({super.key});
+
+  @override
+  State<GraphScreen> createState() => _GraphScreenState();
+}
+
+class _GraphScreenState extends State<GraphScreen> {
+  List<Triple> _triples = [];
+  List<GraphNode> _nodes = [];
+  List<GraphEdge> _edges = [];
+  GraphViewMode _viewMode = GraphViewMode.all;
+  String? _selectedNodeId;
+  bool _loading = false;
+  String? _error;
+  int _limit = 500;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadGraph());
+  }
+
+  Future<void> _loadGraph() async {
+    final conn = context.read<ConnectionProvider>();
+    if (!conn.connected) {
+      setState(() => _error = 'Not connected to SutraDB');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final triples = await conn.client.fetchTriples(limit: _limit);
+      _triples = triples;
+      _buildGraph(triples);
+      setState(() => _loading = false);
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  void _buildGraph(List<Triple> triples) {
+    final nodeIds = <String>{};
+    final nodes = <GraphNode>[];
+    final edges = <GraphEdge>[];
+    final degreeCounts = <String, int>{};
+    final hasVectorSet = <String>{};
+
+    for (final t in triples) {
+      final tripleType = classifyTriple(t);
+
+      // Track vector subjects
+      if (tripleType == TripleType.vector) {
+        hasVectorSet.add(t.subject);
+      }
+
+      // Subject node
+      if (!nodeIds.contains(t.subject)) {
+        nodeIds.add(t.subject);
+        nodes.add(GraphNode(
+          id: t.subject,
+          label: Triple.shortName(t.subject),
+          type: t.subject.startsWith('_:')
+              ? NodeType.blankNode
+              : NodeType.entity,
+        ));
+      }
+      degreeCounts[t.subject] = (degreeCounts[t.subject] ?? 0) + 1;
+
+      // Object node (only for IRI/blank node objects, not literals)
+      if (!t.object.startsWith('"') && !t.isVector) {
+        if (!nodeIds.contains(t.object)) {
+          nodeIds.add(t.object);
+          nodes.add(GraphNode(
+            id: t.object,
+            label: Triple.shortName(t.object),
+            type: t.object.startsWith('_:')
+                ? NodeType.blankNode
+                : NodeType.entity,
+          ));
+        }
+        degreeCounts[t.object] = (degreeCounts[t.object] ?? 0) + 1;
+
+        // Edge
+        EdgeType edgeType;
+        switch (tripleType) {
+          case TripleType.vector:
+            edgeType = EdgeType.vector;
+          case TripleType.hnswEdge:
+            edgeType = EdgeType.hnswNeighbor;
+          case TripleType.semantic:
+            edgeType = EdgeType.semantic;
+        }
+
+        edges.add(GraphEdge(
+          sourceId: t.subject,
+          targetId: t.object,
+          label: Triple.shortName(t.predicate),
+          type: edgeType,
+        ));
+      }
+    }
+
+    // Apply degree and vector flags
+    for (final node in nodes) {
+      node.degree = degreeCounts[node.id] ?? 0;
+      if (hasVectorSet.contains(node.id)) {
+        // Mark via constructor — we rebuild anyway
+      }
+    }
+
+    _nodes = nodes;
+    _edges = edges;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Toolbar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: const BoxDecoration(
+            color: SutraTheme.surface,
+            border: Border(bottom: BorderSide(color: SutraTheme.border)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.hub, size: 18, color: SutraTheme.accent),
+              const SizedBox(width: 8),
+              const Text('Graph',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600, color: SutraTheme.text)),
+              const Spacer(),
+
+              // View mode toggle
+              SegmentedButton<GraphViewMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: GraphViewMode.all,
+                    label: Text('All', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.layers, size: 14),
+                  ),
+                  ButtonSegment(
+                    value: GraphViewMode.semanticOnly,
+                    label: Text('Semantic', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.schema, size: 14),
+                  ),
+                  ButtonSegment(
+                    value: GraphViewMode.vectorOnly,
+                    label: Text('Vector', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.grain, size: 14),
+                  ),
+                ],
+                selected: {_viewMode},
+                onSelectionChanged: (s) =>
+                    setState(() => _viewMode = s.first),
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: WidgetStatePropertyAll(
+                      TextStyle(fontSize: 11)),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // Limit selector
+              DropdownButton<int>(
+                value: _limit,
+                items: [100, 250, 500, 1000, 2500]
+                    .map((v) => DropdownMenuItem(
+                        value: v,
+                        child: Text('$v triples',
+                            style: const TextStyle(fontSize: 12))))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    _limit = v;
+                    _loadGraph();
+                  }
+                },
+                underline: const SizedBox(),
+                dropdownColor: SutraTheme.surface,
+              ),
+
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 18),
+                tooltip: 'Reload',
+                onPressed: _loadGraph,
+              ),
+            ],
+          ),
+        ),
+
+        // Graph area
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.error_outline,
+                              color: SutraTheme.red, size: 48),
+                          const SizedBox(height: 8),
+                          Text(_error!,
+                              style:
+                                  const TextStyle(color: SutraTheme.muted)),
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            onPressed: _loadGraph,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Row(
+                      children: [
+                        // Graph canvas
+                        Expanded(
+                          child: GraphCanvas(
+                            nodes: _nodes,
+                            edges: _edges,
+                            viewMode: _viewMode,
+                            onNodeSelected: (id) =>
+                                setState(() => _selectedNodeId = id),
+                          ),
+                        ),
+                        // Detail panel
+                        if (_selectedNodeId != null)
+                          _buildDetailPanel(),
+                      ],
+                    ),
+        ),
+
+        // Status bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: const BoxDecoration(
+            color: SutraTheme.surface,
+            border: Border(top: BorderSide(color: SutraTheme.border)),
+          ),
+          child: Row(
+            children: [
+              Text(
+                '${_nodes.length} nodes, ${_edges.length} edges '
+                '(${_triples.length} triples loaded)',
+                style: const TextStyle(
+                    color: SutraTheme.muted, fontSize: 11),
+              ),
+              const Spacer(),
+              Text(
+                'Scroll to zoom, drag to pan, click nodes to inspect',
+                style: const TextStyle(
+                    color: SutraTheme.muted, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetailPanel() {
+    final node = _nodes.where((n) => n.id == _selectedNodeId).firstOrNull;
+    if (node == null) return const SizedBox();
+
+    final relatedTriples =
+        _triples.where((t) => t.subject == node.id || t.object == node.id);
+
+    return Container(
+      width: 280,
+      decoration: const BoxDecoration(
+        color: SutraTheme.surface,
+        border: Border(left: BorderSide(color: SutraTheme.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    node.label,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: SutraTheme.accent,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: () =>
+                      setState(() => _selectedNodeId = null),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: SutraTheme.border),
+
+          // Full IRI
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: SelectableText(
+              node.id,
+              style: const TextStyle(
+                  color: SutraTheme.muted, fontSize: 11),
+            ),
+          ),
+
+          // Stats
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                Chip(
+                  label: Text('${node.degree} connections'),
+                  visualDensity: VisualDensity.compact,
+                ),
+                if (node.hasVector)
+                  const Chip(
+                    label: Text('Has vector'),
+                    avatar: Icon(Icons.grain, size: 14,
+                        color: SutraTheme.purple),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: Text('Related triples',
+                style: TextStyle(
+                    color: SutraTheme.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+          ),
+          const Divider(height: 8, color: SutraTheme.border),
+
+          // Related triples list
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: relatedTriples.map((t) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                        text: '${Triple.shortName(t.predicate)} ',
+                        style: const TextStyle(
+                            color: SutraTheme.green, fontSize: 11),
+                      ),
+                      TextSpan(
+                        text: t.subject == node!.id
+                            ? Triple.shortName(t.object)
+                            : Triple.shortName(t.subject),
+                        style: const TextStyle(
+                            color: SutraTheme.text, fontSize: 11),
+                      ),
+                    ]),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
