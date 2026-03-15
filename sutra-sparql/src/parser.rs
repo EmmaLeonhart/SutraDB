@@ -105,6 +105,10 @@ pub enum FilterExpr {
     Bound(String),
     /// !bound(?var)
     NotBound(String),
+    /// NOT EXISTS { patterns }
+    NotExists(Vec<Pattern>),
+    /// EXISTS { patterns }
+    Exists(Vec<Pattern>),
 }
 
 /// Parse a SPARQL query string into a Query AST.
@@ -539,8 +543,50 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_filter(&mut self) -> Result<FilterExpr> {
+        self.skip_whitespace();
+
+        // FILTER NOT EXISTS { ... } (no parentheses)
+        if self.peek_keyword("NOT") {
+            self.expect_keyword("NOT")?;
+            self.skip_whitespace();
+            self.expect_keyword("EXISTS")?;
+            self.skip_whitespace();
+            let patterns = self.parse_group()?;
+            return Ok(FilterExpr::NotExists(patterns));
+        }
+
+        // FILTER EXISTS { ... } (no parentheses)
+        if self.peek_keyword("EXISTS") {
+            self.expect_keyword("EXISTS")?;
+            self.skip_whitespace();
+            let patterns = self.parse_group()?;
+            return Ok(FilterExpr::Exists(patterns));
+        }
+
         self.expect_char('(')?;
         self.skip_whitespace();
+
+        // FILTER(NOT EXISTS { ... })
+        if self.peek_keyword("NOT") {
+            self.expect_keyword("NOT")?;
+            self.skip_whitespace();
+            self.expect_keyword("EXISTS")?;
+            self.skip_whitespace();
+            let patterns = self.parse_group()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(FilterExpr::NotExists(patterns));
+        }
+
+        // FILTER(EXISTS { ... })
+        if self.peek_keyword("EXISTS") {
+            self.expect_keyword("EXISTS")?;
+            self.skip_whitespace();
+            let patterns = self.parse_group()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(FilterExpr::Exists(patterns));
+        }
 
         // Check for bound/!bound
         if self.peek_keyword("bound") {

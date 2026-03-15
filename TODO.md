@@ -60,7 +60,7 @@ The server is currently in-memory only. This is the #1 blocker.
 
 ## Priority 2: Parser & Ingestion Gaps
 
-- [ ] Blank node support in N-Triples parser (`_:b0`, `_:genid123`)
+- [x] Blank node support in N-Triples parser (`_:b0`, `_:genid123`)
 - [ ] Turtle (.ttl) parser for bulk import (consider using Oxigraph's oxttl crate)
 - [ ] `sutra import` CLI command (`sutra import data.nt --data my.sdb`)
 - [ ] `sutra export` CLI command (dump to Turtle/N-Triples)

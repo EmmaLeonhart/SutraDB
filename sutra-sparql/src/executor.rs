@@ -219,7 +219,7 @@ fn evaluate_pattern(
             let mut filtered = Vec::new();
             let mut filtered_scores = Vec::new();
             for (i, row) in current.iter().enumerate() {
-                if evaluate_filter(expr, row) {
+                if evaluate_filter(expr, row, ctx) {
                     filtered.push(row.clone());
                     filtered_scores.push(current_scores[i].clone());
                 }
@@ -832,7 +832,7 @@ fn resolve_vector_to_entities(vector_object_id: TermId, ctx: &ExecutionContext<'
     entities
 }
 
-fn evaluate_filter(expr: &FilterExpr, row: &Bindings) -> bool {
+fn evaluate_filter(expr: &FilterExpr, row: &Bindings, ctx: &mut ExecutionContext<'_>) -> bool {
     match expr {
         FilterExpr::Equals(left, right) => {
             let l = filter_term_value(left, row);
@@ -862,6 +862,46 @@ fn evaluate_filter(expr: &FilterExpr, row: &Bindings) -> bool {
         }
         FilterExpr::Bound(var) => row.contains_key(var),
         FilterExpr::NotBound(var) => !row.contains_key(var),
+        FilterExpr::NotExists(patterns) => {
+            // NOT EXISTS: evaluate sub-patterns starting from this row.
+            // If any results come back, the filter fails (row is excluded).
+            let start = vec![row.clone()];
+            let start_scores = vec![HashMap::new()];
+            let mut results = start;
+            let mut scores = start_scores;
+            for p in patterns {
+                match evaluate_pattern(p, &results, &scores, ctx, Some(1)) {
+                    Ok((new_results, new_scores)) => {
+                        results = new_results;
+                        scores = new_scores;
+                    }
+                    Err(_) => return true, // on error, treat as not existing
+                }
+                if results.is_empty() {
+                    return true; // no matches = NOT EXISTS is true
+                }
+            }
+            results.is_empty() // true if no matches found
+        }
+        FilterExpr::Exists(patterns) => {
+            let start = vec![row.clone()];
+            let start_scores = vec![HashMap::new()];
+            let mut results = start;
+            let mut scores = start_scores;
+            for p in patterns {
+                match evaluate_pattern(p, &results, &scores, ctx, Some(1)) {
+                    Ok((new_results, new_scores)) => {
+                        results = new_results;
+                        scores = new_scores;
+                    }
+                    Err(_) => return false,
+                }
+                if results.is_empty() {
+                    return false;
+                }
+            }
+            !results.is_empty()
+        }
     }
 }
 
