@@ -1,0 +1,29 @@
+name: sutra_studio
+description: SutraDB Graph Client — visualize, query, and manage your RDF-star triplestore.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  provider: ^6.1.0
+  google_fonts: ^6.1.0
+  data_table_2: ^2.5.0
+  flutter_code_editor: ^0.3.0
+  highlight: ^0.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: JetBrainsMono
+      fonts:
+        - asset: fonts/JetBrainsMono-Regular.ttf

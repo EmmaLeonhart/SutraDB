@@ -23,7 +23,7 @@ Full architecture: see `docs/architecture.md`.
 
 These are non-negotiable. Do not add features that violate them.
 
-1. **Store first, reason second.** The database stores what you put in. OWL support is planned as a query-time layer — the store itself remains a faithful mirror of reality. RDFS inference is out of scope; OWL reasoning will be opt-in and never modify stored data.
+1. **Store first, reason second.** The database stores what you put in. OWL constraints are validated **client-side by SDKs**, not by the database itself. The database will never reject a triple for OWL violations — it accepts everything. SDKs throw exceptions on constraint violations (OWL enabled by default in SDKs). RDFS inference is out of scope.
 
 2. **Vectors are triples.** A vector embedding is an attribute of a node or edge, stored via a predicate typed `sutra:f32vec`. It is indexed by HNSW, but it is not a separate system — it is just another index alongside SPO/POS/OSP.
 
@@ -32,6 +32,13 @@ These are non-negotiable. Do not add features that violate them.
 4. **Lean by default.** Every feature must justify itself. Complexity is the enemy of performance. When in doubt, push it to the application layer.
 
 5. **Serverless by default, server when needed.** Like SQLite, SutraDB can be embedded directly — just open a `.sdb` file. No daemon, no config. Server mode (HTTP/SPARQL endpoint) is opt-in via `sutra serve`. Same `.sdb` storage format either way.
+
+6. **Agent-first, GUI-optional.** SutraDB should be fully operable by an AI agent without ever touching a GUI. The CLI is the primary interface. Sutra Studio (GUI) exists only for visual intuitions agents can't provide: HNSW health diagnostics, graph visualization, manual emergency editing. The agent can install, configure, launch, and manage everything — including opening the GUI for the user when they ask.
+
+7. **SQLite defaults, production opt-ins.** Start with zero config. Features that add complexity (auth, TLS, backups, rate limiting) must be explicitly enabled. Three deployment tiers:
+   - **Embedded** — zero config, no auth, local `.sdb` file, agent-friendly
+   - **Served** — adds optional auth (simple passcode), rate limiting, query timeouts, HTTP API
+   - **Production/Premium** — RBAC, encryption at rest, audit logging, replication, clustering
 
 ---
 
@@ -166,14 +173,42 @@ ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^sutra:f32vec))
 
 ---
 
-## Explicitly Out of Scope
+## Deployment & Feature Tiers
+
+Features are organized into tiers following the SQLite-defaults principle:
+
+### Open Source (free)
+- Serverless mode (`.sdb` file, zero config)
+- Server mode (`sutra serve`)
+- Simple passcode authentication (server mode only, opt-in)
+- Query timeouts (configurable)
+- Rate limiting (server mode, opt-in)
+- Periodic backups in server mode (configurable: hourly/daily, stored in separate directory)
+- Agent-first installer with config-as-markdown
+- Sutra Studio GUI (desktop/web/mobile)
+- All SDKs with client-side OWL validation
+- MCP server (future — standardized agent↔database interface)
+
+### Premium (future — for customers who need it)
+Everything the creator doesn't fully understand yet. Drawing the line here avoids overcommitting. Premium features will be shaped by customer feedback.
+
+- RBAC (role-based access control, per-user permissions)
+- Encryption at rest
+- TLS / encryption in transit (cert management)
+- Audit logging (who did what, when)
+- Replication (multi-node high availability)
+- Clustering / sharding (horizontal scale)
+- Multi-tenancy (isolated databases in one instance)
+- Connection pooling
+
+### Explicitly Out of Scope (never)
 
 Do not implement these without explicit instruction:
 
 - RDFS inference
 - Built-in graph algorithms (PageRank, community detection, etc.)
 - SQL or MongoDB query interfaces (see Query Language Policy)
-- Distributed execution / sharding
+- Distributed execution / sharding (open-source tier)
 - Embedding model metadata enforcement
 - Multi-embedding-space / cross-modal queries
 - GraphQL interface
@@ -199,6 +234,44 @@ SutraDB's differentiator: unifying both into one system where vectors are triple
 - **HNSW compaction**: what threshold triggers a background pass to clean deleted nodes?
 - **SPARQL property paths** (`+`, `*`, `?`): traversal strategy for cycles on large graphs?
 - ~~**License**: Apache 2.0 (patent grant) vs MIT (simplicity)?~~ **Resolved: Apache 2.0.**
+
+---
+
+## Agent-First Installer
+
+SutraDB includes a CLI installer designed for AI agents (`sutra install-agent` or similar):
+
+- Exposes all configuration options as structured markdown prompts
+- Agent reasons through each option and makes a decision
+- Agent outputs a `<dbname>_sutra_notes.md` file explaining what it chose and why
+- Serverless: notes file stored alongside the `.sdb` file
+- Server: notes file in the server data directory, viewable via CLI or Sutra Studio
+- Agent can also install optional tools (Protege, Sutra Studio) and launch them for the user
+
+The goal: a user says "set up a database for my project" and the agent handles everything.
+
+---
+
+## OWL Validation Strategy
+
+OWL is stored in the database as regular triples. The database **does not enforce** OWL constraints.
+
+Validation happens **client-side** in the SDKs:
+- SDKs load the OWL ontology from the database
+- OWL validation is **enabled by default** in all SDKs
+- On constraint violation, the SDK throws an exception *before* the triple hits the database
+- The database itself always accepts the triple — lean store, smart clients
+- Users can disable OWL validation per-SDK if they want raw inserts
+
+Sutra Studio shows the ontology (Protege-like browser) and can highlight constraint violations visually. Long-term goal: absorb most Protege functionality into Sutra Studio, including OWL export.
+
+---
+
+## Backup Strategy
+
+- **Server mode**: Simple configurable periodic backups (hourly/daily). Stored in a separate directory in the server data path. Manageable via CLI and Sutra Studio.
+- **Serverless mode**: Backup is opt-in. The application or agent is responsible for copying the `.sdb` file.
+- The backup mechanism copies the `.sdb` data (or creates a snapshot) — no complex WAL-based continuous backup in v1.
 
 ---
 

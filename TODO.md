@@ -102,11 +102,19 @@ The 1M-vector stress test revealed specific bottlenecks:
 - [x] isIRI / isLiteral type checks
 - [x] FILTER NOT EXISTS / EXISTS
 
-## Priority 5: SDK Quality
+## Priority 5: SDK Quality & Client-Side OWL Validation
 
-SDKs exist but need real integration testing and polish.
+SDKs exist but need real integration testing, polish, and client-side OWL validation.
+
+The database accepts all triples unconditionally. OWL validation is the SDK's job.
 
 - [ ] Integration tests for each SDK against a running SutraDB instance
+- [ ] Client-side OWL validation layer in each SDK:
+  - [ ] Load OWL ontology triples from the database on connect
+  - [ ] Validate inserts against rdfs:subClassOf, rdfs:domain, rdfs:range, owl:Restriction
+  - [ ] Throw exception on constraint violation *before* sending to database
+  - [ ] OWL validation enabled by default, disableable per-client
+  - [ ] Cache ontology locally, refresh on schema change
 - [ ] Python SDK: publish to PyPI
 - [ ] TypeScript SDK: publish to npm
 - [ ] Rust SDK: publish to crates.io
@@ -118,34 +126,74 @@ SDKs exist but need real integration testing and polish.
 ## Priority 6: Distribution & Ecosystem
 
 - [x] Dockerfile added (`docker build -t sutradb . && docker run -p 3030:3030 sutradb`)
+- [ ] Agent-first installer CLI (`sutra install-agent` or similar)
+  - [ ] Expose all config options as structured markdown prompts
+  - [ ] Agent reasons through options and outputs `<dbname>_sutra_notes.md` with decisions
+  - [ ] Serverless: notes stored alongside `.sdb` file
+  - [ ] Server: notes in server data directory, viewable via CLI or Sutra Studio
+  - [ ] Agent can optionally install/launch Protege, Sutra Studio
 - [x] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
 - [ ] Jupyter integration (%%sparql cell magic, inline result rendering)
 - [ ] LangChain / LlamaIndex integration (SutraDB as vector store + knowledge graph for RAG)
+- [ ] MCP server — standardized agent↔database interface for Claude / other LLMs
 
-## Priority 7: OWL Support (blocked on Protégé plugin)
+## Priority 7: OWL Support
 
-OWL constraints treated as **explicit verification queries**, not automatic inference.
-Users model ontologies in Protégé, SutraDB validates data against them at query time.
-This avoids reasoner explosion while still letting users verify their models.
-Blocked on Priority 6 Protégé plugin — the two should be designed together.
+**Design decision:** The database stores OWL triples but does NOT enforce constraints.
+Validation happens client-side in SDKs (enabled by default, throwable exceptions).
+The database accepts everything — lean store, smart clients.
+Sutra Studio shows the ontology visually and highlights violations.
 
-- [ ] OWL class hierarchy resolution (rdfs:subClassOf transitive closure)
+- [ ] OWL class hierarchy resolution (rdfs:subClassOf transitive closure) — for SDK validation
 - [ ] OWL property hierarchy (rdfs:subPropertyOf)
 - [ ] owl:equivalentClass
 - [ ] owl:sameAs
 - [ ] owl:inverseOf
 - [ ] OWL restrictions (someValuesFrom, allValuesFrom)
 - [ ] Verification query generation: given an OWL ontology, produce SPARQL queries that check constraint violations
-- [ ] Reasoning toggle per-query (opt-in, not default)
-- [ ] Materialization option (precompute inferences into stored triples)
+- [ ] OWL export from Sutra Studio (for Protege interop)
+- [ ] Long-term: absorb core Protege functionality into Sutra Studio
 
-## Priority 8: HTTP Protocol
+## Priority 7.5: Sutra Studio — Flutter Desktop/Web Client
+
+Visual database management tool (like MongoDB Compass). Primary use: human visual
+intuition for things AI agents can't easily detect — broken HNSW clusters, graph
+drift, tombstone accumulation.
+
+- [x] Flutter project scaffold (`sutra-studio/`)
+- [x] Dart HTTP client mirroring TypeScript SDK interface
+- [x] Force-directed graph visualization (custom Canvas painter)
+- [x] View mode toggle: semantic only / vector only / all
+- [x] Triple table editor with add/delete (form + raw N-Triples)
+- [x] SPARQL query editor with quick templates
+- [x] Ontology viewer (Protege-like class hierarchy browser)
+- [x] Authentication settings page (ready for server-side auth)
+- [x] Database health dashboard (connection status, stats)
+- [ ] HNSW health diagnostics: degree distribution visualization
+- [ ] HNSW health diagnostics: tombstone ratio monitoring with rebuild recommendations
+- [ ] Per-cluster PageRank health metric (detect drift from heavy insert/delete)
+- [ ] Edge traversal counters (per-edge hit counts for HNSW and semantic edges)
+- [ ] HNSW cluster heatmap visualization
+- [ ] Automatic rebuild recommendation threshold (configurable)
+- [ ] Graph export (PNG/SVG of current visualization)
+- [ ] Dark/light theme toggle
+- [ ] Persistent connection settings (shared_preferences)
+
+## Priority 8: HTTP Protocol & Server-Mode Features
 
 - [ ] Content negotiation for SPARQL results (JSON, XML, CSV, TSV)
 - [ ] SPARQL results XML format (application/sparql-results+xml)
 - [x] SPARQL results CSV/TSV format (/sparql.csv, /sparql.tsv endpoints)
-- [ ] Authentication / API keys
-- [ ] Rate limiting
+- [ ] Simple passcode authentication (server mode only, opt-in)
+  - Just a passcode/API key to connect — nothing fancier in open source
+  - Anything beyond this (RBAC, per-user permissions) = premium tier
+- [ ] Query timeouts (kill long-running queries after configurable N seconds)
+- [ ] Rate limiting (server mode, opt-in)
+- [ ] HNSW health endpoint: `/vectors/health` — degree distribution, tombstone ratio, rebuild recommendation
+- [ ] Periodic backups (server mode)
+  - [ ] Configurable interval: hourly / daily / custom
+  - [ ] Stored in separate directory within server data path
+  - [ ] Manageable via CLI and Sutra Studio
 - [x] SPARQL service description endpoint (/service-description)
 
 ## Priority 9: Additional Storage & Format Support
@@ -170,6 +218,29 @@ Blocked on Priority 6 Protégé plugin — the two should be designed together.
 - [ ] Write-ahead log (WAL) for crash recovery
 - [ ] Adaptive query execution: runtime reordering based on intermediate cardinalities
 
+## Premium Tier (future — not a priority until monetization is real)
+
+These features are explicitly deferred to a paid tier. They won't be implemented
+until there are paying customers who explain what they need. This avoids
+overcommitting to features we don't fully understand yet.
+
+- [ ] RBAC — role-based access control, per-user permissions
+- [ ] Encryption at rest — encrypt stored `.sdb` data
+- [ ] TLS / encryption in transit — cert management for server mode
+- [ ] Audit logging — who did what, when (compliance-grade)
+- [ ] Replication — multi-node high availability
+- [ ] Clustering / sharding — horizontal scale, distributed queries
+- [ ] Multi-tenancy — isolated databases in one server instance
+- [ ] Connection pooling — reuse of database connections at scale
+
+## Resolved Architecture Decisions
+
+- ~~**Authentication model**~~ **Resolved: Simple passcode in server mode, nothing in serverless.** Premium tier for anything fancier. Auth is never needed for serverless — you trust the filesystem.
+- ~~**OWL enforcement**~~ **Resolved: Client-side, not server-side.** Database accepts everything. SDKs validate against OWL (enabled by default). Database stays lean.
+- ~~**GUI philosophy**~~ **Resolved: Agent-first, GUI-optional.** GUI (Sutra Studio) exists only for visual health diagnostics, graph visualization, and manual emergency editing. Everything else goes through CLI/SDKs/agents.
+- ~~**Feature tiers**~~ **Resolved: Open source + premium.** Anything complex or not fully understood = premium, shaped by customer feedback. Open source is genuinely complete for most use cases.
+- ~~**Backups**~~ **Resolved: Simple periodic backups in server mode.** Configurable hourly/daily. Serverless backups are the application's responsibility.
+
 ## Open Architecture Questions
 
 - **HNSW compaction threshold**: What deleted_ratio triggers a rebuild? 0.3? 0.5? Configurable?
@@ -178,6 +249,7 @@ Blocked on Priority 6 Protégé plugin — the two should be designed together.
 - **Blank node handling**: Skolemization vs. internal IDs? How to handle blank nodes across imports?
 - **RDF parsing crates**: Write our own parsers or use Oxigraph's crates (oxttl, oxrdfxml, oxjsonld)?
 - **IRI encoding**: Sequential interning (current) vs. hash-based (Oxigraph SipHash)?
+- **MCP server**: How would an MCP server for SutraDB work? What tools would it expose? Worth exploring for agent-first UX.
 
 ## Test Data: embedding-mapping Project
 
