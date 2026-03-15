@@ -87,7 +87,7 @@ public class SutraClient {
      */
     public JSONObject insertTriples(String ntriples) {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint + "/store"))
+                .uri(URI.create(endpoint + "/triples"))
                 .header("Content-Type", "application/n-triples")
                 .POST(HttpRequest.BodyPublishers.ofString(ntriples))
                 .timeout(Duration.ofSeconds(30))
@@ -168,7 +168,7 @@ public class SutraClient {
         );
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint + "/vectors/insert"))
+                .uri(URI.create(endpoint + "/vectors"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .timeout(Duration.ofSeconds(10))

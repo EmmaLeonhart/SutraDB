@@ -18,6 +18,9 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [project.urls]
 Homepage = "https://emmaleonhart.github.io/SutraDB/"
 Repository = "https://github.com/EmmaLeonhart/SutraDB"

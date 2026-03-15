@@ -95,7 +95,7 @@ public class SutraClient : IDisposable
     public async Task<InsertResult> InsertTriplesAsync(string ntriples, CancellationToken cancellationToken = default)
     {
         var content = new StringContent(ntriples, Encoding.UTF8, "application/n-triples");
-        var response = await _http.PostAsync($"{_endpoint}/store", content, cancellationToken);
+        var response = await _http.PostAsync($"{_endpoint}/triples", content, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
 
         var result = await response.Content.ReadFromJsonAsync<InsertResult>(_jsonOptions, cancellationToken);
@@ -143,7 +143,7 @@ public class SutraClient : IDisposable
         CancellationToken cancellationToken = default)
     {
         var body = new InsertVectorRequest(predicate, subject, vector);
-        var response = await _http.PostAsJsonAsync($"{_endpoint}/vectors/insert", body, _jsonOptions, cancellationToken);
+        var response = await _http.PostAsJsonAsync($"{_endpoint}/vectors", body, _jsonOptions, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
 
         var result = await response.Content.ReadFromJsonAsync<InsertVectorResult>(_jsonOptions, cancellationToken);

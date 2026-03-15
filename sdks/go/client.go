@@ -77,7 +77,7 @@ func (c *SutraClient) Sparql(query string) (*SparqlResults, error) {
 func (c *SutraClient) InsertTriples(ntriples string) (*InsertResult, error) {
 	req, err := http.NewRequest(
 		http.MethodPost,
-		c.Endpoint+"/store",
+		c.Endpoint+"/triples",
 		strings.NewReader(ntriples),
 	)
 	if err != nil {
@@ -135,7 +135,7 @@ func (c *SutraClient) InsertVector(predicate, subject string, vector []float32) 
 	}
 
 	var result InsertVectorResult
-	if err := c.postJSON("/vectors/insert", body, &result); err != nil {
+	if err := c.postJSON("/vectors", body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

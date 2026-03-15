@@ -80,7 +80,7 @@ impl SutraClient {
     /// The payload should be valid N-Triples (one triple per line,
     /// each terminated with ` .`).
     pub fn insert_triples(&self, ntriples: &str) -> Result<InsertResult> {
-        let url = format!("{}/store", self.endpoint);
+        let url = format!("{}/triples", self.endpoint);
         let resp = self
             .http
             .post(&url)
@@ -157,7 +157,7 @@ impl SutraClient {
         subject: &str,
         vector: &[f32],
     ) -> Result<InsertVectorResult> {
-        let url = format!("{}/vectors/insert", self.endpoint);
+        let url = format!("{}/vectors", self.endpoint);
 
         let body = json!({
             "predicate": predicate,

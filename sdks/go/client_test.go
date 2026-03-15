@@ -99,8 +99,8 @@ func TestSparql(t *testing.T) {
 
 func TestInsertTriples(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/store" {
-			t.Errorf("expected path /store, got %s", r.URL.Path)
+		if r.URL.Path != "/triples" {
+			t.Errorf("expected path /triples, got %s", r.URL.Path)
 		}
 		if r.Header.Get("Content-Type") != "application/n-triples" {
 			t.Errorf("expected Content-Type application/n-triples, got %s", r.Header.Get("Content-Type"))

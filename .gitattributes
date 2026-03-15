@@ -1,0 +1,10 @@
+# Ensure GitHub Linguist counts SDK files in language stats
+sdks/typescript/**/*.ts linguist-detectable
+sdks/typescript/**/*.js linguist-detectable
+sdks/python/**/*.py linguist-detectable
+sdks/java/**/*.java linguist-detectable
+sdks/dotnet/**/*.cs linguist-detectable
+sdks/go/**/*.go linguist-detectable
+
+# Pages are generated HTML, not source code
+pages/** linguist-documentation
