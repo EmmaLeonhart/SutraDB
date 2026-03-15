@@ -68,9 +68,10 @@ pub fn execute_with_vectors(
         None
     };
 
-    // Evaluate each pattern
+    // Evaluate each pattern, threading the pushable limit through
     for pattern in &query.patterns {
-        let (new_results, new_scores) = evaluate_pattern(pattern, &results, &scores, &mut ctx)?;
+        let (new_results, new_scores) =
+            evaluate_pattern(pattern, &results, &scores, &mut ctx, pushable_limit)?;
         results = new_results;
         scores = new_scores;
 
@@ -160,6 +161,7 @@ fn evaluate_pattern(
     current: &[Bindings],
     current_scores: &[HashMap<String, f32>],
     ctx: &mut ExecutionContext<'_>,
+    row_limit: Option<usize>,
 ) -> Result<(Vec<Bindings>, Vec<HashMap<String, f32>>)> {
     match pattern {
         Pattern::Triple {
@@ -167,7 +169,8 @@ fn evaluate_pattern(
             predicate,
             object,
         } => {
-            let (rows, _) = evaluate_triple_pattern(subject, predicate, object, current, ctx)?;
+            let (rows, _) =
+                evaluate_triple_pattern(subject, predicate, object, current, ctx, row_limit)?;
             // Carry forward scores from current rows (expand for each new match)
             let new_scores = expand_scores(current, current_scores, &rows);
             Ok((rows, new_scores))
@@ -181,7 +184,7 @@ fn evaluate_pattern(
                 let mut inner_scores = vec![row_score.clone()];
                 for p in inner_patterns {
                     let (new_results, new_s) =
-                        evaluate_pattern(p, &inner_results, &inner_scores, ctx)?;
+                        evaluate_pattern(p, &inner_results, &inner_scores, ctx, None)?;
                     inner_results = new_results;
                     inner_scores = new_s;
                 }
@@ -232,7 +235,7 @@ fn evaluate_pattern(
                 let mut branch_scores = current_scores.to_vec();
                 for p in branch {
                     let (new_results, new_s) =
-                        evaluate_pattern(p, &branch_results, &branch_scores, ctx)?;
+                        evaluate_pattern(p, &branch_results, &branch_scores, ctx, None)?;
                     branch_results = new_results;
                     branch_scores = new_s;
                 }
@@ -477,11 +480,12 @@ fn evaluate_triple_pattern(
     object: &Term,
     current: &[Bindings],
     ctx: &ExecutionContext<'_>,
+    row_limit: Option<usize>,
 ) -> Result<(Vec<Bindings>, Vec<usize>)> {
     let mut results = Vec::new();
     let mut source_indices = Vec::new();
 
-    for (row_idx, row) in current.iter().enumerate() {
+    'outer: for (row_idx, row) in current.iter().enumerate() {
         let s_id = resolve_term(subject, row, ctx.dict, ctx.prefixes)?;
         let p_id = resolve_term(predicate, row, ctx.dict, ctx.prefixes)?;
         let o_id = resolve_term(object, row, ctx.dict, ctx.prefixes)?;
@@ -554,6 +558,13 @@ fn evaluate_triple_pattern(
 
             results.push(new_row);
             source_indices.push(row_idx);
+
+            // Early termination: stop when we have enough rows
+            if let Some(limit) = row_limit {
+                if results.len() >= limit {
+                    break 'outer;
+                }
+            }
         }
     }
 
