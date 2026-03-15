@@ -19,3 +19,4 @@ Thumbs.db
 
 # Claude artifacts (kept in git history, not needed in tree)
 mnt/
+sutra_error.log
