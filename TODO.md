@@ -1,16 +1,10 @@
 # SutraDB — TODO
 
-## URGENT: Stress Test Failures (from 1M vector test)
+## Top Priority: Stress Test Findings
 
-These are specific bugs/issues found during the stress test that need fixing:
-
-- [ ] **Wormhole queries return 0 rows** — VECTOR_SIMILAR results don't join with graph patterns because the stress test was written before the vector-as-object architecture fix. Need to re-run stress test with proper data model (vectors are triple objects, not standalone).
-- [ ] **Mountain#50 vector search returns 0 rows** — vector was inserted but search finds nothing. Possible issue with HNSW search at scale or vector normalization.
-- [ ] **VECTOR_SIMILAR over 1M vectors takes 281s** — HNSW search is doing brute-force distance comparisons without SIMD. Need AVX2/SSE/NEON distance functions.
-- [ ] **3-hop join times out at 500K triples** — nested loop join is O(n^3). Need hash joins and/or cardinality-based join reordering.
-- [ ] **UNION + VECTOR returns 0 rows** — UNION evaluation may not correctly propagate vector bindings.
-- [ ] **Full table scan takes 2.2s for LIMIT 100** — should be near-instant since we only need the first 100 from the SPO index.
-- [ ] **Re-run stress test** with corrected data model: all entities connected via triples, ~50% of entities have vector triples, wormhole queries should return real results.
+- [ ] **HNSW cross-cluster search returns 0 rows** — searching from one vector cluster doesn't find neighboring clusters at 0.7 threshold. Likely needs better HNSW graph connectivity (higher ef_construction or M) or threshold tuning.
+- [ ] **2-hop joins take 18s** — nested loop join is too slow. Need hash joins and/or cardinality-based join reordering so the planner picks the most selective pattern first.
+- [ ] **Type lookup takes 2s for LIMIT 100** — POS index prefix scan should be near-instant. Investigate cold start overhead or BTreeSet iteration cost.
 
 ## Done
 
