@@ -6,6 +6,7 @@ members = [
     "sutra-proto",
     "sutra-cli",
 ]
+exclude = ["sdks/rust"]
 resolver = "2"
 
 [workspace.package]

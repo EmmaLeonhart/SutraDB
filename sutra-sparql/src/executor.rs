@@ -718,21 +718,20 @@ fn try_evaluate_hnsw_edge_pattern(
         let o_id = resolve_term(object, row, ctx.dict, ctx.prefixes)?;
 
         // Generate edge triples based on what's bound
-        let edges: Vec<(sutra_core::TermId, sutra_hnsw::HnswEdgeTriple)> =
-            match (s_id, o_id) {
-                (Some(source_id), _) => {
-                    // Source bound: get edges from this source
-                    ctx.vectors.edge_triples_for_source(source_id)
-                }
-                (None, Some(target_id)) => {
-                    // Object bound: get edges to this target
-                    ctx.vectors.edge_triples_for_target(target_id)
-                }
-                (None, None) => {
-                    // Both unbound: get all edges (expensive!)
-                    ctx.vectors.all_edge_triples()
-                }
-            };
+        let edges: Vec<(sutra_core::TermId, sutra_hnsw::HnswEdgeTriple)> = match (s_id, o_id) {
+            (Some(source_id), _) => {
+                // Source bound: get edges from this source
+                ctx.vectors.edge_triples_for_source(source_id)
+            }
+            (None, Some(target_id)) => {
+                // Object bound: get edges to this target
+                ctx.vectors.edge_triples_for_target(target_id)
+            }
+            (None, None) => {
+                // Both unbound: get all edges (expensive!)
+                ctx.vectors.all_edge_triples()
+            }
+        };
 
         for (_pred_id, edge) in &edges {
             // Filter by object if bound

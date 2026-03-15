@@ -37,7 +37,11 @@
       "Bash(for f:*)",
       "Bash(gh api:*)",
       "WebFetch(domain:emmaleonhart.github.io)",
-      "WebFetch(domain:graphdb.ontotext.com)"
+      "WebFetch(domain:graphdb.ontotext.com)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Read(//tmp/**)"
     ]
   }
 }

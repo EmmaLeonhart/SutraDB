@@ -27,7 +27,9 @@ fn chain_graph(length: usize) -> (TripleStore, TermDictionary) {
     let mut node_ids = Vec::with_capacity(length);
     for i in 0..length {
         let node = dict.intern(&format!("http://example.org/node/{}", i));
-        store.insert(Triple::new(node, rdf_type, chain_node)).unwrap();
+        store
+            .insert(Triple::new(node, rdf_type, chain_node))
+            .unwrap();
         node_ids.push(node);
     }
 
@@ -69,7 +71,9 @@ fn star_graph(leaves: usize, categories: usize) -> (TripleStore, TermDictionary)
     for i in 0..leaves {
         let leaf = dict.intern(&format!("http://example.org/leaf/{}", i));
         store.insert(Triple::new(center, has_leaf, leaf)).unwrap();
-        store.insert(Triple::new(leaf, rdf_type, leaf_type)).unwrap();
+        store
+            .insert(Triple::new(leaf, rdf_type, leaf_type))
+            .unwrap();
         store
             .insert(Triple::new(leaf, category_pred, cat_ids[i % categories]))
             .unwrap();
@@ -96,7 +100,9 @@ fn grid_graph(width: usize, height: usize) -> (TripleStore, TermDictionary) {
         for x in 0..width {
             let node = dict.intern(&format!("http://example.org/grid/{}/{}", x, y));
             nodes[y][x] = node;
-            store.insert(Triple::new(node, rdf_type, grid_node)).unwrap();
+            store
+                .insert(Triple::new(node, rdf_type, grid_node))
+                .unwrap();
         }
     }
 
@@ -185,7 +191,11 @@ fn traverse_4_hops_on_200_node_chain() {
         let e = *row.get("e").unwrap();
         // All should be distinct in a chain
         let set: HashSet<TermId> = [a, b, c, d, e].into_iter().collect();
-        assert_eq!(set.len(), 5, "4-hop traversal should visit 5 distinct nodes");
+        assert_eq!(
+            set.len(),
+            5,
+            "4-hop traversal should visit 5 distinct nodes"
+        );
     }
 }
 
@@ -351,14 +361,8 @@ fn hnsw_edge_traversal_50_vectors() {
     let config = DatabaseConfig::default();
     let result = execute_with_config(&q, &store, &dict, &mut vectors, &config).unwrap();
 
-    assert!(
-        result.rows.len() > 0,
-        "50-vector HNSW should have edges"
-    );
-    assert!(
-        result.rows.len() <= 200,
-        "Should respect LIMIT 200"
-    );
+    assert!(result.rows.len() > 0, "50-vector HNSW should have edges");
+    assert!(result.rows.len() <= 200, "Should respect LIMIT 200");
 
     // Verify all edges reference valid vector IDs
     let valid_set: HashSet<TermId> = vec_ids.into_iter().collect();

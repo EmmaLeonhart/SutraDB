@@ -132,7 +132,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - run: dotnet build
-      - run: dotnet pack --no-build
+      - run: dotnet pack
 
   # ── Go SDK ────────────────────────────────────────────────────────────
 

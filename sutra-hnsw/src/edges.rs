@@ -53,7 +53,7 @@ impl HnswIndex {
     pub fn edge_triples(&self) -> Vec<HnswEdgeTriple> {
         let mut edges = Vec::new();
 
-        for (_node_idx, node) in self.nodes.iter().enumerate() {
+        for node in self.nodes.iter() {
             if node.deleted {
                 continue;
             }
@@ -132,14 +132,13 @@ impl HnswIndex {
         }
 
         let mut edges = Vec::new();
-        for (_node_idx, node) in self.nodes.iter().enumerate() {
+        for node in self.nodes.iter() {
             if node.deleted {
                 continue;
             }
 
             for (layer, neighbors) in node.neighbors.iter().enumerate() {
-                let target_u32 = target_node_idx as u32;
-                if neighbors.contains(&target_u32) {
+                if neighbors.contains(&target_node_idx) {
                     let similarity = self.config.metric.score(&node.vector, &target_node.vector);
 
                     edges.push(HnswEdgeTriple {
