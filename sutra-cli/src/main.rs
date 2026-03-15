@@ -213,7 +213,8 @@ async fn main() -> anyhow::Result<()> {
                     Err(_) => errors += 1,
                 }
 
-                if inserted % 10000 == 0 && inserted > 0 {
+                #[allow(clippy::manual_is_multiple_of)]
+                if inserted > 0 && inserted % 10000 == 0 {
                     eprintln!("  {} triples imported (line {})", inserted, line_no);
                 }
             }

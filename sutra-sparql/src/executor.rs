@@ -341,8 +341,8 @@ fn execute_with_deadline(
 
 /// Execute a parsed query without vector support (backward compatible).
 pub fn execute(query: &Query, store: &TripleStore, dict: &TermDictionary) -> Result<QueryResult> {
-    let mut empty_registry = VectorRegistry::new();
-    execute_with_vectors(query, store, dict, &mut empty_registry)
+    let empty_registry = VectorRegistry::new();
+    execute_with_vectors(query, store, dict, &empty_registry)
 }
 
 fn evaluate_pattern(
@@ -915,13 +915,8 @@ fn try_evaluate_hnsw_edge_pattern(
         return Ok(None);
     }
 
-    let neighbor_pred_id = ctx
-        .dict
-        .lookup(sutra_hnsw::HNSW_NEIGHBOR_IRI)
-        .unwrap_or_else(|| {
-            // If hnswNeighbor isn't in the dictionary yet, it can't match anything
-            0
-        });
+    // If hnswNeighbor isn't in the dictionary yet, it can't match anything
+    let neighbor_pred_id = ctx.dict.lookup(sutra_hnsw::HNSW_NEIGHBOR_IRI).unwrap_or(0);
 
     let mut results = Vec::new();
     let mut source_indices = Vec::new();
@@ -1191,9 +1186,9 @@ fn evaluate_filter(expr: &FilterExpr, row: &Bindings, ctx: &mut ExecutionContext
             let var_str = row.get(var).and_then(|&id| {
                 if let Some(s) = ctx.dict.resolve(id) {
                     // Strip quotes and language tag
-                    if s.starts_with('"') {
-                        let end = s[1..].find('"').map(|p| p + 1).unwrap_or(s.len());
-                        Some(s[1..end].to_string())
+                    if let Some(inner) = s.strip_prefix('"') {
+                        let end = inner.find('"').unwrap_or(inner.len());
+                        Some(inner[..end].to_string())
                     } else {
                         Some(s.to_string())
                     }
@@ -1244,12 +1239,9 @@ fn term_to_string(term: &Term, row: &Bindings, ctx: &ExecutionContext<'_>) -> Op
             }
             let resolved = ctx.dict.resolve(id)?;
             // Strip quotes from literals
-            if resolved.starts_with('"') {
-                let end = resolved[1..]
-                    .find('"')
-                    .map(|p| p + 1)
-                    .unwrap_or(resolved.len());
-                Some(resolved[1..end].to_string())
+            if let Some(inner) = resolved.strip_prefix('"') {
+                let end = inner.find('"').unwrap_or(inner.len());
+                Some(inner[..end].to_string())
             } else {
                 Some(resolved.to_string())
             }

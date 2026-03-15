@@ -919,17 +919,16 @@ impl<'a> Parser<'a> {
 
         // String functions: CONTAINS, STRSTARTS, STRENDS, REGEX
         if self.peek_keyword("CONTAINS") {
-            return self.parse_two_arg_string_filter("CONTAINS", |a, b| FilterExpr::Contains(a, b));
+            return self.parse_two_arg_string_filter("CONTAINS", FilterExpr::Contains);
         }
         if self.peek_keyword("STRSTARTS") {
-            return self
-                .parse_two_arg_string_filter("STRSTARTS", |a, b| FilterExpr::StrStarts(a, b));
+            return self.parse_two_arg_string_filter("STRSTARTS", FilterExpr::StrStarts);
         }
         if self.peek_keyword("STRENDS") {
-            return self.parse_two_arg_string_filter("STRENDS", |a, b| FilterExpr::StrEnds(a, b));
+            return self.parse_two_arg_string_filter("STRENDS", FilterExpr::StrEnds);
         }
         if self.peek_keyword("REGEX") {
-            return self.parse_two_arg_string_filter("REGEX", |a, b| FilterExpr::Regex(a, b));
+            return self.parse_two_arg_string_filter("REGEX", FilterExpr::Regex);
         }
         if self.peek_keyword("LANGMATCHES") {
             self.expect_keyword("LANGMATCHES")?;

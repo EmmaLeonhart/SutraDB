@@ -210,13 +210,11 @@ impl PersistentStore {
     /// Returns the number of terms loaded.
     pub fn load_terms_into(&self, dict: &mut crate::id::TermDictionary) -> usize {
         let mut count = 0;
-        for entry in self.terms_forward.iter() {
-            if let Ok((key_bytes, val_bytes)) = entry {
-                let term = String::from_utf8_lossy(&key_bytes).into_owned();
-                let id = u64::from_le_bytes(val_bytes.as_ref().try_into().unwrap());
-                dict.insert_with_id(&term, id);
-                count += 1;
-            }
+        for (key_bytes, val_bytes) in self.terms_forward.iter().flatten() {
+            let term = String::from_utf8_lossy(&key_bytes).into_owned();
+            let id = u64::from_le_bytes(val_bytes.as_ref().try_into().unwrap());
+            dict.insert_with_id(&term, id);
+            count += 1;
         }
         count
     }

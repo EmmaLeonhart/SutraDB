@@ -14,7 +14,7 @@
 use std::sync::{Arc, RwLock};
 
 use axum::extract::{Query as AxumQuery, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
@@ -49,7 +49,7 @@ pub struct AppState {
 
 /// Build the axum router with all endpoints.
 pub fn router(state: Arc<AppState>) -> Router {
-    let app = Router::new()
+    Router::new()
         .route("/sparql", get(sparql_get).post(sparql_post))
         .route("/graph", get(export_graph))
         .route("/sparql.csv", get(sparql_csv_get).post(sparql_csv_post))
@@ -67,8 +67,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         ))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
-    app
+        .with_state(state)
 }
 
 /// Simple passcode authentication middleware.
@@ -317,7 +316,7 @@ fn execute_insert_data(
     query: &sutra_sparql::Query,
     state: &AppState,
 ) -> Result<Json<SparqlResults>, ProtoError> {
-    use sutra_sparql::parser::{Pattern, Term};
+    use sutra_sparql::parser::Pattern;
 
     let mut dict = state
         .dict
@@ -374,7 +373,7 @@ fn execute_delete_data(
     query: &sutra_sparql::Query,
     state: &AppState,
 ) -> Result<Json<SparqlResults>, ProtoError> {
-    use sutra_sparql::parser::{Pattern, Term};
+    use sutra_sparql::parser::Pattern;
 
     let mut dict = state
         .dict
