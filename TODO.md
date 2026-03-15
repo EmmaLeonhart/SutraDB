@@ -55,8 +55,8 @@ The server is currently in-memory only. This is the #1 blocker.
 - [x] Persistent term dictionary: load on startup, save on insert
 - [ ] HNSW index persistence: serialize to disk, memory-map on startup
 - [ ] The .sdb file should contain all of the above in one directory/file
-- [ ] `sutra serve --data my.sdb` loads from disk, writes back on changes
-- [ ] `sutra query --data my.sdb` opens serverless (no HTTP)
+- [x] `sutra serve --data my.sdb` loads from disk, writes back on changes
+- [x] `sutra query --data my.sdb` opens serverless (no HTTP)
 
 ## Priority 2: Parser & Ingestion Gaps
 
