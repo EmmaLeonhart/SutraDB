@@ -75,11 +75,11 @@ impl HnswConfig {
 
 /// An HNSW index for a single vector predicate.
 pub struct HnswIndex {
-    config: HnswConfig,
+    pub(crate) config: HnswConfig,
     /// All nodes in insertion order. Node index = position in this vec.
-    nodes: Vec<HnswNode>,
+    pub(crate) nodes: Vec<HnswNode>,
     /// Map from triple_id to node index for O(1) lookups.
-    triple_to_node: HashMap<TermId, u32>,
+    pub(crate) triple_to_node: HashMap<TermId, u32>,
     /// Index of the entry point node (top of the graph).
     entry_point: Option<u32>,
     /// Maximum layer currently in the graph.

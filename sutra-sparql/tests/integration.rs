@@ -3,9 +3,9 @@
 //! Tests the complete path: parse → optimize → execute, including
 //! VECTOR_SIMILAR, VECTOR_SCORE, ORDER BY, UNION, and graph+vector joins.
 
-use sutra_core::{TermDictionary, TermId, Triple, TripleStore};
+use sutra_core::{DatabaseConfig, HnswEdgeMode, TermDictionary, TermId, Triple, TripleStore};
 use sutra_hnsw::{DistanceMetric, VectorPredicateConfig, VectorRegistry};
-use sutra_sparql::{execute_with_vectors, optimize, parse};
+use sutra_sparql::{execute_with_config, execute_with_vectors, optimize, parse};
 
 /// Build a test knowledge graph about academic papers with embeddings.
 fn academic_graph() -> (TripleStore, TermDictionary, VectorRegistry) {
@@ -616,4 +616,160 @@ fn rdf_star_edge_with_vector() {
     assert_eq!(result.rows.len(), 1);
     let conf = sutra_core::decode_inline_integer(*result.rows[0].get("conf").unwrap()).unwrap();
     assert_eq!(conf, 95);
+}
+
+// --- Virtual HNSW edge triples ---
+
+#[test]
+fn virtual_hnsw_edges_queryable_via_sparql() {
+    let mut dict = TermDictionary::new();
+    let mut store = TripleStore::new();
+    let has_embedding = dict.intern("http://example.org/hasEmbedding");
+
+    // Register the HNSW neighbor predicate in the dictionary so queries can resolve it
+    let _neighbor_id = dict.intern(sutra_hnsw::HNSW_NEIGHBOR_IRI);
+
+    let mut vectors = VectorRegistry::new();
+    vectors
+        .declare(VectorPredicateConfig {
+            predicate_id: has_embedding,
+            dimensions: 3,
+            m: 4,
+            ef_construction: 20,
+            metric: DistanceMetric::Cosine,
+        })
+        .unwrap();
+
+    // Insert vectors — these become nodes in the HNSW graph
+    let doc1 = dict.intern("http://example.org/doc1");
+    let doc2 = dict.intern("http://example.org/doc2");
+    let doc3 = dict.intern("http://example.org/doc3");
+    let vec1_id = dict.intern("\"vec_doc1\"^^<http://sutra.dev/f32vec>");
+    let vec2_id = dict.intern("\"vec_doc2\"^^<http://sutra.dev/f32vec>");
+    let vec3_id = dict.intern("\"vec_doc3\"^^<http://sutra.dev/f32vec>");
+
+    store
+        .insert(Triple::new(doc1, has_embedding, vec1_id))
+        .unwrap();
+    store
+        .insert(Triple::new(doc2, has_embedding, vec2_id))
+        .unwrap();
+    store
+        .insert(Triple::new(doc3, has_embedding, vec3_id))
+        .unwrap();
+
+    vectors
+        .insert(has_embedding, vec![1.0, 0.0, 0.0], vec1_id)
+        .unwrap();
+    vectors
+        .insert(has_embedding, vec![0.9, 0.1, 0.0], vec2_id)
+        .unwrap();
+    vectors
+        .insert(has_embedding, vec![0.0, 0.0, 1.0], vec3_id)
+        .unwrap();
+
+    // Query HNSW edges as virtual triples
+    let q = parse(
+        "SELECT ?source ?target WHERE { \
+         ?source <http://sutra.dev/hnswNeighbor> ?target \
+         }",
+    )
+    .unwrap();
+
+    let config = DatabaseConfig {
+        hnsw_edge_mode: HnswEdgeMode::Virtual,
+        ..Default::default()
+    };
+
+    let result = execute_with_config(&q, &store, &dict, &mut vectors, &config).unwrap();
+
+    // HNSW builds bidirectional edges, so there should be some edges
+    assert!(
+        !result.rows.is_empty(),
+        "Virtual HNSW edge query should return edges"
+    );
+
+    // All source and target values should be valid vector triple IDs
+    let valid_ids = [vec1_id, vec2_id, vec3_id];
+    for row in &result.rows {
+        let source = row.get("source").unwrap();
+        let target = row.get("target").unwrap();
+        assert!(
+            valid_ids.contains(source),
+            "Source {} not a valid vector ID",
+            source
+        );
+        assert!(
+            valid_ids.contains(target),
+            "Target {} not a valid vector ID",
+            target
+        );
+    }
+}
+
+#[test]
+fn virtual_hnsw_edges_with_bound_source() {
+    let mut dict = TermDictionary::new();
+    let mut store = TripleStore::new();
+    let has_embedding = dict.intern("http://example.org/hasEmbedding");
+    let _neighbor_id = dict.intern(sutra_hnsw::HNSW_NEIGHBOR_IRI);
+
+    let mut vectors = VectorRegistry::new();
+    vectors
+        .declare(VectorPredicateConfig {
+            predicate_id: has_embedding,
+            dimensions: 3,
+            m: 4,
+            ef_construction: 20,
+            metric: DistanceMetric::Cosine,
+        })
+        .unwrap();
+
+    let vec1_id = dict.intern("\"vec1\"^^<http://sutra.dev/f32vec>");
+    let vec2_id = dict.intern("\"vec2\"^^<http://sutra.dev/f32vec>");
+    let vec3_id = dict.intern("\"vec3\"^^<http://sutra.dev/f32vec>");
+
+    let doc1 = dict.intern("http://example.org/doc1");
+    let doc2 = dict.intern("http://example.org/doc2");
+    let doc3 = dict.intern("http://example.org/doc3");
+
+    store
+        .insert(Triple::new(doc1, has_embedding, vec1_id))
+        .unwrap();
+    store
+        .insert(Triple::new(doc2, has_embedding, vec2_id))
+        .unwrap();
+    store
+        .insert(Triple::new(doc3, has_embedding, vec3_id))
+        .unwrap();
+
+    vectors
+        .insert(has_embedding, vec![1.0, 0.0, 0.0], vec1_id)
+        .unwrap();
+    vectors
+        .insert(has_embedding, vec![0.9, 0.1, 0.0], vec2_id)
+        .unwrap();
+    vectors
+        .insert(has_embedding, vec![0.0, 0.0, 1.0], vec3_id)
+        .unwrap();
+
+    // Query with a graph pattern first to bind source, then traverse HNSW edges
+    let q = parse(&format!(
+        "PREFIX ex: <http://example.org/> \
+         SELECT ?doc ?neighbor WHERE {{ \
+         ?doc ex:hasEmbedding ?vec . \
+         ?vec <{}> ?neighbor \
+         }}",
+        sutra_hnsw::HNSW_NEIGHBOR_IRI
+    ))
+    .unwrap();
+
+    let config = DatabaseConfig::default();
+    let result = execute_with_config(&q, &store, &dict, &mut vectors, &config).unwrap();
+
+    // Each doc's vector should have HNSW neighbors
+    assert!(
+        !result.rows.is_empty(),
+        "Bound-source HNSW edge query should return results"
+    );
 }

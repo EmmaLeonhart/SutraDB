@@ -128,6 +128,55 @@ impl VectorRegistry {
     }
 }
 
+impl VectorRegistry {
+    /// Generate all HNSW edge triples across all predicate indexes.
+    ///
+    /// Returns `(predicate_id, edge_triple)` pairs so the caller knows
+    /// which vector predicate each edge belongs to.
+    pub fn all_edge_triples(&self) -> Vec<(TermId, crate::edges::HnswEdgeTriple)> {
+        let mut all = Vec::new();
+        for (&pred_id, index) in &self.indexes {
+            for edge in index.edge_triples() {
+                all.push((pred_id, edge));
+            }
+        }
+        all
+    }
+
+    /// Generate edge triples for a specific source node across all predicates.
+    pub fn edge_triples_for_source(
+        &self,
+        source_triple_id: TermId,
+    ) -> Vec<(TermId, crate::edges::HnswEdgeTriple)> {
+        let mut all = Vec::new();
+        for (&pred_id, index) in &self.indexes {
+            for edge in index.edge_triples_for_source(source_triple_id) {
+                all.push((pred_id, edge));
+            }
+        }
+        all
+    }
+
+    /// Generate edge triples for a specific target node across all predicates.
+    pub fn edge_triples_for_target(
+        &self,
+        target_triple_id: TermId,
+    ) -> Vec<(TermId, crate::edges::HnswEdgeTriple)> {
+        let mut all = Vec::new();
+        for (&pred_id, index) in &self.indexes {
+            for edge in index.edge_triples_for_target(target_triple_id) {
+                all.push((pred_id, edge));
+            }
+        }
+        all
+    }
+
+    /// Total edge count across all predicate indexes.
+    pub fn total_edge_count(&self) -> usize {
+        self.indexes.values().map(|idx| idx.edge_count()).sum()
+    }
+}
+
 impl Default for VectorRegistry {
     fn default() -> Self {
         Self::new()

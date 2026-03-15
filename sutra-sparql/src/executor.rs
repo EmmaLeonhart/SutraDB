@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use sutra_core::{TermDictionary, TermId, Triple, TripleStore};
+use sutra_core::{DatabaseConfig, HnswEdgeMode, TermDictionary, TermId, Triple, TripleStore};
 use sutra_hnsw::VectorRegistry;
 
 use crate::error::{Result, SparqlError};
@@ -38,6 +38,7 @@ pub struct ExecutionContext<'a> {
     pub dict: &'a TermDictionary,
     pub vectors: &'a mut VectorRegistry,
     pub prefixes: &'a HashMap<String, String>,
+    pub config: &'a DatabaseConfig,
 }
 
 /// Execute a parsed query against an in-memory store with vector support.
@@ -47,11 +48,24 @@ pub fn execute_with_vectors(
     dict: &TermDictionary,
     vectors: &mut VectorRegistry,
 ) -> Result<QueryResult> {
+    let default_config = DatabaseConfig::default();
+    execute_with_config(query, store, dict, vectors, &default_config)
+}
+
+/// Execute a parsed query with full configuration control.
+pub fn execute_with_config(
+    query: &Query,
+    store: &TripleStore,
+    dict: &TermDictionary,
+    vectors: &mut VectorRegistry,
+    config: &DatabaseConfig,
+) -> Result<QueryResult> {
     let mut ctx = ExecutionContext {
         store,
         dict,
         vectors,
         prefixes: &query.prefixes,
+        config,
     };
 
     // Start with a single empty binding
@@ -485,6 +499,16 @@ fn evaluate_triple_pattern(
     ctx: &ExecutionContext<'_>,
     row_limit: Option<usize>,
 ) -> Result<(Vec<Bindings>, Vec<usize>)> {
+    // Check if this is a virtual HNSW edge query.
+    // When config says Virtual mode, intercept sutra:hnswNeighbor patterns.
+    if ctx.config.hnsw_edge_mode == HnswEdgeMode::Virtual {
+        if let Some(result) =
+            try_evaluate_hnsw_edge_pattern(subject, predicate, object, current, ctx, row_limit)?
+        {
+            return Ok(result);
+        }
+    }
+
     let mut results = Vec::new();
     let mut source_indices = Vec::new();
 
@@ -628,6 +652,151 @@ fn resolve_term(
             Ok(dict.lookup(&literal))
         }
     }
+}
+
+/// Try to evaluate a triple pattern as a virtual HNSW edge query.
+///
+/// Returns `Some((results, source_indices))` if the predicate is `sutra:hnswNeighbor`,
+/// otherwise returns `None` to fall through to normal triple pattern evaluation.
+///
+/// Virtual HNSW edge triples look like:
+///   `?source sutra:hnswNeighbor ?target`
+///
+/// These are generated on-the-fly from the HNSW graph structure without
+/// being stored in the triple store.
+fn try_evaluate_hnsw_edge_pattern(
+    subject: &Term,
+    predicate: &Term,
+    object: &Term,
+    current: &[Bindings],
+    ctx: &ExecutionContext<'_>,
+    row_limit: Option<usize>,
+) -> Result<Option<(Vec<Bindings>, Vec<usize>)>> {
+    // Check if the predicate is sutra:hnswNeighbor
+    let is_hnsw_neighbor = match predicate {
+        Term::Iri(iri) => iri == sutra_hnsw::HNSW_NEIGHBOR_IRI,
+        Term::PrefixedName { prefix, local } => {
+            if let Some(base) = ctx.prefixes.get(prefix) {
+                let full = format!("{}{}", base, local);
+                full == sutra_hnsw::HNSW_NEIGHBOR_IRI
+            } else {
+                false
+            }
+        }
+        Term::Variable(name) => {
+            // If the predicate variable is already bound to hnswNeighbor
+            if let Some(&bound_id) = current.first().and_then(|row| row.get(name)) {
+                if let Some(iri) = ctx.dict.resolve(bound_id) {
+                    iri == sutra_hnsw::HNSW_NEIGHBOR_IRI
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+        _ => false,
+    };
+
+    if !is_hnsw_neighbor {
+        return Ok(None);
+    }
+
+    let neighbor_pred_id = ctx
+        .dict
+        .lookup(sutra_hnsw::HNSW_NEIGHBOR_IRI)
+        .unwrap_or_else(|| {
+            // If hnswNeighbor isn't in the dictionary yet, it can't match anything
+            0
+        });
+
+    let mut results = Vec::new();
+    let mut source_indices = Vec::new();
+
+    'outer: for (row_idx, row) in current.iter().enumerate() {
+        let s_id = resolve_term(subject, row, ctx.dict, ctx.prefixes)?;
+        let o_id = resolve_term(object, row, ctx.dict, ctx.prefixes)?;
+
+        // Generate edge triples based on what's bound
+        let edges: Vec<(sutra_core::TermId, sutra_hnsw::HnswEdgeTriple)> =
+            match (s_id, o_id) {
+                (Some(source_id), _) => {
+                    // Source bound: get edges from this source
+                    ctx.vectors.edge_triples_for_source(source_id)
+                }
+                (None, Some(target_id)) => {
+                    // Object bound: get edges to this target
+                    ctx.vectors.edge_triples_for_target(target_id)
+                }
+                (None, None) => {
+                    // Both unbound: get all edges (expensive!)
+                    ctx.vectors.all_edge_triples()
+                }
+            };
+
+        for (_pred_id, edge) in &edges {
+            // Filter by object if bound
+            if let Some(target) = o_id {
+                if edge.target != target {
+                    continue;
+                }
+            }
+            // Filter by subject if bound
+            if let Some(source) = s_id {
+                if edge.source != source {
+                    continue;
+                }
+            }
+
+            let mut new_row = row.clone();
+
+            // Bind subject variable
+            if let Term::Variable(name) = subject {
+                if let Some(&existing) = new_row.get(name) {
+                    if existing != edge.source {
+                        continue;
+                    }
+                } else {
+                    new_row.insert(name.clone(), edge.source);
+                }
+            }
+
+            // Bind predicate variable
+            if let Term::Variable(name) = predicate {
+                if neighbor_pred_id != 0 {
+                    if let Some(&existing) = new_row.get(name) {
+                        if existing != neighbor_pred_id {
+                            continue;
+                        }
+                    } else {
+                        new_row.insert(name.clone(), neighbor_pred_id);
+                    }
+                }
+            }
+
+            // Bind object variable
+            if let Term::Variable(name) = object {
+                if let Some(&existing) = new_row.get(name) {
+                    if existing != edge.target {
+                        continue;
+                    }
+                } else {
+                    new_row.insert(name.clone(), edge.target);
+                }
+            }
+
+            results.push(new_row);
+            source_indices.push(row_idx);
+
+            if let Some(limit) = row_limit {
+                if results.len() >= limit {
+                    break 'outer;
+                }
+            }
+        }
+    }
+
+    Ok(Some((results, source_indices)))
 }
 
 fn evaluate_filter(expr: &FilterExpr, row: &Bindings) -> bool {
