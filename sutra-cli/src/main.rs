@@ -30,6 +30,11 @@ enum Commands {
         /// Run in-memory only (no persistence).
         #[arg(long)]
         memory_only: bool,
+
+        /// Simple passcode authentication. When set, all requests
+        /// (except /health) require Authorization: Bearer <passcode>.
+        #[arg(long)]
+        passcode: Option<String>,
     },
     /// Execute a SPARQL query from the command line.
     Query {
@@ -81,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
             port,
             data_dir,
             memory_only,
+            passcode,
         } => {
             let state = if memory_only {
                 tracing::info!("Running in-memory only (no persistence)");
@@ -89,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
                     dict: RwLock::new(sutra_core::TermDictionary::new()),
                     vectors: RwLock::new(sutra_hnsw::VectorRegistry::new()),
                     persistent: None,
+                    passcode: passcode.clone(),
                 })
             } else {
                 tracing::info!("Opening persistent store at {}", data_dir);
@@ -112,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
                     dict: RwLock::new(dict),
                     vectors: RwLock::new(sutra_hnsw::VectorRegistry::new()),
                     persistent: Some(ps),
+                    passcode: passcode.clone(),
                 })
             };
 

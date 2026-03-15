@@ -14,8 +14,9 @@
 use std::sync::{Arc, RwLock};
 
 use axum::extract::{Query as AxumQuery, State};
-use axum::http::{header, StatusCode};
-use axum::response::{IntoResponse, Json};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -40,11 +41,15 @@ pub struct AppState {
     /// are written through to disk. On startup, in-memory stores are
     /// hydrated from the persistent store.
     pub persistent: Option<PersistentStore>,
+    /// Optional passcode for simple authentication (server mode only).
+    /// When set, all requests (except /health) must include
+    /// `Authorization: Bearer <passcode>` header.
+    pub passcode: Option<String>,
 }
 
 /// Build the axum router with all endpoints.
 pub fn router(state: Arc<AppState>) -> Router {
-    Router::new()
+    let app = Router::new()
         .route("/sparql", get(sparql_get).post(sparql_post))
         .route("/graph", get(export_graph))
         .route("/sparql.csv", get(sparql_csv_get).post(sparql_csv_post))
@@ -56,9 +61,48 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/vectors/health", get(vectors_health))
         .route("/.well-known/void", get(service_description))
         .route("/service-description", get(service_description))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .with_state(state);
+    app
+}
+
+/// Simple passcode authentication middleware.
+/// Skips auth for /health endpoint. When passcode is not configured, all requests pass.
+async fn auth_middleware(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+    next: Next,
+) -> Response {
+    // No passcode configured — allow all
+    let passcode = match &state.passcode {
+        Some(p) => p,
+        None => return next.run(req).await,
+    };
+
+    // Health endpoint is always accessible
+    if req.uri().path() == "/health" {
+        return next.run(req).await;
+    }
+
+    // Check Authorization: Bearer <passcode>
+    let auth_header = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+
+    match auth_header {
+        Some(h) if h.starts_with("Bearer ") && &h[7..] == passcode => next.run(req).await,
+        _ => (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: include Authorization: Bearer <passcode> header",
+        )
+            .into_response(),
+    }
 }
 
 /// Query parameters for GET /sparql.
@@ -945,6 +989,7 @@ mod tests {
             dict: RwLock::new(dict),
             vectors: RwLock::new(VectorRegistry::new()),
             persistent: None,
+            passcode: None,
         })
     }
 
