@@ -24,6 +24,11 @@ Thumbs.db
 .env
 .env.local
 
-# Claude artifacts (kept in git history, not needed in tree)
+# Database data directories (binary, not versioned)
+sutra-data/
+sutra-import-data/
+*.sdb
+
+# Claude artifacts
 mnt/
 sutra_error.log

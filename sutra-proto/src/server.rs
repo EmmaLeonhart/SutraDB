@@ -127,14 +127,24 @@ async fn sparql_tsv_get(
     State(state): State<Arc<AppState>>,
     AxumQuery(params): AxumQuery<SparqlQueryParams>,
 ) -> Result<impl IntoResponse, ProtoError> {
-    sparql_delimited(&params.query, &state, "\t", "text/tab-separated-values; charset=utf-8")
+    sparql_delimited(
+        &params.query,
+        &state,
+        "\t",
+        "text/tab-separated-values; charset=utf-8",
+    )
 }
 
 async fn sparql_tsv_post(
     State(state): State<Arc<AppState>>,
     body: String,
 ) -> Result<impl IntoResponse, ProtoError> {
-    sparql_delimited(&body, &state, "\t", "text/tab-separated-values; charset=utf-8")
+    sparql_delimited(
+        &body,
+        &state,
+        "\t",
+        "text/tab-separated-values; charset=utf-8",
+    )
 }
 
 fn sparql_delimited(
@@ -146,9 +156,18 @@ fn sparql_delimited(
     let mut query = sutra_sparql::parse(query_str)?;
     sutra_sparql::optimize(&mut query);
 
-    let store = state.store.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
-    let dict = state.dict.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
-    let vectors = state.vectors.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let store = state
+        .store
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let dict = state
+        .dict
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let vectors = state
+        .vectors
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
     let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &vectors)?;
 
     let mut output = String::new();
@@ -256,17 +275,31 @@ fn execute_insert_data(
 ) -> Result<Json<SparqlResults>, ProtoError> {
     use sutra_sparql::parser::{Pattern, Term};
 
-    let mut dict = state.dict.write().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
-    let mut store = state.store.write().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let mut dict = state
+        .dict
+        .write()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let mut store = state
+        .store
+        .write()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
 
     let mut inserted = 0i64;
     for pattern in &query.patterns {
-        if let Pattern::Triple { subject, predicate, object } = pattern {
+        if let Pattern::Triple {
+            subject,
+            predicate,
+            object,
+        } = pattern
+        {
             let s_id = resolve_term_to_id(subject, &mut dict, &query.prefixes)?;
             let p_id = resolve_term_to_id(predicate, &mut dict, &query.prefixes)?;
             let o_id = resolve_term_to_id(object, &mut dict, &query.prefixes)?;
 
-            if store.insert(sutra_core::Triple::new(s_id, p_id, o_id)).is_ok() {
+            if store
+                .insert(sutra_core::Triple::new(s_id, p_id, o_id))
+                .is_ok()
+            {
                 if let Some(ref ps) = state.persistent {
                     let _ = ps.insert(sutra_core::Triple::new(s_id, p_id, o_id));
                 }
@@ -281,9 +314,13 @@ fn execute_insert_data(
     }
 
     Ok(Json(SparqlResults {
-        head: SparqlHead { vars: vec!["mutationCount".to_string()] },
+        head: SparqlHead {
+            vars: vec!["mutationCount".to_string()],
+        },
         results: SparqlBindings {
-            bindings: vec![serde_json::json!({"mutationCount": {"type": "literal", "value": inserted.to_string()}})],
+            bindings: vec![
+                serde_json::json!({"mutationCount": {"type": "literal", "value": inserted.to_string()}}),
+            ],
         },
     }))
 }
@@ -295,12 +332,23 @@ fn execute_delete_data(
 ) -> Result<Json<SparqlResults>, ProtoError> {
     use sutra_sparql::parser::{Pattern, Term};
 
-    let mut dict = state.dict.write().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
-    let mut store = state.store.write().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let mut dict = state
+        .dict
+        .write()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let mut store = state
+        .store
+        .write()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
 
     let mut deleted = 0i64;
     for pattern in &query.patterns {
-        if let Pattern::Triple { subject, predicate, object } = pattern {
+        if let Pattern::Triple {
+            subject,
+            predicate,
+            object,
+        } = pattern
+        {
             let s_id = resolve_term_to_id(subject, &mut dict, &query.prefixes)?;
             let p_id = resolve_term_to_id(predicate, &mut dict, &query.prefixes)?;
             let o_id = resolve_term_to_id(object, &mut dict, &query.prefixes)?;
@@ -315,9 +363,13 @@ fn execute_delete_data(
     }
 
     Ok(Json(SparqlResults {
-        head: SparqlHead { vars: vec!["mutationCount".to_string()] },
+        head: SparqlHead {
+            vars: vec!["mutationCount".to_string()],
+        },
         results: SparqlBindings {
-            bindings: vec![serde_json::json!({"mutationCount": {"type": "literal", "value": deleted.to_string()}})],
+            bindings: vec![
+                serde_json::json!({"mutationCount": {"type": "literal", "value": deleted.to_string()}}),
+            ],
         },
     }))
 }
@@ -342,11 +394,12 @@ fn resolve_term_to_id(
             let full = format!("\"{}\"^^<{}>", value, datatype);
             Ok(intern_object(dict, &full))
         }
-        Term::IntegerLiteral(n) => {
-            sutra_core::inline_integer(*n).ok_or_else(|| ProtoError::BadRequest("integer out of range".into()))
-        }
+        Term::IntegerLiteral(n) => sutra_core::inline_integer(*n)
+            .ok_or_else(|| ProtoError::BadRequest("integer out of range".into())),
         Term::A => Ok(dict.intern("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")),
-        _ => Err(ProtoError::BadRequest("variables not allowed in INSERT/DELETE DATA".into())),
+        _ => Err(ProtoError::BadRequest(
+            "variables not allowed in INSERT/DELETE DATA".into(),
+        )),
     }
 }
 
@@ -519,17 +572,11 @@ async fn export_graph(
 /// Resolve a TermId to its Turtle representation.
 fn resolve_term_for_turtle(id: sutra_core::TermId, dict: &TermDictionary) -> String {
     if let Some(n) = sutra_core::decode_inline_integer(id) {
-        return format!(
-            "\"{}\"^^<http://www.w3.org/2001/XMLSchema#integer>",
-            n
-        );
+        return format!("\"{}\"^^<http://www.w3.org/2001/XMLSchema#integer>", n);
     }
 
     if let Some(b) = sutra_core::decode_inline_boolean(id) {
-        return format!(
-            "\"{}\"^^<http://www.w3.org/2001/XMLSchema#boolean>",
-            b
-        );
+        return format!("\"{}\"^^<http://www.w3.org/2001/XMLSchema#boolean>", b);
     }
 
     if let Some(term) = dict.resolve(id) {
@@ -812,8 +859,14 @@ async fn health() -> (StatusCode, &'static str) {
 async fn vectors_health(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, ProtoError> {
-    let vectors = state.vectors.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
-    let dict = state.dict.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let vectors = state
+        .vectors
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let dict = state
+        .dict
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
 
     let mut indexes = Vec::new();
     for pred_id in vectors.predicates() {
@@ -840,9 +893,7 @@ async fn vectors_health(
 }
 
 /// GET /service-description — SPARQL service description (Turtle).
-async fn service_description(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn service_description(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let store = state.store.read().ok();
     let triple_count = store.as_ref().map(|s| s.len()).unwrap_or(0);
 

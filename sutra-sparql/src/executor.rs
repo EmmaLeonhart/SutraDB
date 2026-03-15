@@ -16,7 +16,9 @@ use sutra_core::{DatabaseConfig, HnswEdgeMode, TermDictionary, TermId, Triple, T
 use sutra_hnsw::VectorRegistry;
 
 use crate::error::{Result, SparqlError};
-use crate::parser::{Aggregate, AggregateArg, AggregateFunction, FilterExpr, Pattern, Query, QueryType, Term};
+use crate::parser::{
+    Aggregate, AggregateArg, AggregateFunction, FilterExpr, Pattern, Query, QueryType, Term,
+};
 
 /// A single row of variable bindings.
 pub type Bindings = HashMap<String, TermId>;
@@ -140,7 +142,11 @@ fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Resu
         }
 
         return Ok(QueryResult {
-            columns: vec!["subject".to_string(), "predicate".to_string(), "object".to_string()],
+            columns: vec![
+                "subject".to_string(),
+                "predicate".to_string(),
+                "object".to_string(),
+            ],
             rows: all_triples,
             scores: all_scores,
         });
@@ -153,7 +159,12 @@ fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Resu
 
         for row in &results {
             for pattern in &query.construct_template {
-                if let Pattern::Triple { subject, predicate, object } = pattern {
+                if let Pattern::Triple {
+                    subject,
+                    predicate,
+                    object,
+                } = pattern
+                {
                     let s = resolve_term(subject, row, ctx.dict, ctx.prefixes)?;
                     let p = resolve_term(predicate, row, ctx.dict, ctx.prefixes)?;
                     let o = resolve_term(object, row, ctx.dict, ctx.prefixes)?;
@@ -171,7 +182,11 @@ fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Resu
         }
 
         return Ok(QueryResult {
-            columns: vec!["subject".to_string(), "predicate".to_string(), "object".to_string()],
+            columns: vec![
+                "subject".to_string(),
+                "predicate".to_string(),
+                "object".to_string(),
+            ],
             rows: constructed,
             scores: constructed_scores,
         });
@@ -421,7 +436,10 @@ fn evaluate_pattern(
             }
             Ok((result, result_scores))
         }
-        Pattern::Bind { expression, variable } => {
+        Pattern::Bind {
+            expression,
+            variable,
+        } => {
             // BIND(term AS ?var): resolve the term and add it as a binding
             let mut result = Vec::new();
             let mut result_scores = Vec::new();
@@ -1227,7 +1245,10 @@ fn term_to_string(term: &Term, row: &Bindings, ctx: &ExecutionContext<'_>) -> Op
             let resolved = ctx.dict.resolve(id)?;
             // Strip quotes from literals
             if resolved.starts_with('"') {
-                let end = resolved[1..].find('"').map(|p| p + 1).unwrap_or(resolved.len());
+                let end = resolved[1..]
+                    .find('"')
+                    .map(|p| p + 1)
+                    .unwrap_or(resolved.len());
                 Some(resolved[1..end].to_string())
             } else {
                 Some(resolved.to_string())
@@ -1315,7 +1336,9 @@ fn compute_aggregate(agg: &Aggregate, rows: &[&Bindings], _ctx: &ExecutionContex
             } else {
                 match &agg.argument {
                     AggregateArg::Star => rows.len() as i64,
-                    AggregateArg::Variable(v) => rows.iter().filter(|r| r.contains_key(v)).count() as i64,
+                    AggregateArg::Variable(v) => {
+                        rows.iter().filter(|r| r.contains_key(v)).count() as i64
+                    }
                 }
             }
         }
@@ -1338,28 +1361,24 @@ fn compute_aggregate(agg: &Aggregate, rows: &[&Bindings], _ctx: &ExecutionContex
                 sum
             }
         }
-        AggregateFunction::Min => {
-            match &agg.argument {
-                AggregateArg::Variable(v) => rows
-                    .iter()
-                    .filter_map(|r| r.get(v))
-                    .filter_map(|&id| sutra_core::decode_inline_integer(id))
-                    .min()
-                    .unwrap_or(0),
-                AggregateArg::Star => 0,
-            }
-        }
-        AggregateFunction::Max => {
-            match &agg.argument {
-                AggregateArg::Variable(v) => rows
-                    .iter()
-                    .filter_map(|r| r.get(v))
-                    .filter_map(|&id| sutra_core::decode_inline_integer(id))
-                    .max()
-                    .unwrap_or(0),
-                AggregateArg::Star => 0,
-            }
-        }
+        AggregateFunction::Min => match &agg.argument {
+            AggregateArg::Variable(v) => rows
+                .iter()
+                .filter_map(|r| r.get(v))
+                .filter_map(|&id| sutra_core::decode_inline_integer(id))
+                .min()
+                .unwrap_or(0),
+            AggregateArg::Star => 0,
+        },
+        AggregateFunction::Max => match &agg.argument {
+            AggregateArg::Variable(v) => rows
+                .iter()
+                .filter_map(|r| r.get(v))
+                .filter_map(|&id| sutra_core::decode_inline_integer(id))
+                .max()
+                .unwrap_or(0),
+            AggregateArg::Star => 0,
+        },
     }
 }
 

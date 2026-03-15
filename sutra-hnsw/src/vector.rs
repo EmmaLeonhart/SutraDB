@@ -552,15 +552,22 @@ mod tests {
         // Test with common embedding dimensions
         let dims = [384, 768, 1536]; // MiniLM, BERT/ada, text-embedding-3-large
         for dim in dims {
-            let a: Vec<f32> = (0..dim).map(|i| ((i * 7 + 3) as f32 % 100.0) / 100.0 - 0.5).collect();
-            let b: Vec<f32> = (0..dim).map(|i| ((i * 13 + 7) as f32 % 100.0) / 100.0 - 0.5).collect();
+            let a: Vec<f32> = (0..dim)
+                .map(|i| ((i * 7 + 3) as f32 % 100.0) / 100.0 - 0.5)
+                .collect();
+            let b: Vec<f32> = (0..dim)
+                .map(|i| ((i * 13 + 7) as f32 % 100.0) / 100.0 - 0.5)
+                .collect();
 
             let a_norm = normalized(&a);
             let b_norm = normalized(&b);
 
             // Cosine similarity via pre-normalized dot product
             let score = dot_product(&a_norm, &b_norm);
-            assert!(score >= -1.0 && score <= 1.0, "cosine out of range at dim {dim}: {score}");
+            assert!(
+                score >= -1.0 && score <= 1.0,
+                "cosine out of range at dim {dim}: {score}"
+            );
 
             // Euclidean distance should be non-negative
             let dist = squared_euclidean(&a, &b);

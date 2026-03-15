@@ -69,9 +69,12 @@ fn parse_blank_node(bytes: &[u8], pos: &mut usize) -> Option<String> {
     }
     let start = *pos;
     *pos += 2; // skip '_:'
-    // Blank node labels: [A-Za-z0-9_.-]
+               // Blank node labels: [A-Za-z0-9_.-]
     while *pos < bytes.len()
-        && (bytes[*pos].is_ascii_alphanumeric() || bytes[*pos] == b'_' || bytes[*pos] == b'.' || bytes[*pos] == b'-')
+        && (bytes[*pos].is_ascii_alphanumeric()
+            || bytes[*pos] == b'_'
+            || bytes[*pos] == b'.'
+            || bytes[*pos] == b'-')
     {
         *pos += 1;
     }

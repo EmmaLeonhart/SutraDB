@@ -211,7 +211,10 @@ async fn main() -> anyhow::Result<()> {
             }
 
             ps.flush()?;
-            println!("Imported {} triples ({} errors) from {}", inserted, errors, file);
+            println!(
+                "Imported {} triples ({} errors) from {}",
+                inserted, errors, file
+            );
         }
 
         Commands::Export {
@@ -229,9 +232,15 @@ async fn main() -> anyhow::Result<()> {
 
             let mut count = 0usize;
             for triple in ps.iter() {
-                let s = ps.resolve(triple.subject)?.unwrap_or_else(|| format!("_:id{}", triple.subject));
-                let p = ps.resolve(triple.predicate)?.unwrap_or_else(|| format!("_:id{}", triple.predicate));
-                let o = ps.resolve(triple.object)?.unwrap_or_else(|| resolve_object_persistent(triple.object, &ps));
+                let s = ps
+                    .resolve(triple.subject)?
+                    .unwrap_or_else(|| format!("_:id{}", triple.subject));
+                let p = ps
+                    .resolve(triple.predicate)?
+                    .unwrap_or_else(|| format!("_:id{}", triple.predicate));
+                let o = ps
+                    .resolve(triple.object)?
+                    .unwrap_or_else(|| resolve_object_persistent(triple.object, &ps));
 
                 if format == "ttl" || format == "turtle" {
                     // Simplified Turtle (no prefix compression for CLI)

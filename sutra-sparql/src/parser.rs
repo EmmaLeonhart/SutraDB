@@ -117,15 +117,9 @@ pub enum Pattern {
     /// UNION { ... } { ... }
     Union(Vec<Vec<Pattern>>),
     /// BIND(expr AS ?var)
-    Bind {
-        expression: Term,
-        variable: String,
-    },
+    Bind { expression: Term, variable: String },
     /// VALUES ?var { val1 val2 ... }
-    Values {
-        variable: String,
-        values: Vec<Term>,
-    },
+    Values { variable: String, values: Vec<Term> },
 }
 
 /// A term in a triple pattern.
@@ -928,7 +922,8 @@ impl<'a> Parser<'a> {
             return self.parse_two_arg_string_filter("CONTAINS", |a, b| FilterExpr::Contains(a, b));
         }
         if self.peek_keyword("STRSTARTS") {
-            return self.parse_two_arg_string_filter("STRSTARTS", |a, b| FilterExpr::StrStarts(a, b));
+            return self
+                .parse_two_arg_string_filter("STRSTARTS", |a, b| FilterExpr::StrStarts(a, b));
         }
         if self.peek_keyword("STRENDS") {
             return self.parse_two_arg_string_filter("STRENDS", |a, b| FilterExpr::StrEnds(a, b));
@@ -980,7 +975,11 @@ impl<'a> Parser<'a> {
             return Err(self.error("LANG() only supports = comparison"));
         }
         if self.peek_keyword("isIRI") || self.peek_keyword("isURI") {
-            let kw = if self.peek_keyword("isIRI") { "isIRI" } else { "isURI" };
+            let kw = if self.peek_keyword("isIRI") {
+                "isIRI"
+            } else {
+                "isURI"
+            };
             self.expect_keyword(kw)?;
             self.expect_char('(')?;
             let var = self.parse_variable_name()?;
