@@ -25,7 +25,7 @@ class _GraphScreenState extends State<GraphScreen> {
   String? _selectedNodeId;
   bool _loading = false;
   String? _error;
-  int _limit = 500;
+  int _limit = 50;
 
   @override
   void initState() {
