@@ -1065,6 +1065,37 @@ fn evaluate_filter(expr: &FilterExpr, row: &Bindings, ctx: &mut ExecutionContext
             }
             false
         }
+        FilterExpr::LangMatches(var, lang) => {
+            if let Some(&id) = row.get(var) {
+                if let Some(term_str) = ctx.dict.resolve(id) {
+                    if let Some(at_pos) = term_str.rfind('@') {
+                        let term_lang = &term_str[at_pos + 1..];
+                        if lang == "*" {
+                            return !term_lang.is_empty();
+                        }
+                        return term_lang.eq_ignore_ascii_case(lang);
+                    }
+                }
+            }
+            false
+        }
+        FilterExpr::StrEquals(var, term) => {
+            let var_str = row.get(var).and_then(|&id| {
+                if let Some(s) = ctx.dict.resolve(id) {
+                    // Strip quotes and language tag
+                    if s.starts_with('"') {
+                        let end = s[1..].find('"').map(|p| p + 1).unwrap_or(s.len());
+                        Some(s[1..end].to_string())
+                    } else {
+                        Some(s.to_string())
+                    }
+                } else {
+                    None
+                }
+            });
+            let term_str = term_to_string(term, row, ctx);
+            var_str.is_some() && var_str == term_str
+        }
         FilterExpr::IsLiteral(var) => {
             if let Some(&id) = row.get(var) {
                 if sutra_core::is_inline(id) {

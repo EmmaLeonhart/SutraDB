@@ -182,6 +182,10 @@ pub enum FilterExpr {
     IsIri(String),
     /// isLiteral(?var)
     IsLiteral(String),
+    /// LANG(?var) = "en" or LANGMATCHES(LANG(?var), "en")
+    LangMatches(String, String),
+    /// STR(?var) — cast to string for comparison
+    StrEquals(String, Term),
     /// ?var >= term
     GreaterThanOrEqual(Term, Term),
     /// ?var <= term
@@ -885,6 +889,49 @@ impl<'a> Parser<'a> {
         }
         if self.peek_keyword("REGEX") {
             return self.parse_two_arg_string_filter("REGEX", |a, b| FilterExpr::Regex(a, b));
+        }
+        if self.peek_keyword("LANGMATCHES") {
+            self.expect_keyword("LANGMATCHES")?;
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            // Expect LANG(?var)
+            self.expect_keyword("LANG")?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            self.expect_char(',')?;
+            self.skip_whitespace();
+            let lang_term = self.parse_term()?;
+            let lang = match &lang_term {
+                Term::Literal(s) => s.clone(),
+                _ => return Err(self.error("LANGMATCHES expects a string literal")),
+            };
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(FilterExpr::LangMatches(var, lang));
+        }
+        if self.peek_keyword("LANG") {
+            self.expect_keyword("LANG")?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            let op = self.parse_comparison_op()?;
+            self.skip_whitespace();
+            let lang_term = self.parse_term()?;
+            let lang = match &lang_term {
+                Term::Literal(s) => s.clone(),
+                _ => return Err(self.error("LANG() comparison expects a string literal")),
+            };
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            if op == "=" {
+                return Ok(FilterExpr::LangMatches(var, lang));
+            }
+            return Err(self.error("LANG() only supports = comparison"));
         }
         if self.peek_keyword("isIRI") || self.peek_keyword("isURI") {
             let kw = if self.peek_keyword("isIRI") { "isIRI" } else { "isURI" };
