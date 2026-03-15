@@ -141,14 +141,19 @@ def generate_and_load():
     print(f"  TOTAL GRAPH TRIPLES: {total_triples:,}")
 
     # Step 3: Insert vectors (these create triples too via POST /vectors)
-    print(f"\n[3/3] Inserting vectors (~{int(NUM_ENTITIES * VECTOR_FRACTION):,} entities)...")
+    # IMPORTANT: shuffle insertion order so HNSW upper layers have nodes from
+    # all clusters, providing cross-cluster bridges. Without shuffling, the
+    # entry point and upper layers are biased toward whichever cluster was
+    # inserted first, making greedy descent unable to reach other clusters.
+    vec_entities = [e for e in entities if e["has_vector"]]
+    random.shuffle(vec_entities)
+
+    print(f"\n[3/3] Inserting vectors ({len(vec_entities):,} entities, shuffled)...")
     vec_start = time.time()
     vec_count = 0
     vec_errors = 0
 
-    for e in entities:
-        if not e["has_vector"]:
-            continue
+    for e in vec_entities:
         vec = gen_vector(e["type_idx"], e["entity_idx"])
         try:
             r = session.post(f"{ENDPOINT}/vectors", json={

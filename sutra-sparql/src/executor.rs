@@ -58,11 +58,14 @@ pub fn execute_with_vectors(
     let mut results: Vec<Bindings> = vec![HashMap::new()];
     let mut scores: Vec<HashMap<String, f32>> = vec![HashMap::new()];
 
-    // LIMIT push-down: when there's no ORDER BY or DISTINCT, we can stop
-    // producing rows as soon as we have enough. This avoids computing
-    // 62K rows to keep 50.
-    let pushable_limit = if query.order_by.is_empty() && !query.distinct {
-        // Account for OFFSET: we need limit + offset rows before truncating
+    // LIMIT push-down: only safe when no ORDER BY, DISTINCT, or VECTOR_SIMILAR.
+    // If there's a vector pattern, early truncation would discard candidates
+    // that the vector search needs to match against.
+    let has_vector_pattern = query
+        .patterns
+        .iter()
+        .any(|p| matches!(p, Pattern::VectorSimilar { .. }));
+    let pushable_limit = if query.order_by.is_empty() && !query.distinct && !has_vector_pattern {
         query.limit.map(|l| l + query.offset.unwrap_or(0))
     } else {
         None
