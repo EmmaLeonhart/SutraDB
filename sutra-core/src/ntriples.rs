@@ -10,6 +10,7 @@
 ///
 /// Supported forms:
 /// - IRI references: `<http://...>`
+/// - Blank nodes: `_:label`
 /// - Plain string literals: `"value"`
 /// - Typed literals: `"value"^^<datatype>`
 /// - Language-tagged literals: `"value"@en`
@@ -22,19 +23,21 @@ pub fn parse_ntriples_line(line: &str) -> Option<(String, String, String)> {
     let mut pos = 0;
     let bytes = line.as_bytes();
 
-    // Parse subject (must be an IRI)
-    let subject = parse_iri(bytes, &mut pos)?;
+    // Parse subject (IRI or blank node)
+    let subject = parse_node(bytes, &mut pos)?;
     skip_whitespace(bytes, &mut pos);
 
     // Parse predicate (must be an IRI)
     let predicate = parse_iri(bytes, &mut pos)?;
     skip_whitespace(bytes, &mut pos);
 
-    // Parse object (IRI or literal)
+    // Parse object (IRI, blank node, or literal)
     let object = if pos < bytes.len() && bytes[pos] == b'<' {
         parse_iri(bytes, &mut pos)?
     } else if pos < bytes.len() && bytes[pos] == b'"' {
         parse_literal(bytes, &mut pos)?
+    } else if pos + 1 < bytes.len() && bytes[pos] == b'_' && bytes[pos + 1] == b':' {
+        parse_blank_node(bytes, &mut pos)?
     } else {
         return None;
     };
@@ -46,6 +49,34 @@ pub fn parse_ntriples_line(line: &str) -> Option<(String, String, String)> {
     }
 
     Some((subject, predicate, object))
+}
+
+/// Parse a node: either an IRI or a blank node.
+fn parse_node(bytes: &[u8], pos: &mut usize) -> Option<String> {
+    if *pos < bytes.len() && bytes[*pos] == b'<' {
+        parse_iri(bytes, pos)
+    } else if *pos + 1 < bytes.len() && bytes[*pos] == b'_' && bytes[*pos + 1] == b':' {
+        parse_blank_node(bytes, pos)
+    } else {
+        None
+    }
+}
+
+/// Parse a blank node label `_:label`. Returns the full `_:label` string.
+fn parse_blank_node(bytes: &[u8], pos: &mut usize) -> Option<String> {
+    if *pos + 1 >= bytes.len() || bytes[*pos] != b'_' || bytes[*pos + 1] != b':' {
+        return None;
+    }
+    let start = *pos;
+    *pos += 2; // skip '_:'
+    // Blank node labels: [A-Za-z0-9_.-]
+    while *pos < bytes.len()
+        && (bytes[*pos].is_ascii_alphanumeric() || bytes[*pos] == b'_' || bytes[*pos] == b'.' || bytes[*pos] == b'-')
+    {
+        *pos += 1;
+    }
+    let label = std::str::from_utf8(&bytes[start..*pos]).ok()?;
+    Some(label.to_string())
 }
 
 /// Parse an IRI enclosed in angle brackets. Advances `pos` past the closing `>`.
@@ -197,6 +228,31 @@ mod tests {
         let line = r#"<http://example.org/s> <http://example.org/p> <http://example.org/o>"#;
         let result = parse_ntriples_line(line).unwrap();
         assert_eq!(result.0, "http://example.org/s");
+    }
+
+    #[test]
+    fn parse_blank_node_subject() {
+        let line = r#"_:b0 <http://example.org/p> <http://example.org/o> ."#;
+        let result = parse_ntriples_line(line).unwrap();
+        assert_eq!(result.0, "_:b0");
+        assert_eq!(result.1, "http://example.org/p");
+        assert_eq!(result.2, "http://example.org/o");
+    }
+
+    #[test]
+    fn parse_blank_node_object() {
+        let line = r#"<http://example.org/s> <http://example.org/p> _:genid123 ."#;
+        let result = parse_ntriples_line(line).unwrap();
+        assert_eq!(result.0, "http://example.org/s");
+        assert_eq!(result.2, "_:genid123");
+    }
+
+    #[test]
+    fn parse_blank_node_both() {
+        let line = r#"_:node1 <http://example.org/p> _:node2 ."#;
+        let result = parse_ntriples_line(line).unwrap();
+        assert_eq!(result.0, "_:node1");
+        assert_eq!(result.2, "_:node2");
     }
 
     #[test]
