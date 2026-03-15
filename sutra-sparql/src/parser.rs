@@ -141,6 +141,25 @@ pub enum Term {
     VectorLiteral(Vec<f32>),
     /// The special token `a` (shorthand for rdf:type)
     A,
+    /// A property path: predicate+ (one or more), predicate* (zero or more),
+    /// or pred1/pred2 (sequence).
+    Path {
+        base: Box<Term>,
+        modifier: PathModifier,
+    },
+}
+
+/// Property path modifier.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PathModifier {
+    /// + (one or more)
+    OneOrMore,
+    /// * (zero or more)
+    ZeroOrMore,
+    /// ? (zero or one)
+    ZeroOrOne,
+    /// / (sequence of two predicates)
+    Sequence(Box<Term>),
 }
 
 /// A filter expression (simplified).
@@ -576,11 +595,40 @@ impl<'a> Parser<'a> {
                     self.pos += 1;
                 }
             } else {
-                // Triple pattern
+                // Triple pattern (possibly with property path)
                 let subject = self.parse_term()?;
                 self.skip_whitespace();
-                let predicate = self.parse_term()?;
+                let mut predicate = self.parse_term()?;
+                // Check for property path modifiers: +, *, ?, /
+                match self.peek_char() {
+                    Some('+') => {
+                        self.pos += 1;
+                        predicate = Term::Path {
+                            base: Box::new(predicate),
+                            modifier: PathModifier::OneOrMore,
+                        };
+                    }
+                    Some('*') => {
+                        self.pos += 1;
+                        predicate = Term::Path {
+                            base: Box::new(predicate),
+                            modifier: PathModifier::ZeroOrMore,
+                        };
+                    }
+                    Some('/') => {
+                        self.pos += 1;
+                        self.skip_whitespace();
+                        let next_pred = self.parse_term()?;
+                        predicate = Term::Path {
+                            base: Box::new(predicate),
+                            modifier: PathModifier::Sequence(Box::new(next_pred)),
+                        };
+                    }
+                    _ => {}
+                }
                 self.skip_whitespace();
+                // Check for ? modifier (after whitespace skip since ? could be a variable)
+                // Only apply ? if immediately after predicate (no space)
                 let object = self.parse_term()?;
                 self.skip_whitespace();
 

@@ -17,7 +17,8 @@ use sutra_hnsw::VectorRegistry;
 
 use crate::error::{Result, SparqlError};
 use crate::parser::{
-    Aggregate, AggregateArg, AggregateFunction, FilterExpr, Pattern, Query, QueryType, Term,
+    Aggregate, AggregateArg, AggregateFunction, FilterExpr, PathModifier, Pattern, Query,
+    QueryType, Term,
 };
 
 /// A single row of variable bindings.
@@ -356,6 +357,22 @@ fn evaluate_pattern(
     check_deadline(ctx)?;
 
     match pattern {
+        Pattern::Triple {
+            subject,
+            predicate: Term::Path { base, modifier },
+            object,
+        } => {
+            // Property path evaluation
+            evaluate_property_path(
+                subject,
+                base,
+                modifier,
+                object,
+                current,
+                current_scores,
+                ctx,
+            )
+        }
         Pattern::Triple {
             subject,
             predicate,
@@ -864,6 +881,10 @@ fn resolve_term(
             let literal = format!("\"{}\"^^<http://sutra.dev/f32vec>", vec_str.join(" "));
             Ok(dict.lookup(&literal))
         }
+        Term::Path { base, .. } => {
+            // Path terms are handled at the pattern level, not here
+            resolve_term(base, bindings, dict, prefixes)
+        }
     }
 }
 
@@ -1371,6 +1392,139 @@ fn compute_aggregate(agg: &Aggregate, rows: &[&Bindings], _ctx: &ExecutionContex
                 .unwrap_or(0),
             AggregateArg::Star => 0,
         },
+    }
+}
+
+/// Evaluate a property path pattern (pred+, pred*, pred/pred2).
+fn evaluate_property_path(
+    subject: &Term,
+    base_pred: &Term,
+    modifier: &PathModifier,
+    object: &Term,
+    current: &[Bindings],
+    current_scores: &[HashMap<String, f32>],
+    ctx: &mut ExecutionContext<'_>,
+) -> Result<(Vec<Bindings>, Vec<HashMap<String, f32>>)> {
+    match modifier {
+        PathModifier::Sequence(next_pred) => {
+            // pred1/pred2: ?s pred1 ?mid . ?mid pred2 ?o
+            let mid_var = format!("__path_mid_{}", current.len());
+            let step1 = Pattern::Triple {
+                subject: subject.clone(),
+                predicate: base_pred.clone(),
+                object: Term::Variable(mid_var.clone()),
+            };
+            let step2 = Pattern::Triple {
+                subject: Term::Variable(mid_var),
+                predicate: (&**next_pred).clone(),
+                object: object.clone(),
+            };
+            let (r1, s1) = evaluate_pattern(&step1, current, current_scores, ctx, None)?;
+            evaluate_pattern(&step2, &r1, &s1, ctx, None)
+        }
+        PathModifier::OneOrMore | PathModifier::ZeroOrMore => {
+            // Iterative BFS traversal with cycle detection
+            let include_zero = matches!(modifier, PathModifier::ZeroOrMore);
+            let max_depth = 50; // prevent infinite loops
+
+            let mut all_results = Vec::new();
+            let mut all_scores = Vec::new();
+
+            for (row_idx, row) in current.iter().enumerate() {
+                let s_id = resolve_term(subject, row, ctx.dict, ctx.prefixes)?;
+                let o_id = resolve_term(object, row, ctx.dict, ctx.prefixes)?;
+                let pred_id = resolve_term(base_pred, row, ctx.dict, ctx.prefixes)?
+                    .ok_or_else(|| SparqlError::Execution("path predicate not resolved".into()))?;
+
+                // Zero-length path: subject = object
+                if include_zero {
+                    if let Some(sid) = s_id {
+                        if let Term::Variable(o_var) = object {
+                            let mut new_row = row.clone();
+                            new_row.insert(o_var.clone(), sid);
+                            all_results.push(new_row);
+                            all_scores.push(current_scores[row_idx].clone());
+                        } else if o_id == Some(sid) {
+                            all_results.push(row.clone());
+                            all_scores.push(current_scores[row_idx].clone());
+                        }
+                    }
+                }
+
+                // BFS from subject
+                let start_nodes: Vec<TermId> = if let Some(sid) = s_id {
+                    vec![sid]
+                } else {
+                    continue;
+                };
+
+                let mut frontier = start_nodes;
+                let mut visited = std::collections::HashSet::new();
+
+                for _depth in 0..max_depth {
+                    if frontier.is_empty() {
+                        break;
+                    }
+                    check_deadline(ctx)?;
+
+                    let mut next_frontier = Vec::new();
+                    for &node in &frontier {
+                        if !visited.insert(node) {
+                            continue;
+                        }
+                        // Find all objects reachable via one step of pred_id from node
+                        for triple in ctx.store.find_by_subject_predicate(node, pred_id) {
+                            let target = triple.object;
+                            // Add to results
+                            if let Term::Variable(o_var) = object {
+                                let mut new_row = row.clone();
+                                new_row.insert(o_var.clone(), target);
+                                all_results.push(new_row);
+                                all_scores.push(current_scores[row_idx].clone());
+                            } else if o_id == Some(target) {
+                                all_results.push(row.clone());
+                                all_scores.push(current_scores[row_idx].clone());
+                            }
+                            if !visited.contains(&target) {
+                                next_frontier.push(target);
+                            }
+                        }
+                    }
+                    frontier = next_frontier;
+                }
+            }
+
+            Ok((all_results, all_scores))
+        }
+        PathModifier::ZeroOrOne => {
+            // pred?: match zero or one step
+            let mut results = Vec::new();
+            let mut scores = Vec::new();
+
+            // Zero step: subject = object
+            for (i, row) in current.iter().enumerate() {
+                if let Some(sid) = resolve_term(subject, row, ctx.dict, ctx.prefixes)? {
+                    if let Term::Variable(o_var) = object {
+                        let mut new_row = row.clone();
+                        new_row.insert(o_var.clone(), sid);
+                        results.push(new_row);
+                        scores.push(current_scores[i].clone());
+                    }
+                }
+            }
+
+            // One step: normal triple pattern
+            let one_step = Pattern::Triple {
+                subject: subject.clone(),
+                predicate: base_pred.clone(),
+                object: object.clone(),
+            };
+            let (r1, s1) = evaluate_pattern(&one_step, current, current_scores, ctx, None)?;
+            results.extend(r1);
+            scores.extend(s1);
+
+            Ok((results, scores))
+        }
     }
 }
 
