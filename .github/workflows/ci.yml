@@ -10,8 +10,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ── Core Database (Rust) ──────────────────────────────────────────────
+
   check:
-    name: Check
+    name: Rust Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +22,7 @@ jobs:
       - run: cargo check --workspace
 
   test:
-    name: Test
+    name: Rust Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +31,7 @@ jobs:
       - run: cargo test --workspace
 
   clippy:
-    name: Clippy
+    name: Rust Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +42,7 @@ jobs:
       - run: cargo clippy --workspace -- -D warnings
 
   fmt:
-    name: Format
+    name: Rust Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,3 +50,103 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+
+  # ── Python SDK ────────────────────────────────────────────────────────
+
+  sdk-python:
+    name: SDK Python
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
+      - run: pip install pytest
+      - run: pytest tests/ -v
+
+  # ── TypeScript SDK ────────────────────────────────────────────────────
+
+  sdk-typescript:
+    name: SDK TypeScript
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npx tsc --noEmit
+      - run: npx jest --passWithNoTests
+
+  # ── Rust SDK ──────────────────────────────────────────────────────────
+
+  sdk-rust:
+    name: SDK Rust
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdks/rust
+      - run: cargo check
+      - run: cargo test
+
+  # ── Java SDK ──────────────────────────────────────────────────────────
+
+  sdk-java:
+    name: SDK Java
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/java
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - run: mvn compile -q
+
+  # ── C# / .NET SDK ────────────────────────────────────────────────────
+
+  sdk-dotnet:
+    name: SDK .NET
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/dotnet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet build
+      - run: dotnet pack --no-build
+
+  # ── Go SDK ────────────────────────────────────────────────────────────
+
+  sdk-go:
+    name: SDK Go
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go build ./...
+      - run: go test ./... -v
+      - run: go vet ./...
