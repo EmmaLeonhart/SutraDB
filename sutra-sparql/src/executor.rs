@@ -199,9 +199,23 @@ fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Resu
     // Apply GROUP BY + Aggregates
     if !query.group_by.is_empty() || !query.aggregates.is_empty() {
         let (grouped_results, grouped_scores) =
-            apply_group_by_and_aggregates(&results, &query.group_by, &query.aggregates, &ctx)?;
+            apply_group_by_and_aggregates(&results, &query.group_by, &query.aggregates, ctx)?;
         results = grouped_results;
         scores = grouped_scores;
+    }
+
+    // Apply HAVING (filter on aggregated results)
+    if let Some(ref having_expr) = query.having {
+        let mut filtered = Vec::new();
+        let mut filtered_scores = Vec::new();
+        for (i, row) in results.iter().enumerate() {
+            if evaluate_filter(having_expr, row, ctx) {
+                filtered.push(row.clone());
+                filtered_scores.push(scores[i].clone());
+            }
+        }
+        results = filtered;
+        scores = filtered_scores;
     }
 
     // Apply ORDER BY

@@ -63,6 +63,8 @@ pub struct Query {
     pub patterns: Vec<Pattern>,
     /// GROUP BY variables.
     pub group_by: Vec<String>,
+    /// HAVING filter (applied after GROUP BY).
+    pub having: Option<FilterExpr>,
     /// CONSTRUCT template patterns (only for CONSTRUCT queries).
     pub construct_template: Vec<Pattern>,
     /// ORDER BY clauses.
@@ -305,6 +307,7 @@ impl<'a> Parser<'a> {
                 distinct: false,
                 patterns,
                 group_by: vec![],
+                having: None,
                 construct_template: vec![],
                 order_by: vec![],
                 limit: None,
@@ -340,6 +343,14 @@ impl<'a> Parser<'a> {
             }
         }
 
+        let mut having = None;
+        self.skip_whitespace();
+        if self.peek_keyword("HAVING") {
+            self.expect_keyword("HAVING")?;
+            self.skip_whitespace();
+            having = Some(self.parse_filter()?);
+        }
+
         self.skip_whitespace();
         if self.peek_keyword("ORDER") {
             self.expect_keyword("ORDER")?;
@@ -369,6 +380,7 @@ impl<'a> Parser<'a> {
             distinct,
             patterns,
             group_by,
+            having,
             construct_template,
             order_by,
             limit,
