@@ -112,6 +112,8 @@
             <button class="qb" onclick="qk('all')">All</button>
             <button class="qb" onclick="qk('types')">Types</button>
             <button class="qb" onclick="qk('vecs')">Vectors</button>
+            <button class="qb" onclick="qk('hnsw')">HNSW Graph</button>
+            <button class="qb" onclick="qk('hnswNode')">HNSW Node</button>
         </div>
         <div class="results" id="results"></div>
         <div class="info" id="info"></div>
@@ -124,6 +126,7 @@
             <span class="legend-item"><span class="dot" style="background:#3498db"></span> IRI</span>
             <span class="legend-item"><span class="dot" style="background:#3fb950"></span> Literal</span>
             <span class="legend-item"><span class="dot" style="background:#d29922"></span> Vector</span>
+            <span class="legend-item"><span class="dot" style="background:#9b59b6"></span> HNSW Edge</span>
         </div>
         <div class="filters" id="filters"><strong>Edge filters:</strong> <label><input type="checkbox" id="toggleAll" checked> All</label><span id="filterBoxes"></span></div>
         <div class="gstatus" id="gstatus">No data loaded</div>
@@ -183,11 +186,17 @@ function addEdge(from, to, label) {
     const eid = from+'|'+to+'|'+label;
     if (visEdges.get(eid)) return;
     const hidden = filterState[label] === false;
+    const isHnswEdge = label === 'hnswNeighbor' || label === 'sutra:hnswNeighbor';
     visEdges.add({
-        id: eid, from, to, label, title: label, arrows: 'to',
-        color: { color: '#555', highlight: '#999' },
+        id: eid, from, to,
+        label: isHnswEdge ? '' : label,
+        title: isHnswEdge ? 'HNSW neighbor' : label,
+        arrows: isHnswEdge ? '' : 'to',
+        color: { color: isHnswEdge ? '#9b59b6' : '#555', highlight: isHnswEdge ? '#bc8cff' : '#999' },
         font: { size: 9, color: '#8b949e', strokeWidth: 0 },
-        smooth: { type: 'curvedCW', roundness: 0.12 },
+        smooth: { type: 'curvedCW', roundness: isHnswEdge ? 0.0 : 0.12 },
+        width: isHnswEdge ? 1.0 : 1.5,
+        dashes: isHnswEdge ? [4, 4] : false,
         hidden, _lbl: label
     });
     if (!knownEdgeLabels.has(label)) {
@@ -253,6 +262,15 @@ async function expandNode(iri) {
             addNode(b.s.value, sh(b.s.value), 'iri');
             addEdge(b.s.value, iri, pLabel);
         }
+        // HNSW neighbors (virtual edges — shows the index graph structure)
+        try {
+            const hnsw = await sparql(`SELECT ?neighbor WHERE { <${iri}> <http://sutra.dev/hnswNeighbor> ?neighbor } LIMIT 20`);
+            for (const b of hnsw.results.bindings) {
+                const nId = b.neighbor.value;
+                addNode(nId, sh(nId), 'iri');
+                addEdge(iri, nId, 'hnswNeighbor');
+            }
+        } catch(e) { /* HNSW edges may not be available */ }
         updateGStatus();
     } catch(e) { console.error('Expand failed:', e); }
 }
@@ -399,10 +417,19 @@ function qk(t) {
         all: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 30',
         types: 'SELECT DISTINCT ?type WHERE {\n  ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type\n} LIMIT 30',
         vecs: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 50',
+        hnsw: '# HNSW neighbor graph — shows the actual index structure\n# Nodes connected by hnswNeighbor are HNSW graph neighbors\nSELECT ?s ?p ?o WHERE {\n  ?s <http://sutra.dev/hnswNeighbor> ?o .\n  BIND(<http://sutra.dev/hnswNeighbor> AS ?p)\n} LIMIT 100',
+        hnswNode: '# HNSW neighbors of a specific entity\n# Replace the IRI with any entity that has a vector\nSELECT ?s ?p ?o WHERE {\n  # Pick an entity:\n  ?s <http://sutra.dev/hnswNeighbor> ?o .\n  BIND(<http://sutra.dev/hnswNeighbor> AS ?p)\n} LIMIT 50',
     };
     box.value = qs[t] || qs.all;
+    if (t === 'hnsw' || t === 'hnswNode') {
+        isHnswMode = true;
+    } else {
+        isHnswMode = false;
+    }
     runQuery();
 }
+
+let isHnswMode = false;
 
 // ── Health ──
 async function checkHealth() {
