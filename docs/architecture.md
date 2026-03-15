@@ -106,12 +106,36 @@ Each HNSW index is keyed by the **vector object's TermId** — the vector litera
 
 - **Insert**: the vector literal is interned as a term, a triple `<subject> <predicate> <vector>` is created, and the vector is inserted into the predicate's HNSW index under the object's TermId.
 - **Multiple subjects**: two entities can point to the same vector (e.g. "bank" the financial institution and "bank" the riverbank sharing an embedding). The HNSW index stores the vector once; the triple store links multiple subjects to it.
-- **Delete**: the corresponding HNSW node is marked deleted (lazy deletion — HNSW supports this natively without graph restructuring).
+- **Delete (tombstone)**: deleted HNSW nodes are **tombstoned**, not removed. The node is flagged as inactive and excluded from search results, but it remains in the graph structure so it can still be traversed over during greedy descent. This preserves graph connectivity — removing a node would break neighbor links and degrade search quality. Tombstoned nodes are cleaned up only during a full index rebuild.
 - **Query**: HNSW returns a ranked list of vector object IDs. The executor joins these back through the triple store's POS index to find which subjects connect to those vectors. A vector never exists without at least one triple pointing to it.
 
 The HNSW index is a first-class index alongside SPO/POS/OSP — the query planner sees it as just another access path, not a foreign system.
 
-### 4.4 Memory Layout
+### 4.4 Virtual Triples
+
+HNSW neighbor connections are exposed as **virtual triples** using the `sutra:hnswNeighbor` predicate:
+
+```turtle
+:entity_A sutra:hnswNeighbor :entity_B .
+```
+
+These triples are not stored in SPO/POS/OSP — they exist only in the HNSW graph structure and are generated on-the-fly when queried. This means:
+
+- `SELECT ?neighbor WHERE { :entity sutra:hnswNeighbor ?neighbor }` traverses the HNSW graph like any other triple pattern
+- The same SPARQL executor handles both stored triples and virtual HNSW triples — **one unified graph, one traversal process**
+- No special API or query syntax needed to explore the vector index structure
+
+### 4.5 Persistence Model
+
+The HNSW graph is **ephemeral by default, rebuildable from triples**:
+
+- **Persisted**: all triples (including vector triples like `<entity> <hasEmbedding> <vector>`) are stored in SPO/POS/OSP indexes in the `.sdb` file, along with the term dictionary.
+- **Rebuilt on startup**: HNSW graphs are reconstructed from the stored vector triples when the database opens. This ensures the index is always fresh — no stale neighbor connections, no accumulated tombstones, no degraded entry points.
+- **Optional snapshot**: for faster cold start on large databases, the HNSW graph state can optionally be serialized alongside the `.sdb` file. If the snapshot exists and is valid, it is loaded directly instead of rebuilding. If corrupt or stale, the database falls back to rebuilding from triples.
+
+HNSW graphs degrade over time — insertions and deletions shift the vector distribution, neighbor connections become suboptimal, and tombstoned nodes accumulate. A fresh rebuild from the current vector triples always produces a better index than preserving a stale one.
+
+### 4.6 Memory Layout
 
 HNSW graph nodes are stored in a flat arena allocator per predicate index. Each node:
 

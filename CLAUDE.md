@@ -114,11 +114,12 @@ No separate SP or PO indexes needed — they are prefix scans on SPO and POS res
 - `dimensions`: fixed at predicate declaration, enforced on insert
 
 ### Design
-- Keyed by triple ID, not a standalone vector ID
-- Insert: vector extracted, inserted into predicate's HNSW under triple's SPO identity
-- Delete: lazy deletion via flag (no graph restructuring)
-- Memory: flat arena allocator per predicate index, memory-mapped for persistence
-- Concurrency: fine-grained RwLock per node; reads concurrent, writes exclusive per node
+- Keyed by vector object's TermId (the vector literal is a graph primitive)
+- Insert: vector literal interned, triple created, HNSW entry added under object's TermId
+- Delete: **tombstoned** (flagged inactive, still traversable for graph connectivity — never removed until full rebuild)
+- Virtual triples: HNSW neighbor edges exposed as `sutra:hnswNeighbor` triples, generated on-the-fly, not stored in SPO/POS/OSP
+- Persistence: HNSW is ephemeral — rebuilt from stored vector triples on startup. Optional snapshot for faster cold start.
+- Concurrency: search is `&self` (per-call visited list, Qdrant pattern); concurrent reads don't block
 
 ### Node layout (per HNSW node)
 ```rust
