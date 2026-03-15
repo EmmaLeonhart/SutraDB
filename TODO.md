@@ -62,11 +62,11 @@ The server is currently in-memory only. This is the #1 blocker.
 
 - [x] Blank node support in N-Triples parser (`_:b0`, `_:genid123`)
 - [ ] Turtle (.ttl) parser for bulk import (consider using Oxigraph's oxttl crate)
-- [ ] `sutra import` CLI command (`sutra import data.nt --data my.sdb`)
-- [ ] `sutra export` CLI command (dump to Turtle/N-Triples)
+- [x] `sutra import` CLI command (`sutra import data.nt --data my.sdb`)
+- [x] `sutra export` CLI command (dump to Turtle/N-Triples)
 - [ ] SPARQL Update (INSERT DATA, DELETE DATA, DELETE/INSERT WHERE)
 - [ ] Schema declaration via SPARQL (`sutra:declareVectorPredicate`)
-- [ ] Streaming import (line-by-line for large files without loading all into memory)
+- [x] Streaming import (line-by-line for large files without loading all into memory)
 
 ## Priority 3: Query Performance — Stress Test Findings
 
@@ -84,19 +84,23 @@ The 1M-vector stress test revealed specific bottlenecks:
 ## Priority 4: SPARQL Completeness
 
 - [ ] BIND / VALUES
-- [ ] GROUP BY / HAVING / aggregates (COUNT, SUM, AVG, MIN, MAX)
+- [x] GROUP BY / aggregates (COUNT, SUM, AVG, MIN, MAX)
+- [ ] HAVING clause
 - [ ] Property paths (`+`, `*`, `?`) for multi-hop traversal
 - [ ] Subqueries (nested SELECT)
 - [ ] RDF-star quoted triple patterns in SPARQL (`<< ?s ?p ?o >>` syntax)
 - [ ] CONSTRUCT queries (return triples instead of bindings)
-- [ ] ASK queries (boolean existence check)
+- [x] ASK queries (boolean existence check)
 - [ ] DESCRIBE queries
-- [ ] String functions: CONTAINS, STRSTARTS, STRENDS, STRLEN, SUBSTR
-- [ ] REGEX filter support
+- [x] String functions: CONTAINS, STRSTARTS, STRENDS
+- [x] REGEX filter support (substring match)
 - [ ] LANG() and LANGMATCHES() for language-tagged literals
 - [ ] DATATYPE(), STR(), COALESCE(), IF()
 - [ ] Arithmetic in expressions (+, -, *, /)
-- [ ] Boolean operators in FILTER (&&, ||, !)
+- [x] Boolean operators in FILTER (&&, ||, !)
+- [x] Comparison operators: >=, <=
+- [x] isIRI / isLiteral type checks
+- [x] FILTER NOT EXISTS / EXISTS
 
 ## Priority 5: SDK Quality
 
