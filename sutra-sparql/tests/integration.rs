@@ -143,7 +143,7 @@ fn vector_similar_finds_similar_papers() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
 
     // p1, p2, p3 should match (NLP cluster); p4, p5 should not (cooking/gardening)
     assert_eq!(result.rows.len(), 3);
@@ -176,7 +176,7 @@ fn vector_similar_with_high_threshold() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // Only the cooking paper (p4) should be very similar to this query vector
     assert_eq!(result.rows.len(), 1);
     let p4 = dict.lookup("http://example.org/paper/cooking").unwrap();
@@ -199,7 +199,7 @@ fn vector_similar_with_graph_filter() {
     .unwrap();
 
     optimize(&mut q);
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
 
     // p3 (GPT, 2020) should match. p1 (2017) and p2 (2018) should not pass filter.
     assert_eq!(result.rows.len(), 1);
@@ -221,7 +221,7 @@ fn vector_similar_with_type_constraint() {
     .unwrap();
 
     optimize(&mut q);
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
 
     // Should find cooking paper (similar vector) that is also a Paper
     assert!(result.rows.len() >= 1);
@@ -246,7 +246,7 @@ fn vector_similar_scores_are_populated() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
 
     // Every matching row should have a score
     for score_row in &result.scores {
@@ -273,7 +273,7 @@ fn union_combines_branches() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // 5 papers + 2 people = 7
     assert_eq!(result.rows.len(), 7);
 }
@@ -292,7 +292,7 @@ fn union_with_different_variables() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // 2 author triples + 3 citation triples = 5
     assert_eq!(result.rows.len(), 5);
 }
@@ -311,7 +311,7 @@ fn order_by_ascending() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 5);
 
     // Years should be in ascending order
@@ -337,7 +337,7 @@ fn order_by_descending() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
 
     let years: Vec<i64> = result
         .rows
@@ -367,7 +367,7 @@ fn join_across_three_patterns() {
     .unwrap();
 
     optimize(&mut q);
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
 
     // BERT and GPT cite Attention (authored by Vaswani)
     assert_eq!(result.rows.len(), 2);
@@ -388,7 +388,7 @@ fn optional_with_vector() {
     .unwrap();
 
     optimize(&mut q);
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
 
     // 3 NLP papers match, some have authors, some don't
     assert_eq!(result.rows.len(), 3);
@@ -415,7 +415,7 @@ fn distinct_eliminates_duplicates() {
          }",
     )
     .unwrap();
-    let r1 = execute_with_vectors(&q1, &store, &dict, &mut vectors).unwrap();
+    let r1 = execute_with_vectors(&q1, &store, &dict, &vectors).unwrap();
 
     // With DISTINCT
     let q2 = parse(
@@ -425,7 +425,7 @@ fn distinct_eliminates_duplicates() {
          }",
     )
     .unwrap();
-    let r2 = execute_with_vectors(&q2, &store, &dict, &mut vectors).unwrap();
+    let r2 = execute_with_vectors(&q2, &store, &dict, &vectors).unwrap();
 
     // p1 is cited by both p2 and p3, so DISTINCT should reduce count
     assert!(r2.rows.len() <= r1.rows.len());
@@ -444,7 +444,7 @@ fn limit_and_offset() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 2);
 }
 
@@ -463,7 +463,7 @@ fn vector_similar_no_matches() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // Threshold 0.99 is very high — normalized vectors won't hit this
     assert_eq!(result.rows.len(), 0);
 }
@@ -475,7 +475,7 @@ fn empty_graph_query() {
     let mut vectors = VectorRegistry::new();
 
     let q = parse("SELECT * WHERE { ?s ?p ?o }").unwrap();
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 0);
 }
 
@@ -491,7 +491,7 @@ fn vector_similar_with_ef_hint() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // Should still find NLP papers
     assert!(result.rows.len() >= 3);
 }
@@ -508,7 +508,7 @@ fn vector_similar_with_k_hint() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // k:=2 limits to 2 results (threshold 0.0 means all pass)
     assert_eq!(result.rows.len(), 2);
 }
@@ -530,7 +530,7 @@ fn standard_sparql_still_works() {
     .unwrap();
 
     optimize(&mut q);
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 5);
 }
 
@@ -612,7 +612,7 @@ fn rdf_star_edge_with_vector() {
     .unwrap();
 
     let mut vectors = VectorRegistry::new();
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 1);
     let conf = sutra_core::decode_inline_integer(*result.rows[0].get("conf").unwrap()).unwrap();
     assert_eq!(conf, 95);
@@ -681,7 +681,7 @@ fn virtual_hnsw_edges_queryable_via_sparql() {
         ..Default::default()
     };
 
-    let result = execute_with_config(&q, &store, &dict, &mut vectors, &config).unwrap();
+    let result = execute_with_config(&q, &store, &dict, &vectors, &config).unwrap();
 
     // HNSW builds bidirectional edges, so there should be some edges
     assert!(
@@ -689,19 +689,19 @@ fn virtual_hnsw_edges_queryable_via_sparql() {
         "Virtual HNSW edge query should return edges"
     );
 
-    // All source and target values should be valid vector triple IDs
-    let valid_ids = [vec1_id, vec2_id, vec3_id];
+    // Virtual HNSW edges now resolve back to entity IRIs (not vector object IDs)
+    let valid_entities = [doc1, doc2, doc3];
     for row in &result.rows {
         let source = row.get("source").unwrap();
         let target = row.get("target").unwrap();
         assert!(
-            valid_ids.contains(source),
-            "Source {} not a valid vector ID",
+            valid_entities.contains(source),
+            "Source {} not a valid entity ID",
             source
         );
         assert!(
-            valid_ids.contains(target),
-            "Target {} not a valid vector ID",
+            valid_entities.contains(target),
+            "Target {} not a valid entity ID",
             target
         );
     }
@@ -753,23 +753,36 @@ fn virtual_hnsw_edges_with_bound_source() {
         .insert(has_embedding, vec![0.0, 0.0, 1.0], vec3_id)
         .unwrap();
 
-    // Query with a graph pattern first to bind source, then traverse HNSW edges
+    // Query: entity → hnswNeighbor → neighbor entity
+    // Virtual edges now connect entities directly (resolved from vector objects)
     let q = parse(&format!(
         "PREFIX ex: <http://example.org/> \
          SELECT ?doc ?neighbor WHERE {{ \
-         ?doc ex:hasEmbedding ?vec . \
-         ?vec <{}> ?neighbor \
+         ?doc <{}> ?neighbor \
          }}",
         sutra_hnsw::HNSW_NEIGHBOR_IRI
     ))
     .unwrap();
 
-    let config = DatabaseConfig::default();
-    let result = execute_with_config(&q, &store, &dict, &mut vectors, &config).unwrap();
+    let config = DatabaseConfig {
+        hnsw_edge_mode: HnswEdgeMode::Virtual,
+        ..Default::default()
+    };
+    let result = execute_with_config(&q, &store, &dict, &vectors, &config).unwrap();
 
-    // Each doc's vector should have HNSW neighbors
+    // Edges should connect entities (doc1, doc2, doc3), not vector literals
     assert!(
         !result.rows.is_empty(),
-        "Bound-source HNSW edge query should return results"
+        "HNSW edge query should return entity-to-entity results"
     );
+    let valid_entities = [doc1, doc2, doc3];
+    for row in &result.rows {
+        let doc = row.get("doc").unwrap();
+        let neighbor = row.get("neighbor").unwrap();
+        assert!(valid_entities.contains(doc), "doc should be an entity");
+        assert!(
+            valid_entities.contains(neighbor),
+            "neighbor should be an entity"
+        );
+    }
 }

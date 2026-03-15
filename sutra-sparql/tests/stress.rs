@@ -140,7 +140,7 @@ fn traverse_2_hops_on_1000_node_chain() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 100);
 }
 
@@ -159,7 +159,7 @@ fn traverse_3_hops_on_500_node_chain() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 50);
 }
 
@@ -179,7 +179,7 @@ fn traverse_4_hops_on_200_node_chain() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 50);
 
     // Verify chain integrity: each hop should advance by 1
@@ -217,7 +217,7 @@ fn join_1000_leaves_with_type_filter() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 100);
 }
 
@@ -238,7 +238,7 @@ fn join_5000_leaves_filtered_by_category() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // 5000 / 20 categories = 250 leaves per category
     assert_eq!(result.rows.len(), 250);
 }
@@ -259,7 +259,7 @@ fn self_join_on_shared_category() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // LIMIT pushdown may give slightly fewer results after FILTER removes self-pairs,
     // but we should get a substantial number of cross-category matches
     assert!(
@@ -292,7 +292,7 @@ fn grid_2hop_traversal_20x20() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     // 20 rows * 18 valid 2-step right positions = 360 total, limited to 100
     // LIMIT pushdown may cause early termination, so we check >= 50
     assert!(
@@ -325,7 +325,7 @@ fn hnsw_edge_traversal_50_vectors() {
         .unwrap();
 
     // Insert 50 documents with vectors
-    let mut vec_ids = Vec::new();
+    let mut doc_ids = Vec::new();
     for i in 0..50u64 {
         let doc = dict.intern(&format!("http://example.org/doc/{}", i));
         let vec_id = dict.intern(&format!("\"vec_{}\"^^<http://sutra.dev/f32vec>", i));
@@ -347,10 +347,10 @@ fn hnsw_edge_traversal_50_vectors() {
             })
             .collect();
         vectors.insert(has_embedding, v, vec_id).unwrap();
-        vec_ids.push(vec_id);
+        doc_ids.push(doc);
     }
 
-    // Query virtual HNSW edges
+    // Query virtual HNSW edges — now returns entity IRIs, not vector object IDs
     let q = parse(
         "SELECT ?source ?target WHERE { \
          ?source <http://sutra.dev/hnswNeighbor> ?target \
@@ -359,13 +359,13 @@ fn hnsw_edge_traversal_50_vectors() {
     .unwrap();
 
     let config = DatabaseConfig::default();
-    let result = execute_with_config(&q, &store, &dict, &mut vectors, &config).unwrap();
+    let result = execute_with_config(&q, &store, &dict, &vectors, &config).unwrap();
 
-    assert!(result.rows.len() > 0, "50-vector HNSW should have edges");
+    assert!(!result.rows.is_empty(), "50-vector HNSW should have edges");
     assert!(result.rows.len() <= 200, "Should respect LIMIT 200");
 
-    // Verify all edges reference valid vector IDs
-    let valid_set: HashSet<TermId> = vec_ids.into_iter().collect();
+    // Verify all edges reference valid entity IRIs (resolved from vector objects)
+    let valid_set: HashSet<TermId> = doc_ids.into_iter().collect();
     for row in &result.rows {
         assert!(valid_set.contains(row.get("source").unwrap()));
         assert!(valid_set.contains(row.get("target").unwrap()));
@@ -437,7 +437,7 @@ fn vector_search_then_3_hop_traversal() {
     )
     .unwrap();
 
-    let result = execute_with_vectors(&q, &store, &dict, &mut vectors).unwrap();
+    let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
 
     // Entities 0-4 are similar, and each one that has 3 hops forward should appear
     // Entity 0 → 1 → 2 → 3

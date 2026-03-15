@@ -734,68 +734,102 @@ fn try_evaluate_hnsw_edge_pattern(
         };
 
         for (_pred_id, edge) in &edges {
-            // Filter by object if bound
-            if let Some(target) = o_id {
-                if edge.target != target {
-                    continue;
-                }
-            }
-            // Filter by subject if bound
-            if let Some(source) = s_id {
-                if edge.source != source {
-                    continue;
-                }
-            }
+            // Resolve vector object IDs back to entity IRIs.
+            // HNSW nodes are keyed by vector object TermIds, but we want to
+            // expose entity IRIs in the virtual triples. Find which entities
+            // have these vectors by scanning all vector predicates.
+            let source_entities = resolve_vector_to_entities(edge.source, ctx);
+            let target_entities = resolve_vector_to_entities(edge.target, ctx);
 
-            let mut new_row = row.clone();
-
-            // Bind subject variable
-            if let Term::Variable(name) = subject {
-                if let Some(&existing) = new_row.get(name) {
-                    if existing != edge.source {
+            for &source_entity in &source_entities {
+                // Filter by subject if bound
+                if let Some(bound_source) = s_id {
+                    if source_entity != bound_source {
                         continue;
                     }
-                } else {
-                    new_row.insert(name.clone(), edge.source);
                 }
-            }
 
-            // Bind predicate variable
-            if let Term::Variable(name) = predicate {
-                if neighbor_pred_id != 0 {
-                    if let Some(&existing) = new_row.get(name) {
-                        if existing != neighbor_pred_id {
+                for &target_entity in &target_entities {
+                    // Filter by object if bound
+                    if let Some(bound_target) = o_id {
+                        if target_entity != bound_target {
                             continue;
                         }
-                    } else {
-                        new_row.insert(name.clone(), neighbor_pred_id);
                     }
-                }
-            }
 
-            // Bind object variable
-            if let Term::Variable(name) = object {
-                if let Some(&existing) = new_row.get(name) {
-                    if existing != edge.target {
-                        continue;
+                    let mut new_row = row.clone();
+
+                    // Bind subject variable
+                    if let Term::Variable(name) = subject {
+                        if let Some(&existing) = new_row.get(name) {
+                            if existing != source_entity {
+                                continue;
+                            }
+                        } else {
+                            new_row.insert(name.clone(), source_entity);
+                        }
                     }
-                } else {
-                    new_row.insert(name.clone(), edge.target);
-                }
-            }
 
-            results.push(new_row);
-            source_indices.push(row_idx);
+                    // Bind predicate variable
+                    if let Term::Variable(name) = predicate {
+                        if neighbor_pred_id != 0 {
+                            if let Some(&existing) = new_row.get(name) {
+                                if existing != neighbor_pred_id {
+                                    continue;
+                                }
+                            } else {
+                                new_row.insert(name.clone(), neighbor_pred_id);
+                            }
+                        }
+                    }
 
-            if let Some(limit) = row_limit {
-                if results.len() >= limit {
-                    break 'outer;
+                    // Bind object variable
+                    if let Term::Variable(name) = object {
+                        if let Some(&existing) = new_row.get(name) {
+                            if existing != target_entity {
+                                continue;
+                            }
+                        } else {
+                            new_row.insert(name.clone(), target_entity);
+                        }
+                    }
+
+                    results.push(new_row);
+                    source_indices.push(row_idx);
+
+                    if let Some(limit) = row_limit {
+                        if results.len() >= limit {
+                            break 'outer;
+                        }
+                    }
                 }
             }
         }
     }
 
     Ok(Some((results, source_indices)))
+}
+
+/// Resolve a vector object TermId back to the entity IRIs that point to it.
+///
+/// Scans all vector predicates in the registry, then uses the triple store's
+/// POS index to find triples where the object is this vector literal.
+/// Returns the subject IRIs of those triples.
+fn resolve_vector_to_entities(vector_object_id: TermId, ctx: &ExecutionContext<'_>) -> Vec<TermId> {
+    let mut entities = Vec::new();
+    for pred_id in ctx.vectors.predicates() {
+        let triples = ctx
+            .store
+            .find_by_predicate_object(pred_id, vector_object_id);
+        for triple in triples {
+            entities.push(triple.subject);
+        }
+    }
+    // Fallback: if no entity found, return the raw ID (backward compat)
+    if entities.is_empty() {
+        entities.push(vector_object_id);
+    }
+    entities
 }
 
 fn evaluate_filter(expr: &FilterExpr, row: &Bindings) -> bool {
