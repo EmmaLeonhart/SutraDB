@@ -134,7 +134,7 @@ class _SparqlScreenState extends State<SparqlScreen> {
                     maxLines: null,
                     expands: true,
                     style: const TextStyle(
-                      fontFamily: 'JetBrainsMono',
+                      fontFamily: 'monospace',
                       fontSize: 13,
                       color: SutraTheme.text,
                     ),
