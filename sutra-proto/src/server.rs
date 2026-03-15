@@ -3,6 +3,7 @@
 //! Implements a subset of the SPARQL 1.1 Protocol (W3C Recommendation):
 //! - GET  /sparql?query=...  (query via URL parameter)
 //! - POST /sparql            (query in request body)
+//! - GET  /graph             (export all triples as Turtle — for Protégé)
 //! - POST /triples           (insert N-Triples data)
 //! - POST /vectors/declare   (declare a vector predicate)
 //! - POST /vectors           (insert a vector)
@@ -13,8 +14,8 @@
 use std::sync::{Arc, RwLock};
 
 use axum::extract::{Query as AxumQuery, State};
-use axum::http::StatusCode;
-use axum::response::Json;
+use axum::http::{header, StatusCode};
+use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,7 @@ pub struct AppState {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/sparql", get(sparql_get).post(sparql_post))
+        .route("/graph", get(export_graph))
         .route("/triples", post(insert_triples))
         .route("/vectors/declare", post(declare_vector_predicate))
         .route("/vectors", post(insert_vector))
@@ -183,6 +185,177 @@ fn resolve_term_to_json(id: sutra_core::TermId, dict: &TermDictionary) -> serde_
             "value": format!("_:id{}", id)
         })
     }
+}
+
+// ─── Export Graph (Turtle) ───────────────────────────────────────────────────
+
+/// Query parameters for GET /graph.
+#[derive(Deserialize)]
+pub struct GraphQueryParams {
+    /// Optional: request a specific format. Defaults to Turtle.
+    #[serde(default)]
+    format: Option<String>,
+}
+
+/// GET /graph — export all triples as Turtle.
+///
+/// Protégé can load this via File > Open from URL > http://localhost:3030/graph
+/// Also useful for any tool that speaks RDF: curl, rdflib, Apache Jena, etc.
+async fn export_graph(
+    State(state): State<Arc<AppState>>,
+    AxumQuery(params): AxumQuery<GraphQueryParams>,
+) -> Result<impl IntoResponse, ProtoError> {
+    let store = state
+        .store
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
+    let dict = state
+        .dict
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
+
+    let use_ntriples = params
+        .format
+        .as_deref()
+        .map(|f| f == "nt" || f == "ntriples")
+        .unwrap_or(false);
+
+    let mut output = String::new();
+
+    if use_ntriples {
+        // N-Triples: one triple per line, no prefixes
+        for triple in store.iter() {
+            let s = resolve_term_for_turtle(triple.subject, &dict);
+            let p = resolve_term_for_turtle(triple.predicate, &dict);
+            let o = resolve_term_for_turtle(triple.object, &dict);
+            output.push_str(&format!("{} {} {} .\n", s, p, o));
+        }
+
+        Ok((
+            [(header::CONTENT_TYPE, "application/n-triples; charset=utf-8")],
+            output,
+        ))
+    } else {
+        // Turtle: collect common prefixes, then grouped triples
+        let mut prefixes: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+
+        // Scan all terms for common prefixes
+        let known_prefixes = [
+            ("rdf:", "http://www.w3.org/1999/02/22-rdf-syntax-ns#"),
+            ("rdfs:", "http://www.w3.org/2000/01/rdf-schema#"),
+            ("owl:", "http://www.w3.org/2002/07/owl#"),
+            ("xsd:", "http://www.w3.org/2001/XMLSchema#"),
+            ("skos:", "http://www.w3.org/2004/02/skos/core#"),
+            ("dc:", "http://purl.org/dc/elements/1.1/"),
+            ("dcterms:", "http://purl.org/dc/terms/"),
+            ("foaf:", "http://xmlns.com/foaf/0.1/"),
+            ("schema:", "http://schema.org/"),
+            ("wdt:", "http://www.wikidata.org/prop/direct/"),
+            ("wd:", "http://www.wikidata.org/entity/"),
+            ("sutra:", "http://sutra.dev/"),
+        ];
+
+        // Check which prefixes are actually used
+        for triple in store.iter() {
+            for id in [triple.subject, triple.predicate, triple.object] {
+                if let Some(term) = dict.resolve(id) {
+                    for &(prefix, iri) in &known_prefixes {
+                        if term.starts_with(iri) && !prefixes.contains_key(prefix) {
+                            prefixes.insert(prefix.to_string(), iri.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Write prefix declarations
+        for (prefix, iri) in &prefixes {
+            output.push_str(&format!("@prefix {} <{}> .\n", prefix, iri));
+        }
+        if !prefixes.is_empty() {
+            output.push('\n');
+        }
+
+        // Write triples grouped by subject
+        let mut current_subject: Option<String> = None;
+
+        for triple in store.iter() {
+            let s = resolve_term_for_turtle(triple.subject, &dict);
+            let p = resolve_term_for_turtle(triple.predicate, &dict);
+            let o = resolve_term_for_turtle(triple.object, &dict);
+
+            // Apply prefix compression
+            let s_compact = compact_iri(&s, &prefixes);
+            let p_compact = compact_iri(&p, &prefixes);
+            let o_compact = compact_iri(&o, &prefixes);
+
+            match &current_subject {
+                Some(prev) if *prev == s => {
+                    // Same subject: continue with semicolon
+                    output.push_str(&format!(" ;\n    {} {}", p_compact, o_compact));
+                }
+                _ => {
+                    // New subject: close previous, start new
+                    if current_subject.is_some() {
+                        output.push_str(" .\n\n");
+                    }
+                    output.push_str(&format!("{}\n    {} {}", s_compact, p_compact, o_compact));
+                    current_subject = Some(s);
+                }
+            }
+        }
+        if current_subject.is_some() {
+            output.push_str(" .\n");
+        }
+
+        Ok((
+            [(header::CONTENT_TYPE, "text/turtle; charset=utf-8")],
+            output,
+        ))
+    }
+}
+
+/// Resolve a TermId to its Turtle representation.
+fn resolve_term_for_turtle(id: sutra_core::TermId, dict: &TermDictionary) -> String {
+    if let Some(n) = sutra_core::decode_inline_integer(id) {
+        return format!(
+            "\"{}\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+            n
+        );
+    }
+
+    if let Some(b) = sutra_core::decode_inline_boolean(id) {
+        return format!(
+            "\"{}\"^^<http://www.w3.org/2001/XMLSchema#boolean>",
+            b
+        );
+    }
+
+    if let Some(term) = dict.resolve(id) {
+        if term.starts_with('"') {
+            // Already a literal with quotes — pass through
+            term.to_string()
+        } else {
+            // IRI — wrap in angle brackets
+            format!("<{}>", term)
+        }
+    } else {
+        format!("_:id{}", id)
+    }
+}
+
+/// Compact an IRI using known prefixes: `<http://...#Foo>` → `prefix:Foo`
+fn compact_iri(term: &str, prefixes: &std::collections::BTreeMap<String, String>) -> String {
+    // Only compact IRIs (wrapped in <>)
+    if let Some(iri) = term.strip_prefix('<').and_then(|t| t.strip_suffix('>')) {
+        for (prefix, namespace) in prefixes {
+            if let Some(local) = iri.strip_prefix(namespace.as_str()) {
+                return format!("{}{}", prefix, local);
+            }
+        }
+    }
+    term.to_string()
 }
 
 // ─── Insert Triples ──────────────────────────────────────────────────────────
@@ -542,6 +715,64 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
         assert_eq!(json["inserted"], 0);
         assert_eq!(json["errors"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn export_graph_turtle() {
+        let app = router(test_state());
+        let req = Request::builder()
+            .uri("/graph")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(content_type.contains("text/turtle"));
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+
+        // Should contain the Alice-knows-Bob triple
+        assert!(text.contains("Alice"));
+        assert!(text.contains("knows"));
+        assert!(text.contains("Bob"));
+    }
+
+    #[tokio::test]
+    async fn export_graph_ntriples() {
+        let app = router(test_state());
+        let req = Request::builder()
+            .uri("/graph?format=nt")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(content_type.contains("n-triples"));
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+
+        // N-Triples: each line ends with " ."
+        for line in text.lines() {
+            assert!(line.trim().ends_with('.'), "bad line: {}", line);
+        }
     }
 
     #[tokio::test]
