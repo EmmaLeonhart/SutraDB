@@ -85,13 +85,13 @@ The 1M-vector stress test revealed specific bottlenecks:
 
 - [x] BIND / VALUES
 - [x] GROUP BY / aggregates (COUNT, SUM, AVG, MIN, MAX)
-- [ ] HAVING clause
+- [x] HAVING clause
 - [ ] Property paths (`+`, `*`, `?`) for multi-hop traversal
 - [ ] Subqueries (nested SELECT)
 - [ ] RDF-star quoted triple patterns in SPARQL (`<< ?s ?p ?o >>` syntax)
-- [ ] CONSTRUCT queries (return triples instead of bindings)
+- [x] CONSTRUCT queries (return triples instead of bindings)
 - [x] ASK queries (boolean existence check)
-- [ ] DESCRIBE queries
+- [x] DESCRIBE queries
 - [x] String functions: CONTAINS, STRSTARTS, STRENDS
 - [x] REGEX filter support (substring match)
 - [x] LANG() and LANGMATCHES() for language-tagged literals
@@ -187,9 +187,9 @@ drift, tombstone accumulation.
 - [ ] Simple passcode authentication (server mode only, opt-in)
   - Just a passcode/API key to connect — nothing fancier in open source
   - Anything beyond this (RBAC, per-user permissions) = premium tier
-- [ ] Query timeouts (kill long-running queries after configurable N seconds)
+- [x] Query timeouts (execute_with_timeout + deadline checks in pattern evaluation)
 - [ ] Rate limiting (server mode, opt-in)
-- [ ] HNSW health endpoint: `/vectors/health` — degree distribution, tombstone ratio, rebuild recommendation
+- [x] HNSW health endpoint: `/vectors/health` — degree distribution, tombstone ratio, rebuild recommendation
 - [ ] Periodic backups (server mode)
   - [ ] Configurable interval: hourly / daily / custom
   - [ ] Stored in separate directory within server data path
