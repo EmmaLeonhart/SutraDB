@@ -135,13 +135,39 @@ Blocked on Priority 6 Protégé plugin — the two should be designed together.
 - [ ] Reasoning toggle per-query (opt-in, not default)
 - [ ] Materialization option (precompute inferences into stored triples)
 
+## Priority 7.5: Sutra Studio — Flutter Desktop/Web Client
+
+Visual database management tool (like MongoDB Compass). Primary use: human visual
+intuition for things AI agents can't easily detect — broken HNSW clusters, graph
+drift, tombstone accumulation.
+
+- [x] Flutter project scaffold (`sutra-studio/`)
+- [x] Dart HTTP client mirroring TypeScript SDK interface
+- [x] Force-directed graph visualization (custom Canvas painter)
+- [x] View mode toggle: semantic only / vector only / all
+- [x] Triple table editor with add/delete (form + raw N-Triples)
+- [x] SPARQL query editor with quick templates
+- [x] Ontology viewer (Protege-like class hierarchy browser)
+- [x] Authentication settings page (ready for server-side auth)
+- [x] Database health dashboard (connection status, stats)
+- [ ] HNSW health diagnostics: degree distribution visualization
+- [ ] HNSW health diagnostics: tombstone ratio monitoring with rebuild recommendations
+- [ ] Per-cluster PageRank health metric (detect drift from heavy insert/delete)
+- [ ] Edge traversal counters (per-edge hit counts for HNSW and semantic edges)
+- [ ] HNSW cluster heatmap visualization
+- [ ] Automatic rebuild recommendation threshold (configurable)
+- [ ] Graph export (PNG/SVG of current visualization)
+- [ ] Dark/light theme toggle
+- [ ] Persistent connection settings (shared_preferences)
+
 ## Priority 8: HTTP Protocol
 
 - [ ] Content negotiation for SPARQL results (JSON, XML, CSV, TSV)
 - [ ] SPARQL results XML format (application/sparql-results+xml)
 - [ ] SPARQL results CSV/TSV format
-- [ ] Authentication / API keys
+- [ ] Authentication / API keys (needed for Sutra Studio auth screen)
 - [ ] Rate limiting
+- [ ] HNSW health endpoint: `/vectors/health` — degree distribution, tombstone ratio, rebuild recommendation
 - [ ] SPARQL service description endpoint
 
 ## Priority 9: Additional Storage & Format Support
