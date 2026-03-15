@@ -252,6 +252,8 @@ async function sparql(q) {
 // ── Expand node: fetch neighbors and add to graph ──
 async function expandNode(iri) {
     if (expandedNodes.has(iri)) return;
+    // Don't try to expand vector literals or non-IRI nodes
+    if (isVec(iri) || iri.startsWith('"') || !iri.startsWith('http')) return;
     expandedNodes.add(iri);
     try {
         // Outgoing
@@ -314,6 +316,21 @@ network.on('doubleClick', params => {
 async function showDetail(iri) {
     const d = document.getElementById('detail');
     d.style.display = 'block';
+
+    // For vector literals, show vector info instead of trying to query
+    if (isVec(iri) || iri.startsWith('"')) {
+        const val = iri.replace(/"/g,'').split('^^')[0].trim();
+        const dims = val.split(' ').length;
+        const preview = val.split(' ').slice(0, 8).join(', ');
+        d.innerHTML = `<span class="close" onclick="document.getElementById('detail').style.display='none'">&times;</span>
+            <h3 style="color:var(--orange)">[Vector Embedding]</h3>
+            <div class="section"><h4>Properties</h4><table>
+            <tr><td>Dimensions</td><td>${dims}</td></tr>
+            <tr><td>Preview</td><td style="font-family:monospace;font-size:0.8em">[${preview}, ...]</td></tr>
+            </table></div>`;
+        return;
+    }
+
     d.innerHTML = `<span class="close" onclick="document.getElementById('detail').style.display='none'">&times;</span><h3>${sh(iri)}</h3><p style="color:var(--muted);font-size:0.8em;word-break:break-all">${iri}</p>Loading...`;
 
     try {
