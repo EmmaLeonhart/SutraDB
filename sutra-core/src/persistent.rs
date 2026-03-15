@@ -206,6 +206,32 @@ impl PersistentStore {
         }
     }
 
+    /// Load all terms from persistent storage into an in-memory TermDictionary.
+    /// Returns the number of terms loaded.
+    pub fn load_terms_into(&self, dict: &mut crate::id::TermDictionary) -> usize {
+        let mut count = 0;
+        for entry in self.terms_forward.iter() {
+            if let Ok((key_bytes, val_bytes)) = entry {
+                let term = String::from_utf8_lossy(&key_bytes).into_owned();
+                let id = u64::from_le_bytes(val_bytes.as_ref().try_into().unwrap());
+                dict.insert_with_id(&term, id);
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Find all triples with the given predicate and object.
+    /// Uses the POS index for efficient lookup.
+    pub fn find_by_predicate_object(&self, predicate: TermId, object: TermId) -> Vec<Triple> {
+        let (lo, hi) = prefix_range_24_2(predicate, object);
+        self.pos
+            .range(lo..=hi)
+            .filter_map(|r| r.ok())
+            .map(|(k, _)| Triple::from_pos_key(&key_to_array(&k)))
+            .collect()
+    }
+
     /// Flush all pending writes to disk.
     pub fn flush(&self) -> Result<()> {
         self.spo.flush()?;

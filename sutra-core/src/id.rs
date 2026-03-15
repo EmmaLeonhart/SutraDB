@@ -158,6 +158,19 @@ impl TermDictionary {
         self.forward.get(term).copied()
     }
 
+    /// Insert a term with a specific pre-assigned ID.
+    /// Used when hydrating from a persistent store that already has assigned IDs.
+    /// Updates next_id if the given id is >= current next_id.
+    pub fn insert_with_id(&mut self, term: &str, id: TermId) {
+        self.forward.insert(term.to_owned(), id);
+        self.reverse.insert(id, term.to_owned());
+        // Ensure next_id stays ahead of all loaded IDs
+        let next = self.next_id.load(Ordering::Relaxed);
+        if id >= next {
+            self.next_id.store(id + 1, Ordering::Relaxed);
+        }
+    }
+
     /// Number of interned terms.
     pub fn len(&self) -> usize {
         self.forward.len()

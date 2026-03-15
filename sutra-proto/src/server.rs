@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
-use sutra_core::{TermDictionary, TripleStore};
+use sutra_core::{PersistentStore, TermDictionary, TripleStore};
 use sutra_hnsw::VectorRegistry;
 
 use crate::error::ProtoError;
@@ -30,11 +30,16 @@ use crate::error::ProtoError;
 /// Shared application state.
 ///
 /// Uses RwLock for read-heavy workloads (concurrent SPARQL queries).
-/// Mutex for vectors because insert() needs &mut but search() is &self.
+/// The in-memory stores are the working set for the SPARQL executor.
+/// When `persistent` is Some, all writes go to both in-memory and disk.
 pub struct AppState {
     pub store: RwLock<TripleStore>,
     pub dict: RwLock<TermDictionary>,
     pub vectors: RwLock<VectorRegistry>,
+    /// Optional persistent backing store. When present, all mutations
+    /// are written through to disk. On startup, in-memory stores are
+    /// hydrated from the persistent store.
+    pub persistent: Option<PersistentStore>,
 }
 
 /// Build the axum router with all endpoints.
@@ -399,8 +404,18 @@ async fn insert_triples(
         let p_id = dict.intern(&pred_str);
         let o_id = intern_object(&mut dict, &obj_str);
 
-        match store.insert(sutra_core::Triple::new(s_id, p_id, o_id)) {
-            Ok(()) => inserted += 1,
+        let triple = sutra_core::Triple::new(s_id, p_id, o_id);
+        match store.insert(triple) {
+            Ok(()) => {
+                // Write through to persistent store
+                if let Some(ref ps) = state.persistent {
+                    let _ = ps.intern(&subj_str);
+                    let _ = ps.intern(&pred_str);
+                    let _ = ps.intern(&obj_str);
+                    let _ = ps.insert(triple);
+                }
+                inserted += 1;
+            }
             Err(e) => errors.push(format!("line {}: {}", line_no + 1, e)),
         }
     }
@@ -563,8 +578,19 @@ async fn insert_vector(
             .store
             .write()
             .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
+        let triple = sutra_core::Triple::new(subject_id, predicate_id, object_id);
         // Ignore duplicate triple errors (allows multiple subjects to point to same vector)
-        let _ = store.insert(sutra_core::Triple::new(subject_id, predicate_id, object_id));
+        let _ = store.insert(triple);
+
+        // Write through to persistent store
+        if let Some(ref ps) = state.persistent {
+            let vec_str: Vec<String> = req.vector.iter().map(|f| format!("{:.6}", f)).collect();
+            let literal = format!("\"{}\"^^<http://sutra.dev/f32vec>", vec_str.join(" "));
+            let _ = ps.intern(&req.predicate);
+            let _ = ps.intern(&req.subject);
+            let _ = ps.intern(&literal);
+            let _ = ps.insert(triple);
+        }
     }
 
     // Insert into HNSW index, keyed by the object_id (the vector literal's identity).
@@ -609,6 +635,7 @@ mod tests {
             store: RwLock::new(store),
             dict: RwLock::new(dict),
             vectors: RwLock::new(VectorRegistry::new()),
+            persistent: None,
         })
     }
 

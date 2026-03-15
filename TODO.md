@@ -6,18 +6,8 @@
 ### ~~2. 2-hop joins 18s~~ — FIXED (LIMIT push-down: 18.453s → 0.003s)
 ### ~~3. HNSW defaults~~ — FIXED (ef_search 200→500, top_k 100→500)
 
-### 4. First query cold start ~2s
-The very first query against a BTreeSet with 200K entries takes ~2s.
-Subsequent queries are fast. Need to investigate BTreeSet iteration
-overhead, memory layout, or potential lazy initialization issues.
-
-### 5. HNSW cross-cluster search returns 0 rows
-Entry point is biased toward the first-inserted cluster. Greedy descent
-from alpha entry point has no gradient toward orthogonal beta cluster
-and gets stuck. Vectors are inserted in cluster order (all alpha, then
-all beta, etc.) so upper HNSW layers lack cross-cluster bridges.
-**Fix:** Shuffle insertion order so upper layers have mixed clusters,
-or implement multiple entry points in the HNSW graph.
+### ~~4. First query cold start ~2s~~ — FIXED (HashSet visited list instead of dense Vec<bool>)
+### ~~5. HNSW cross-cluster search returns 0 rows~~ — FIXED (multiple entry points, best-of-N search start)
 
 ## Done
 
@@ -61,8 +51,8 @@ or implement multiple entry points in the HNSW graph.
 
 The server is currently in-memory only. This is the #1 blocker.
 
-- [ ] Wire PersistentStore (sled) to the HTTP server instead of in-memory TripleStore
-- [ ] Persistent term dictionary: load on startup, save on insert
+- [x] Wire PersistentStore (sled) to the HTTP server instead of in-memory TripleStore
+- [x] Persistent term dictionary: load on startup, save on insert
 - [ ] HNSW index persistence: serialize to disk, memory-map on startup
 - [ ] The .sdb file should contain all of the above in one directory/file
 - [ ] `sutra serve --data my.sdb` loads from disk, writes back on changes
