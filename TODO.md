@@ -1,37 +1,23 @@
 # SutraDB — TODO
 
-## Top Priority: Stress Test Findings (Root Causes Identified)
+## Top Priority: Remaining Stress Test Issues
 
-### 1. Type lookup takes 2s for LIMIT 100
-**Root cause:** Wrong index selection in `evaluate_triple_pattern` (executor.rs:477).
-The match only considers `(s_id, p_id)` but ignores `o_id`. When predicate AND object
-are bound but subject is unbound (e.g. `?e <type> <alpha>`), it calls `find_by_predicate()`
-which scans ALL 50K type triples, then post-filters. Should use `find_by_predicate_object()`
-which does a two-prefix POS range scan and returns only matching triples.
-**Fix:** Expand the match to `(s_id, p_id, o_id)` — add `(None, Some(p), Some(o))` arm.
+### ~~1. Type lookup 2s~~ — FIXED (index selection: `find_by_predicate_object`)
+### ~~2. 2-hop joins 18s~~ — FIXED (LIMIT push-down: 18.453s → 0.003s)
+### ~~3. HNSW defaults~~ — FIXED (ef_search 200→500, top_k 100→500)
 
-### 2. 2-hop joins take 18s
-**Root cause:** Three compounding problems:
-- **No LIMIT push-down.** LIMIT 50 is applied AFTER computing all 62.5K result rows.
-  The executor materializes everything then truncates. Fix: stop after N rows produced.
-- **35,000 BTreeSet range scans** each allocating a Vec. 10K alpha entities × 2.5 links
-  × 2.5 links = 62.5K rows, each requiring an index lookup + HashMap clone.
-- **`expand_scores` is O(n*m).** Does subset matching over all rows to find score sources.
-  `evaluate_triple_pattern` already tracks `source_indices` but they're discarded.
-**Fix:** Push LIMIT into the join loop — stop producing rows once we have enough.
-Secondary: use `source_indices` instead of subset scan in `expand_scores`.
+### 4. First query cold start ~2s
+The very first query against a BTreeSet with 200K entries takes ~2s.
+Subsequent queries are fast. Need to investigate BTreeSet iteration
+overhead, memory layout, or potential lazy initialization issues.
 
-### 3. HNSW cross-cluster search returns 0 rows
-**Root cause:** Entry point bias + greedy descent gets stuck.
-- The HNSW entry point is the first node inserted (an alpha vector).
-- When searching for beta vectors (cosine 0.0 to alpha — orthogonal clusters),
-  the greedy descent from the alpha entry point has no gradient toward beta.
-- All upper-layer neighbors are also alpha vectors, so greedy search converges
-  to an arbitrary alpha node, never reaching the beta cluster.
-- Layer-0 beam search (ef=200) starts from the wrong region and can't bridge 25K nodes.
-**Fix:** Shuffle insertion order so upper layers have mixed clusters. Also increase
-`ef_search` default (200→500) and `top_k` default (100→500). Long-term: multiple
-entry points or connected-component-aware entry selection.
+### 5. HNSW cross-cluster search returns 0 rows
+Entry point is biased toward the first-inserted cluster. Greedy descent
+from alpha entry point has no gradient toward orthogonal beta cluster
+and gets stuck. Vectors are inserted in cluster order (all alpha, then
+all beta, etc.) so upper HNSW layers lack cross-cluster bridges.
+**Fix:** Shuffle insertion order so upper layers have mixed clusters,
+or implement multiple entry points in the HNSW graph.
 
 ## Done
 
