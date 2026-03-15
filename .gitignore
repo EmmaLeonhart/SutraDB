@@ -3,9 +3,16 @@
 **/*.rs.bk
 Cargo.lock
 
+# Java / Maven
+**/target/
+*.class
+*.jar
+!tools/protege-plugin/build-and-install.bat
+
 # IDE
 .vscode/
 .idea/
+*.iml
 *.swp
 *.swo
 
