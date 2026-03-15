@@ -58,11 +58,29 @@ pub fn execute_with_vectors(
     let mut results: Vec<Bindings> = vec![HashMap::new()];
     let mut scores: Vec<HashMap<String, f32>> = vec![HashMap::new()];
 
+    // LIMIT push-down: when there's no ORDER BY or DISTINCT, we can stop
+    // producing rows as soon as we have enough. This avoids computing
+    // 62K rows to keep 50.
+    let pushable_limit = if query.order_by.is_empty() && !query.distinct {
+        // Account for OFFSET: we need limit + offset rows before truncating
+        query.limit.map(|l| l + query.offset.unwrap_or(0))
+    } else {
+        None
+    };
+
     // Evaluate each pattern
     for pattern in &query.patterns {
         let (new_results, new_scores) = evaluate_pattern(pattern, &results, &scores, &mut ctx)?;
         results = new_results;
         scores = new_scores;
+
+        // Early termination when we have enough rows
+        if let Some(limit) = pushable_limit {
+            if results.len() >= limit {
+                results.truncate(limit);
+                scores.truncate(limit);
+            }
+        }
     }
 
     // Apply ORDER BY
@@ -260,8 +278,12 @@ fn evaluate_vector_similar(
         )));
     }
 
-    let ef = ef_search.unwrap_or(200);
-    let k = top_k.unwrap_or(100);
+    // Higher defaults for better recall across clustered data.
+    // ef=500 ensures the beam search explores enough of the graph to
+    // bridge between distant clusters. k=500 returns enough candidates
+    // before threshold filtering.
+    let ef = ef_search.unwrap_or(500);
+    let k = top_k.unwrap_or(500);
 
     let var_name = match subject {
         Term::Variable(name) => name.clone(),
@@ -474,17 +496,14 @@ fn evaluate_triple_pattern(
             continue;
         }
 
-        let candidates: Vec<Triple> = match (s_id, p_id) {
-            (Some(s), Some(p)) => ctx.store.find_by_subject_predicate(s, p),
-            (Some(s), None) => ctx.store.find_by_subject(s),
-            (None, Some(p)) => ctx.store.find_by_predicate(p),
-            (None, None) => {
-                if let Some(o) = o_id {
-                    ctx.store.find_by_object(o)
-                } else {
-                    ctx.store.iter().collect()
-                }
-            }
+        // Pick the most selective index based on which terms are bound
+        let candidates: Vec<Triple> = match (s_id, p_id, o_id) {
+            (Some(s), Some(p), _) => ctx.store.find_by_subject_predicate(s, p),
+            (Some(s), None, _) => ctx.store.find_by_subject(s),
+            (None, Some(p), Some(o)) => ctx.store.find_by_predicate_object(p, o),
+            (None, Some(p), None) => ctx.store.find_by_predicate(p),
+            (None, None, Some(o)) => ctx.store.find_by_object(o),
+            (None, None, None) => ctx.store.iter().collect(),
         };
 
         for triple in candidates {
