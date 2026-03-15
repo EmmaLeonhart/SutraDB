@@ -82,6 +82,9 @@ pub struct HnswIndex {
     pub(crate) triple_to_node: HashMap<TermId, u32>,
     /// Index of the entry point node (top of the graph).
     entry_point: Option<u32>,
+    /// Additional entry points for cross-cluster search diversity.
+    /// Populated with nodes that land on the highest layers.
+    extra_entry_points: Vec<u32>,
     /// Maximum layer currently in the graph.
     max_layer: u8,
     /// Scaling factor for random layer assignment: 1 / ln(M).
@@ -99,6 +102,7 @@ impl HnswIndex {
             nodes: Vec::new(),
             triple_to_node: HashMap::new(),
             entry_point: None,
+            extra_entry_points: Vec::new(),
             max_layer: 0,
             ml,
             rng_state: 0x517cc1b727220a95, // well-distributed seed
@@ -218,8 +222,23 @@ impl HnswIndex {
 
         // Update entry point if new node has a higher layer
         if new_layer > self.max_layer {
+            // Demote current entry point to extra list
+            if let Some(old_ep) = self.entry_point {
+                if !self.extra_entry_points.contains(&old_ep) {
+                    self.extra_entry_points.push(old_ep);
+                }
+            }
             self.entry_point = Some(new_idx);
             self.max_layer = new_layer;
+        } else if new_layer >= self.max_layer.saturating_sub(1) && new_layer > 0 {
+            // High-layer nodes become extra entry points for cross-cluster diversity.
+            // Cap at 8 extra entry points to limit search overhead.
+            if self.extra_entry_points.len() < 8
+                && Some(new_idx) != self.entry_point
+                && !self.extra_entry_points.contains(&new_idx)
+            {
+                self.extra_entry_points.push(new_idx);
+            }
         }
 
         Ok(())
@@ -246,8 +265,25 @@ impl HnswIndex {
         let mut query_vec = query.to_vec();
         self.config.metric.preprocess(&mut query_vec);
 
-        // Greedy descent from top to layer 1
-        let mut current_ep = ep;
+        // Try primary entry point + all extra entry points, pick the best.
+        // This solves cross-cluster search: if the primary EP is in cluster A
+        // and the query is in cluster B, an extra EP in/near cluster B will
+        // provide a much better starting point for the greedy descent.
+        let mut best_ep = ep;
+        let mut best_score = self.score_vec_node(&query_vec, ep);
+
+        for &extra_ep in &self.extra_entry_points {
+            if !self.nodes[extra_ep as usize].deleted {
+                let score = self.score_vec_node(&query_vec, extra_ep);
+                if score > best_score {
+                    best_score = score;
+                    best_ep = extra_ep;
+                }
+            }
+        }
+
+        // Greedy descent from best entry point to layer 1
+        let mut current_ep = best_ep;
         for layer in (1..=self.max_layer as usize).rev() {
             current_ep = self.greedy_closest_by_vec(&query_vec, current_ep, layer as u8);
         }
