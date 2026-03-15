@@ -1,84 +1,99 @@
 {
-  "timestamp": "2026-03-14T15:16:49",
+  "timestamp": "2026-03-14T18:33:48",
+  "version": "v2",
   "data": {
-    "entities": 100000,
-    "triples": 500303,
-    "vectors": 1000000,
-    "dimensions": 128,
-    "entity_types": 10
+    "entities": 50000,
+    "graph_triples": 174659,
+    "vector_triples": 25073,
+    "total_triples": 199732,
+    "dimensions": 64,
+    "entity_types": 5,
+    "vector_fraction": 0.5
   },
   "queries": [
     {
-      "name": "Full table scan (all triples)",
+      "name": "Type lookup: all alpha entities (LIMIT 100)",
       "status": "OK",
-      "time": 2.2239465713500977,
+      "time": 2.0401954650878906,
       "rows": 100
     },
     {
-      "name": "All Person entities",
+      "name": "1-hop: alpha \u2192 link \u2192 ?target (LIMIT 100)",
       "status": "OK",
-      "time": 0.005599021911621094,
+      "time": 2.138500213623047,
       "rows": 100
     },
     {
-      "name": "2-hop: Person \u2192 livesIn \u2192 City \u2192 locatedIn \u2192 Country",
+      "name": "2-hop: alpha \u2192 link \u2192 ? \u2192 link \u2192 ? (LIMIT 50)",
       "status": "OK",
-      "time": 8.562980651855469,
+      "time": 18.4525465965271,
       "rows": 50
     },
     {
-      "name": "3-hop: Person \u2192 worksAt \u2192 Company \u2192 locatedIn \u2192 City \u2192 locatedIn \u2192 Country",
-      "status": "ERROR",
-      "time": 300.01029109954834,
-      "rows": 0
+      "name": "All types (DISTINCT)",
+      "status": "OK",
+      "time": 0.03185701370239258,
+      "rows": 5
     },
     {
-      "name": "VECTOR_SIMILAR: Find entities similar to Person#0",
+      "name": "Large result: 1000 link triples",
       "status": "OK",
-      "time": 281.0057818889618,
+      "time": 0.04223513603210449,
+      "rows": 1000
+    },
+    {
+      "name": "VECTOR_SIMILAR: find entities near alpha vector (threshold 0.7)",
+      "status": "OK",
+      "time": 0.0027463436126708984,
       "rows": 20
     },
     {
-      "name": "VECTOR_SIMILAR: Find entities similar to Mountain#50",
-      "status": "OK",
-      "time": 0.0021386146545410156,
+      "name": "VECTOR_SIMILAR: find entities near beta vector (threshold 0.7)",
+      "status": "LOW",
+      "time": 0.0018210411071777344,
       "rows": 0
     },
     {
-      "name": "WORMHOLE: Graph\u2192Vector\u2192Graph (type\u2192vectorSearch\u2192type check)",
+      "name": "WORMHOLE vector\u2192graph: similar to alpha, get their type",
       "status": "OK",
-      "time": 0.002065420150756836,
-      "rows": 0
+      "time": 0.0017669200897216797,
+      "rows": 20
     },
     {
-      "name": "WORMHOLE: Vector\u2192Graph (vectorSearch\u2192locatedIn\u2192country)",
+      "name": "WORMHOLE vector\u2192graph\u2192graph: similar to alpha, follow link, get type",
       "status": "OK",
-      "time": 0.0010678768157958984,
-      "rows": 0
+      "time": 0.003546476364135742,
+      "rows": 20
     },
     {
-      "name": "WORMHOLE: Graph\u2192Vector\u2192Graph\u2192Graph (type+vector\u2192livesIn\u2192locatedIn)",
+      "name": "WORMHOLE graph\u2192vector: alpha entities filtered by vector similarity",
       "status": "OK",
-      "time": 23.07614231109619,
-      "rows": 0
+      "time": 0.009573221206665039,
+      "rows": 20
     },
     {
-      "name": "UNION + VECTOR: People who wrote books OR work at universities, similar to query",
+      "name": "WORMHOLE graph\u2192vector\u2192graph: typed entities, vector filter, follow link",
       "status": "OK",
-      "time": 0.0025086402893066406,
-      "rows": 0
+      "time": 2.5497231483459473,
+      "rows": 20
     },
     {
-      "name": "DISTINCT entities by type",
+      "name": "UNION: alpha OR beta entities",
       "status": "OK",
-      "time": 0.09699630737304688,
-      "rows": 10
+      "time": 0.01154184341430664,
+      "rows": 100
     },
     {
-      "name": "Large result: all Person\u2192knows\u2192Person relationships",
+      "name": "UNION + VECTOR: (alpha UNION beta) filtered by vector similarity",
       "status": "OK",
-      "time": 0.011281967163085938,
-      "rows": 1000
+      "time": 0.0030412673950195312,
+      "rows": 20
+    },
+    {
+      "name": "Cross-cluster: search with alpha vector, find what types come back",
+      "status": "OK",
+      "time": 0.0018262863159179688,
+      "rows": 50
     }
   ]
 }

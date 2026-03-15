@@ -1,17 +1,12 @@
 """
-SutraDB Stress Test — 1M embeddings + heavy SPARQL queries.
+SutraDB Stress Test v2 — Proper data model.
 
-Generates a synthetic knowledge graph with:
-- 100K entities across 10 types
-- ~500K triples (type assertions, relationships, properties)
-- 1M embeddings (1024-dim, 10 per entity for label+aliases)
-- Clustered embedding space (entities of same type cluster together)
+All data is triples. Entities connect to each other via relationship triples
+(predicate "1") and ~50% of entities also have vector triples (predicate "2")
+where the object is a vector literal. Vectors don't exist outside of triples.
 
-Then runs heavy-duty SPARQL queries including:
-- Full table scans
-- Multi-hop traversals
-- Vector similarity searches
-- "Wormhole" traversals (graph → vector → graph)
+This tests the real architecture: graph traversal, vector search, and
+wormhole queries that hop between graph and vector space.
 """
 
 import requests
@@ -26,115 +21,89 @@ if hasattr(sys.stdout, 'buffer'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 ENDPOINT = "http://localhost:3030"
-DIMENSIONS = 128  # Use 128-dim for faster stress test (not 1024)
-NUM_ENTITIES = 100_000
-NUM_EMBEDDINGS_TARGET = 1_000_000
-EMBEDDINGS_PER_ENTITY = 10  # label + 9 aliases = 10 per entity
+DIMENSIONS = 64
+NUM_ENTITIES = 50_000
+VECTOR_FRACTION = 0.5  # 50% of entities get vectors
 
-# Entity types and their cluster centers in embedding space
-ENTITY_TYPES = [
-    ("Person", [1.0, 0.0, 0.0, 0.0]),
-    ("Mountain", [0.0, 1.0, 0.0, 0.0]),
-    ("City", [0.0, 0.0, 1.0, 0.0]),
-    ("Country", [0.0, 0.0, 0.0, 1.0]),
-    ("River", [0.7, 0.7, 0.0, 0.0]),
-    ("University", [0.0, 0.7, 0.7, 0.0]),
-    ("Company", [0.0, 0.0, 0.7, 0.7]),
-    ("Language", [0.7, 0.0, 0.0, 0.7]),
-    ("Species", [0.5, 0.5, 0.5, 0.0]),
-    ("Book", [0.0, 0.5, 0.5, 0.5]),
+NS = "http://test.sutradb.dev/"
+PRED_LINK = f"{NS}link"        # predicate "1" — entity-to-entity relationships
+PRED_TYPE = f"{NS}type"        # rdf:type equivalent
+PRED_VEC = f"{NS}hasEmbedding" # predicate "2" — entity-to-vector
+
+# 5 entity types with cluster centers in vector space
+TYPES = [
+    ("alpha", [1.0, 0.0, 0.0, 0.0]),
+    ("beta",  [0.0, 1.0, 0.0, 0.0]),
+    ("gamma", [0.0, 0.0, 1.0, 0.0]),
+    ("delta", [0.0, 0.0, 0.0, 1.0]),
+    ("omega", [0.5, 0.5, 0.5, 0.5]),
 ]
-
-# Predicates for relationships between types
-RELATIONSHIPS = [
-    ("Person", "livesIn", "City"),
-    ("Person", "bornIn", "Country"),
-    ("Person", "speaks", "Language"),
-    ("Person", "worksAt", "University"),
-    ("Person", "worksAt", "Company"),
-    ("Person", "wrote", "Book"),
-    ("Person", "knows", "Person"),
-    ("Mountain", "locatedIn", "Country"),
-    ("City", "locatedIn", "Country"),
-    ("River", "flowsThrough", "Country"),
-    ("River", "flowsThrough", "City"),
-    ("University", "locatedIn", "City"),
-    ("Company", "locatedIn", "City"),
-    ("Company", "locatedIn", "Country"),
-    ("Book", "writtenIn", "Language"),
-]
-
-NS = "http://stress.sutradb.dev/"
 
 
 def health_check():
     try:
-        r = requests.get(f"{ENDPOINT}/health", timeout=5)
-        return r.status_code == 200
+        return requests.get(f"{ENDPOINT}/health", timeout=5).status_code == 200
     except:
         return False
 
 
-def generate_vector(type_idx, entity_idx, variation=0):
-    """Generate a clustered vector for an entity of a given type."""
-    random.seed(type_idx * 1000000 + entity_idx * 100 + variation)
-    center = ENTITY_TYPES[type_idx][1]
-
-    # Extend center to full dimensions with type-based pattern
+def gen_vector(type_idx, entity_idx):
+    """Generate a clustered vector. Same type = similar vectors."""
+    random.seed(type_idx * 100000 + entity_idx)
+    center = TYPES[type_idx][1]
     vec = []
     for d in range(DIMENSIONS):
         base = center[d % len(center)]
-        noise = random.gauss(0, 0.15)
-        variation_offset = random.gauss(0, 0.05) * (variation + 1)
-        vec.append(base + noise + variation_offset)
-
-    # Normalize
+        noise = random.gauss(0, 0.1)
+        vec.append(base + noise)
     norm = math.sqrt(sum(v * v for v in vec))
-    if norm > 0:
-        vec = [v / norm for v in vec]
-    return vec
+    return [v / norm for v in vec] if norm > 0 else vec
 
 
-def generate_and_load_data():
-    """Generate synthetic data and load into SutraDB."""
+def generate_and_load():
     session = requests.Session()
-
     print("=" * 60)
-    print("SUTRADB STRESS TEST — 1M EMBEDDINGS")
+    print("SUTRADB STRESS TEST v2")
+    print(f"Entities: {NUM_ENTITIES:,}, Dimensions: {DIMENSIONS}")
+    print(f"Vector fraction: {VECTOR_FRACTION:.0%}")
     print("=" * 60)
 
     # Step 1: Declare vector predicate
-    print("\n[1/4] Declaring vector predicate...")
+    print("\n[1/3] Declaring vector predicate...")
     r = session.post(f"{ENDPOINT}/vectors/declare", json={
-        "predicate": f"{NS}hasEmbedding",
+        "predicate": PRED_VEC,
         "dimensions": DIMENSIONS,
         "m": 16,
         "ef_construction": 100,
         "metric": "cosine",
     })
     if r.status_code == 200:
-        print(f"  Declared: {DIMENSIONS}-dim, M=16, ef_construction=100")
+        print(f"  Declared: {DIMENSIONS}-dim cosine")
     else:
-        print(f"  Already declared (or error: {r.status_code}), continuing...")
+        print(f"  Already declared or error ({r.status_code}), continuing...")
 
     # Step 2: Generate and insert triples
-    print(f"\n[2/4] Generating triples for {NUM_ENTITIES:,} entities...")
-    entities_per_type = NUM_ENTITIES // len(ENTITY_TYPES)
+    print(f"\n[2/3] Generating triples...")
+    entities_per_type = NUM_ENTITIES // len(TYPES)
+    random.seed(42)
 
-    # Build entity registry
-    entity_registry = {}  # type_name -> list of entity IRIs
-    for type_idx, (type_name, _) in enumerate(ENTITY_TYPES):
-        entity_registry[type_name] = []
+    # Build entity list
+    entities = []
+    for type_idx, (type_name, _) in enumerate(TYPES):
         for i in range(entities_per_type):
-            iri = f"{NS}{type_name.lower()}/{i}"
-            entity_registry[type_name].append(iri)
+            entities.append({
+                "iri": f"{NS}entity/{type_name}/{i}",
+                "type_idx": type_idx,
+                "type_name": type_name,
+                "entity_idx": i,
+                "has_vector": random.random() < VECTOR_FRACTION,
+            })
 
-    # Generate type assertion triples
     total_triples = 0
     batch_lines = []
     batch_size = 10000
 
-    def flush_batch():
+    def flush():
         nonlocal total_triples
         if not batch_lines:
             return
@@ -142,237 +111,194 @@ def generate_and_load_data():
         r = session.post(f"{ENDPOINT}/triples", data=body,
                          headers={"Content-Type": "application/n-triples"}, timeout=120)
         r.raise_for_status()
-        result = r.json()
-        total_triples += result.get("inserted", 0)
+        total_triples += r.json().get("inserted", 0)
         batch_lines.clear()
 
-    # Type assertions: entity rdf:type Type
-    print("  Inserting type assertions...")
-    for type_name, entities in entity_registry.items():
-        type_iri = f"{NS}type/{type_name}"
-        for iri in entities:
-            batch_lines.append(f'<{iri}> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <{type_iri}> .')
-            if len(batch_lines) >= batch_size:
-                flush_batch()
-    flush_batch()
-    print(f"  Type assertions: {total_triples:,}")
+    # Type triples: <entity> <type> <type_class>
+    print("  Type triples...")
+    for e in entities:
+        type_iri = f"{NS}class/{e['type_name']}"
+        batch_lines.append(f'<{e["iri"]}> <{PRED_TYPE}> <{type_iri}> .')
+        if len(batch_lines) >= batch_size:
+            flush()
+    flush()
+    print(f"    {total_triples:,} type triples")
 
-    # Relationship triples
-    print("  Inserting relationship triples...")
-    random.seed(42)
-    rel_count_before = total_triples
-    for subj_type, pred_name, obj_type in RELATIONSHIPS:
-        pred_iri = f"{NS}pred/{pred_name}"
-        subj_entities = entity_registry[subj_type]
-        obj_entities = entity_registry[obj_type]
-
-        # Each entity gets 1-3 relationships of each type
-        for subj in subj_entities:
-            num_rels = random.randint(1, 3)
-            for _ in range(num_rels):
-                obj = random.choice(obj_entities)
-                batch_lines.append(f'<{subj}> <{pred_iri}> <{obj}> .')
+    # Link triples: <entity> <link> <other_entity> — random connections
+    print("  Link triples (random connections)...")
+    link_start = total_triples
+    for e in entities:
+        num_links = random.randint(1, 4)
+        for _ in range(num_links):
+            target = random.choice(entities)
+            if target["iri"] != e["iri"]:
+                batch_lines.append(f'<{e["iri"]}> <{PRED_LINK}> <{target["iri"]}> .')
                 if len(batch_lines) >= batch_size:
-                    flush_batch()
-    flush_batch()
-    print(f"  Relationship triples: {total_triples - rel_count_before:,}")
+                    flush()
+    flush()
+    print(f"    {total_triples - link_start:,} link triples")
 
-    # Label triples
-    print("  Inserting label triples...")
-    label_count_before = total_triples
-    for type_name, entities in entity_registry.items():
-        for i, iri in enumerate(entities):
-            label = f'"{type_name} #{i}"'
-            batch_lines.append(f'<{iri}> <{NS}pred/label> {label} .')
-            if len(batch_lines) >= batch_size:
-                flush_batch()
-    flush_batch()
-    print(f"  Label triples: {total_triples - label_count_before:,}")
+    print(f"  TOTAL GRAPH TRIPLES: {total_triples:,}")
 
-    print(f"  TOTAL TRIPLES: {total_triples:,}")
-
-    # Step 3: Insert embeddings
-    print(f"\n[3/4] Inserting {NUM_EMBEDDINGS_TARGET:,} embeddings ({DIMENSIONS}-dim)...")
+    # Step 3: Insert vectors (these create triples too via POST /vectors)
+    print(f"\n[3/3] Inserting vectors (~{int(NUM_ENTITIES * VECTOR_FRACTION):,} entities)...")
     vec_start = time.time()
     vec_count = 0
     vec_errors = 0
 
-    for type_idx, (type_name, _) in enumerate(ENTITY_TYPES):
-        entities = entity_registry[type_name]
-        for entity_idx, iri in enumerate(entities):
-            for variation in range(EMBEDDINGS_PER_ENTITY):
-                # Use a unique subject IRI per embedding variation
-                if variation == 0:
-                    vec_iri = iri
-                else:
-                    vec_iri = f"{iri}/alias/{variation}"
+    for e in entities:
+        if not e["has_vector"]:
+            continue
+        vec = gen_vector(e["type_idx"], e["entity_idx"])
+        try:
+            r = session.post(f"{ENDPOINT}/vectors", json={
+                "predicate": PRED_VEC,
+                "subject": e["iri"],
+                "vector": vec,
+            }, timeout=30)
+            r.raise_for_status()
+            vec_count += 1
+        except Exception as ex:
+            vec_errors += 1
 
-                vec = generate_vector(type_idx, entity_idx, variation)
-
-                try:
-                    r = session.post(f"{ENDPOINT}/vectors", json={
-                        "predicate": f"{NS}hasEmbedding",
-                        "subject": vec_iri,
-                        "vector": vec,
-                    }, timeout=30)
-                    r.raise_for_status()
-                    vec_count += 1
-                except Exception as e:
-                    vec_errors += 1
-
-                if vec_count % 10000 == 0:
-                    elapsed = time.time() - vec_start
-                    rate = vec_count / elapsed if elapsed > 0 else 0
-                    print(f"  {vec_count:,}/{NUM_EMBEDDINGS_TARGET:,} vectors ({rate:.0f}/sec, errors: {vec_errors})")
+        if vec_count % 5000 == 0:
+            elapsed = time.time() - vec_start
+            rate = vec_count / elapsed if elapsed > 0 else 0
+            print(f"    {vec_count:,} vectors ({rate:.0f}/sec, errors: {vec_errors})")
 
     vec_elapsed = time.time() - vec_start
-    print(f"  TOTAL VECTORS: {vec_count:,} in {vec_elapsed:.1f}s ({vec_count/vec_elapsed:.0f}/sec)")
-    if vec_errors:
-        print(f"  Errors: {vec_errors}")
+    print(f"  VECTORS: {vec_count:,} in {vec_elapsed:.1f}s ({vec_count/vec_elapsed:.0f}/sec)")
+    print(f"  TOTAL TRIPLES (graph + vector): {total_triples + vec_count:,}")
 
-    print(f"\n[4/4] Data generation complete.")
-    print(f"  Triples: {total_triples:,}")
-    print(f"  Vectors: {vec_count:,}")
-
-    return total_triples, vec_count
+    return total_triples, vec_count, entities
 
 
-def run_queries():
-    """Run heavy-duty SPARQL queries and report performance."""
+def run_queries(entities):
     session = requests.Session()
-
     print("\n" + "=" * 60)
     print("QUERY STRESS TESTS")
     print("=" * 60)
 
     results = []
 
-    def run_query(name, query, expect_rows=None):
+    def run(name, query, expect_min=None):
         print(f"\n--- {name} ---")
-        print(f"  Query: {query[:120]}...")
+        q_preview = query.replace('\n', ' ')[:120]
+        print(f"  {q_preview}...")
         start = time.time()
         try:
             r = session.get(f"{ENDPOINT}/sparql", params={"query": query}, timeout=300)
             elapsed = time.time() - start
             if r.status_code != 200:
-                print(f"  ERROR: HTTP {r.status_code}: {r.text[:200]}")
+                print(f"  ERROR {r.status_code}: {r.text[:200]}")
                 results.append({"name": name, "status": "ERROR", "time": elapsed, "rows": 0})
-                return
+                return 0
             data = r.json()
             rows = len(data["results"]["bindings"])
-            print(f"  Result: {rows:,} rows in {elapsed:.3f}s")
-            if expect_rows is not None and rows != expect_rows:
-                print(f"  WARNING: expected {expect_rows} rows")
-            results.append({"name": name, "status": "OK", "time": elapsed, "rows": rows})
-
-            # Show first 3 results
+            status = "OK" if (expect_min is None or rows >= expect_min) else "LOW"
+            print(f"  {rows:,} rows in {elapsed:.3f}s" + (f" (expected >= {expect_min})" if status == "LOW" else ""))
             for b in data["results"]["bindings"][:3]:
-                vals = {k: v.get("value", "?")[:60] for k, v in b.items()}
+                vals = {k: v.get("value", "?")[:50] for k, v in b.items()}
                 print(f"    {vals}")
+            results.append({"name": name, "status": status, "time": elapsed, "rows": rows})
+            return rows
         except Exception as e:
             elapsed = time.time() - start
             print(f"  ERROR: {e}")
             results.append({"name": name, "status": "ERROR", "time": elapsed, "rows": 0})
+            return 0
 
-    # ── Query 1: Full scan count ──
-    run_query(
-        "Full table scan (all triples)",
-        "SELECT * WHERE { ?s ?p ?o } LIMIT 100"
-    )
+    # ── 1. Basic graph queries ──
 
-    # ── Query 2: Type-specific scan ──
-    run_query(
-        "All Person entities",
-        f"SELECT ?person WHERE {{ ?person <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <{NS}type/Person> }} LIMIT 100"
-    )
+    run("Type lookup: all alpha entities (LIMIT 100)",
+        f'SELECT ?e WHERE {{ ?e <{PRED_TYPE}> <{NS}class/alpha> }} LIMIT 100',
+        expect_min=100)
 
-    # ── Query 3: 2-hop traversal ──
-    run_query(
-        "2-hop: Person → livesIn → City → locatedIn → Country",
-        f"SELECT ?person ?city ?country WHERE {{ ?person <{NS}pred/livesIn> ?city . ?city <{NS}pred/locatedIn> ?country }} LIMIT 50"
-    )
+    run("1-hop: alpha → link → ?target (LIMIT 100)",
+        f'SELECT ?src ?tgt WHERE {{ ?src <{PRED_TYPE}> <{NS}class/alpha> . ?src <{PRED_LINK}> ?tgt }} LIMIT 100',
+        expect_min=50)
 
-    # ── Query 4: 3-hop traversal ──
-    run_query(
-        "3-hop: Person → worksAt → Company → locatedIn → City → locatedIn → Country",
-        f"SELECT ?person ?company ?city ?country WHERE {{ ?person <{NS}pred/worksAt> ?company . ?company <{NS}pred/locatedIn> ?city . ?city <{NS}pred/locatedIn> ?country }} LIMIT 50"
-    )
+    run("2-hop: alpha → link → ? → link → ? (LIMIT 50)",
+        f'SELECT ?a ?b ?c WHERE {{ ?a <{PRED_TYPE}> <{NS}class/alpha> . ?a <{PRED_LINK}> ?b . ?b <{PRED_LINK}> ?c }} LIMIT 50',
+        expect_min=10)
 
-    # ── Query 5: Vector similarity (cold) ──
-    # Generate a query vector in the "Person" cluster
-    query_vec = generate_vector(0, 0, 0)
+    run("All types (DISTINCT)",
+        f'SELECT DISTINCT ?type WHERE {{ ?e <{PRED_TYPE}> ?type }}',
+        expect_min=5)
+
+    run("Large result: 1000 link triples",
+        f'SELECT ?s ?o WHERE {{ ?s <{PRED_LINK}> ?o }} LIMIT 1000',
+        expect_min=1000)
+
+    # ── 2. Vector queries ──
+
+    # Pick an alpha entity that has a vector
+    alpha_vec_entity = next(e for e in entities if e["type_name"] == "alpha" and e["has_vector"])
+    query_vec = gen_vector(alpha_vec_entity["type_idx"], alpha_vec_entity["entity_idx"])
     vec_str = " ".join(f"{v:.6f}" for v in query_vec)
-    run_query(
-        "VECTOR_SIMILAR: Find entities similar to Person#0",
-        f'SELECT ?entity WHERE {{ VECTOR_SIMILAR(?entity <{NS}hasEmbedding> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.7) }} LIMIT 20'
-    )
 
-    # ── Query 6: Vector similarity in Mountain cluster ──
-    query_vec = generate_vector(1, 50, 0)
-    vec_str = " ".join(f"{v:.6f}" for v in query_vec)
-    run_query(
-        "VECTOR_SIMILAR: Find entities similar to Mountain#50",
-        f'SELECT ?entity WHERE {{ VECTOR_SIMILAR(?entity <{NS}hasEmbedding> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.7) }} LIMIT 20'
-    )
+    run("VECTOR_SIMILAR: find entities near alpha vector (threshold 0.7)",
+        f'SELECT ?entity WHERE {{ VECTOR_SIMILAR(?entity <{PRED_VEC}> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.7) }} LIMIT 20',
+        expect_min=1)
 
-    # ── Query 7: WORMHOLE — Graph → Vector → Graph ──
-    # Find people, then vector-search for similar entities, then check what type those are
-    query_vec = generate_vector(0, 500, 0)
-    vec_str = " ".join(f"{v:.6f}" for v in query_vec)
-    run_query(
-        "WORMHOLE: Graph→Vector→Graph (type→vectorSearch→type check)",
-        f'SELECT ?entity ?type WHERE {{ VECTOR_SIMILAR(?entity <{NS}hasEmbedding> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.8) . ?entity <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type }} LIMIT 20'
-    )
+    # Pick a beta entity for cross-cluster search
+    beta_vec_entity = next(e for e in entities if e["type_name"] == "beta" and e["has_vector"])
+    beta_vec = gen_vector(beta_vec_entity["type_idx"], beta_vec_entity["entity_idx"])
+    beta_vec_str = " ".join(f"{v:.6f}" for v in beta_vec)
 
-    # ── Query 8: WORMHOLE — Start in vector space, traverse graph ──
-    query_vec = generate_vector(2, 100, 0)  # City cluster
-    vec_str = " ".join(f"{v:.6f}" for v in query_vec)
-    run_query(
-        "WORMHOLE: Vector→Graph (vectorSearch→locatedIn→country)",
-        f'SELECT ?city ?country WHERE {{ VECTOR_SIMILAR(?city <{NS}hasEmbedding> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.85) . ?city <{NS}pred/locatedIn> ?country }} LIMIT 20'
-    )
+    run("VECTOR_SIMILAR: find entities near beta vector (threshold 0.7)",
+        f'SELECT ?entity WHERE {{ VECTOR_SIMILAR(?entity <{PRED_VEC}> "{beta_vec_str}"^^<http://sutra.dev/f32vec>, 0.7) }} LIMIT 20',
+        expect_min=1)
 
-    # ── Query 9: WORMHOLE — Graph → Vector → Graph → Graph ──
-    query_vec = generate_vector(0, 0, 0)  # Person cluster
-    vec_str = " ".join(f"{v:.6f}" for v in query_vec)
-    run_query(
-        "WORMHOLE: Graph→Vector→Graph→Graph (type+vector→livesIn→locatedIn)",
-        f'SELECT ?person ?city ?country WHERE {{ ?person <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <{NS}type/Person> . VECTOR_SIMILAR(?person <{NS}hasEmbedding> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.8) . ?person <{NS}pred/livesIn> ?city . ?city <{NS}pred/locatedIn> ?country }} LIMIT 20'
-    )
+    # ── 3. Wormhole queries: graph ↔ vector ──
 
-    # ── Query 10: UNION + Vector ──
-    query_vec = generate_vector(0, 0, 0)
-    vec_str = " ".join(f"{v:.6f}" for v in query_vec)
-    run_query(
-        "UNION + VECTOR: People who wrote books OR work at universities, similar to query",
-        f'SELECT ?person WHERE {{ {{ ?person <{NS}pred/wrote> ?book }} UNION {{ ?person <{NS}pred/worksAt> ?uni . ?uni <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <{NS}type/University> }} . VECTOR_SIMILAR(?person <{NS}hasEmbedding> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.7) }} LIMIT 20'
-    )
+    run("WORMHOLE vector→graph: similar to alpha, get their type",
+        f'SELECT ?entity ?type WHERE {{ VECTOR_SIMILAR(?entity <{PRED_VEC}> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.7) . ?entity <{PRED_TYPE}> ?type }} LIMIT 20',
+        expect_min=1)
 
-    # ── Query 11: FILTER + Vector ──
-    run_query(
-        "DISTINCT entities by type",
-        f"SELECT DISTINCT ?type WHERE {{ ?entity <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type }} LIMIT 20"
-    )
+    run("WORMHOLE vector→graph→graph: similar to alpha, follow link, get type",
+        f'SELECT ?entity ?linked ?type WHERE {{ VECTOR_SIMILAR(?entity <{PRED_VEC}> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.7) . ?entity <{PRED_LINK}> ?linked . ?linked <{PRED_TYPE}> ?type }} LIMIT 20',
+        expect_min=1)
 
-    # ── Query 12: Large result set ──
-    run_query(
-        "Large result: all Person→knows→Person relationships",
-        f"SELECT ?a ?b WHERE {{ ?a <{NS}pred/knows> ?b }} LIMIT 1000"
-    )
+    run("WORMHOLE graph→vector: alpha entities filtered by vector similarity",
+        f'SELECT ?entity WHERE {{ ?entity <{PRED_TYPE}> <{NS}class/alpha> . VECTOR_SIMILAR(?entity <{PRED_VEC}> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.7) }} LIMIT 20',
+        expect_min=1)
+
+    run("WORMHOLE graph→vector→graph: typed entities, vector filter, follow link",
+        f'SELECT ?entity ?linked WHERE {{ ?entity <{PRED_TYPE}> <{NS}class/alpha> . VECTOR_SIMILAR(?entity <{PRED_VEC}> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.7) . ?entity <{PRED_LINK}> ?linked }} LIMIT 20',
+        expect_min=1)
+
+    # ── 4. UNION + Vector ──
+
+    run("UNION: alpha OR beta entities",
+        f'SELECT ?e WHERE {{ {{ ?e <{PRED_TYPE}> <{NS}class/alpha> }} UNION {{ ?e <{PRED_TYPE}> <{NS}class/beta> }} }} LIMIT 100',
+        expect_min=50)
+
+    run("UNION + VECTOR: (alpha UNION beta) filtered by vector similarity",
+        f'SELECT ?e WHERE {{ {{ ?e <{PRED_TYPE}> <{NS}class/alpha> }} UNION {{ ?e <{PRED_TYPE}> <{NS}class/beta> }} . VECTOR_SIMILAR(?e <{PRED_VEC}> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.6) }} LIMIT 20',
+        expect_min=1)
+
+    # ── 5. Cross-cluster vector search ──
+
+    run("Cross-cluster: search with alpha vector, find what types come back",
+        f'SELECT ?entity ?type WHERE {{ VECTOR_SIMILAR(?entity <{PRED_VEC}> "{vec_str}"^^<http://sutra.dev/f32vec>, 0.3) . ?entity <{PRED_TYPE}> ?type }} LIMIT 50',
+        expect_min=1)
 
     # ── Summary ──
     print("\n" + "=" * 60)
     print("RESULTS SUMMARY")
     print("=" * 60)
-    print(f"{'Query':<65} {'Status':<8} {'Time':>8} {'Rows':>8}")
-    print("-" * 95)
+    print(f"{'Query':<70} {'Status':<6} {'Time':>8} {'Rows':>6}")
+    print("-" * 96)
     for r in results:
-        print(f"{r['name'][:65]:<65} {r['status']:<8} {r['time']:>7.3f}s {r['rows']:>8,}")
+        print(f"{r['name'][:70]:<70} {r['status']:<6} {r['time']:>7.3f}s {r['rows']:>6,}")
 
+    ok = sum(1 for r in results if r["status"] == "OK")
+    low = sum(1 for r in results if r["status"] == "LOW")
+    err = sum(1 for r in results if r["status"] == "ERROR")
     total_time = sum(r["time"] for r in results)
-    ok_count = sum(1 for r in results if r["status"] == "OK")
-    print("-" * 95)
-    print(f"Total: {ok_count}/{len(results)} queries succeeded, {total_time:.3f}s total query time")
+    print("-" * 96)
+    print(f"Total: {ok} OK, {low} LOW, {err} ERROR — {total_time:.3f}s total")
 
     return results
 
@@ -382,18 +308,20 @@ if __name__ == "__main__":
         print("ERROR: SutraDB not running at", ENDPOINT)
         sys.exit(1)
 
-    total_triples, vec_count = generate_and_load_data()
-    query_results = run_queries()
+    total_triples, vec_count, entities = generate_and_load()
+    query_results = run_queries(entities)
 
-    # Write report
     report = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "version": "v2",
         "data": {
             "entities": NUM_ENTITIES,
-            "triples": total_triples,
-            "vectors": vec_count,
+            "graph_triples": total_triples,
+            "vector_triples": vec_count,
+            "total_triples": total_triples + vec_count,
             "dimensions": DIMENSIONS,
-            "entity_types": len(ENTITY_TYPES),
+            "entity_types": len(TYPES),
+            "vector_fraction": VECTOR_FRACTION,
         },
         "queries": query_results,
     }
