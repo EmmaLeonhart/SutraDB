@@ -173,12 +173,20 @@ const network = new vis.Network(document.getElementById('graph'), { nodes: visNo
 function addNode(id, label, type) {
     if (visNodes.get(id)) return;
     const isV = isVec(id) || type === 'vector';
+    // For vector literals, show a compact label instead of the raw float array
+    let displayLabel = label;
+    if (isV) {
+        displayLabel = '[vector]';
+    } else if (displayLabel.length > 25) {
+        displayLabel = displayLabel.substring(0,22)+'...';
+    }
     const col = isV ? COLORS.vector : (type === 'literal' ? COLORS.literal : COLORS.iri);
     visNodes.add({
-        id, label: label.length > 25 ? label.substring(0,22)+'...' : label,
-        title: id, color: col, size: isV ? 8 : 14,
+        id, label: displayLabel,
+        title: isV ? 'Vector embedding (' + id.split(' ').length + ' dims)' : id,
+        color: col, size: isV ? 8 : 14,
         font: { color: '#e6edf3', strokeWidth: 2, strokeColor: '#0d1117', size: 10 },
-        shape: 'dot', _type: type, _full: id
+        shape: isV ? 'diamond' : 'dot', _type: type, _full: id
     });
 }
 
@@ -362,6 +370,9 @@ async function runQuery() {
         renderResults(data);
         if (data.head.vars.includes('s') && data.head.vars.includes('p') && data.head.vars.includes('o')) {
             loadGraphFromSPO(data);
+        } else if (data.head.vars.includes('s') && data.head.vars.includes('o')) {
+            // HNSW edge query: ?s ?o (no predicate)
+            loadGraphFromSO(data, 'hnswNeighbor');
         }
     } catch(e) {
         document.getElementById('results').innerHTML = `<div class="row" style="color:var(--red)">${e.message.substring(0,200)}</div>`;
@@ -377,7 +388,8 @@ function renderResults(data) {
     el.innerHTML = b.map((r,i) => {
         if (hasSPO) {
             const vec = r.o && isVec(r.o.value);
-            return `<div class="row" onclick="selectRow(${i})"><span class="s">${sh(r.s?.value)}</span> <span class="p">${sh(r.p?.value)}</span> <span class="o">${sh(r.o?.value)?.substring(0,30)}</span>${vec?'<span class="vb">VEC</span>':''}</div>`;
+            const oDisplay = vec ? '[vector]' : sh(r.o?.value)?.substring(0,30);
+            return `<div class="row" onclick="selectRow(${i})"><span class="s">${sh(r.s?.value)}</span> <span class="p">${sh(r.p?.value)}</span> <span class="o">${oDisplay}</span>${vec?'<span class="vb">VEC</span>':''}</div>`;
         }
         return `<div class="row" onclick="selectRow(${i})">${v.map(x=>sh(r[x]?.value)).join(' | ')}</div>`;
     }).join('');
@@ -390,6 +402,20 @@ function selectRow(i) {
     for (const v of lastData.head.vars) {
         if (b[v]?.type === 'uri') { showDetail(b[v].value); return; }
     }
+}
+
+function loadGraphFromSO(data, edgeLabel) {
+    visNodes.clear(); visEdges.clear(); expandedNodes.clear();
+    knownEdgeLabels.clear();
+    document.getElementById('filterBoxes').innerHTML = '';
+    for (const b of data.results.bindings) {
+        if (!b.s || !b.o) continue;
+        const sId = b.s.value, oId = b.o.value;
+        addNode(sId, sh(sId), 'iri');
+        addNode(oId, sh(oId), 'iri');
+        addEdge(sId, oId, edgeLabel);
+    }
+    updateGStatus();
 }
 
 function loadGraphFromSPO(data) {
@@ -417,8 +443,8 @@ function qk(t) {
         all: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 30',
         types: 'SELECT DISTINCT ?type WHERE {\n  ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type\n} LIMIT 30',
         vecs: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 50',
-        hnsw: '# HNSW neighbor graph — shows the actual index structure\n# Nodes connected by hnswNeighbor are HNSW graph neighbors\nSELECT ?s ?p ?o WHERE {\n  ?s <http://sutra.dev/hnswNeighbor> ?o .\n  BIND(<http://sutra.dev/hnswNeighbor> AS ?p)\n} LIMIT 100',
-        hnswNode: '# HNSW neighbors of a specific entity\n# Replace the IRI with any entity that has a vector\nSELECT ?s ?p ?o WHERE {\n  # Pick an entity:\n  ?s <http://sutra.dev/hnswNeighbor> ?o .\n  BIND(<http://sutra.dev/hnswNeighbor> AS ?p)\n} LIMIT 50',
+        hnsw: '# HNSW neighbor graph — shows the actual index structure\nSELECT ?s ?o WHERE {\n  ?s <http://sutra.dev/hnswNeighbor> ?o\n} LIMIT 100',
+        hnswNode: '# HNSW neighbors of a specific entity\n# Replace the IRI with any entity that has a vector\nSELECT ?s ?o WHERE {\n  ?s <http://sutra.dev/hnswNeighbor> ?o\n} LIMIT 50',
     };
     box.value = qs[t] || qs.all;
     if (t === 'hnsw' || t === 'hnswNode') {
