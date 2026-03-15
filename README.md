@@ -4,6 +4,8 @@ A lean, high-performance RDF-star triplestore written in Rust with native HNSW v
 
 [![CI](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml/badge.svg)](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml)
 
+> **AI Agents:** If you are an AI agent setting up a database, see **[Agent Setup Guide](docs/AGENT_SETUP.md)** for complete CLI reference, API endpoints, and step-by-step instructions. SutraDB is designed to be fully operable by AI agents without ever touching a GUI.
+
 ## What is this?
 
 SutraDB is a single-purpose database: store triples, answer queries, at any scale. It replaces both a vector database (e.g. Qdrant) and a SPARQL triplestore (e.g. Apache Jena Fuseki) with a single unified system where **vectors are just triples**.
@@ -12,10 +14,29 @@ The vector indexing architecture is heavily influenced by [Qdrant](https://githu
 
 ### Core principles
 
-1. **Store first, reason second.** The database stores what you put in. OWL reasoning is planned as an opt-in query-time layer; RDFS inference is out of scope.
+1. **Store first, reason second.** The database stores what you put in. OWL validation happens client-side in SDKs, not in the database.
 2. **Vectors are triples.** A vector embedding is an attribute of a node or edge, stored via a typed predicate and indexed by HNSW — not a separate system.
 3. **Full traversal in a single query.** Any traversal of any depth must be expressible in one SPARQL query.
 4. **Lean by default.** Every feature must justify itself. Complexity is the enemy of performance.
+5. **Agent-first, GUI-optional.** The CLI is the primary interface. Sutra Studio (GUI) exists for visual diagnostics.
+
+## Quick Start
+
+```bash
+# Build
+cargo build --release -p sutra-cli
+
+# Start server (persistent storage)
+./target/release/sutra serve
+
+# Insert some data
+curl -X POST http://localhost:3030/triples \
+  -d '<http://example.org/Alice> <http://example.org/knows> <http://example.org/Bob> .'
+
+# Query
+curl -X POST http://localhost:3030/sparql \
+  -d 'SELECT * WHERE { ?s ?p ?o } LIMIT 10'
+```
 
 ## Data Model
 
@@ -27,18 +48,7 @@ All data is **RDF-star** triples. Vectors are stored as `sutra:f32vec` literals:
 
 # Embedding on an edge (RDF-star)
 << :paper_42 :discusses :TransformerArchitecture >> :hasEmbedding "0.23 -0.11 ..."^^sutra:f32vec .
-<< :paper_42 :discusses :TransformerArchitecture >> :confidence 0.91 .
 ```
-
-### Inline Literals
-
-Small typed values (integers, booleans) are encoded directly into the 64-bit term ID, avoiding dictionary lookups entirely. This is inspired by [Jena TDB2's inline literal optimization](https://github.com/apache/jena/tree/main/jena-tdb2):
-
-- Bit 63 = 1 marks an inline value
-- Bits 62-56 = type tag (integer, boolean, etc.)
-- Bits 55-0 = payload (56 bits)
-
-This means numeric filters and comparisons operate on raw IDs without touching the dictionary — critical for SPARQL query performance.
 
 ## Hybrid SPARQL
 
@@ -52,63 +62,57 @@ SELECT ?doc ?entity WHERE {
 }
 ```
 
-The query planner decides execution order based on binding state:
-- Subject **bound** before VECTOR_SIMILAR → graph first, then vector filter
-- Subject **unbound** → vector search first (top-k), then graph patterns
+### Supported SPARQL Features
+
+SELECT, ASK, CONSTRUCT, DESCRIBE | INSERT DATA, DELETE DATA | FILTER (=, !=, <, >, <=, >=, &&, ||, !) | FILTER NOT EXISTS / EXISTS | OPTIONAL, UNION | BIND, VALUES | GROUP BY + COUNT/SUM/AVG/MIN/MAX | ORDER BY, LIMIT, OFFSET, DISTINCT | VECTOR_SIMILAR, VECTOR_SCORE | String functions (CONTAINS, STRSTARTS, STRENDS, REGEX) | LANG(), LANGMATCHES(), isIRI(), isLiteral() | PREFIX declarations
 
 ## Architecture
 
-### Crate Structure
-
 | Crate | Purpose | Status |
 |---|---|---|
-| `sutra-core` | Triple storage engine, IRI interning, RDF-star IDs | Implemented |
-| `sutra-hnsw` | HNSW vector index with multiple distance metrics | Implemented |
-| `sutra-sparql` | SPARQL 1.1 parser, query planner, executor | Stub |
-| `sutra-proto` | SPARQL HTTP protocol, Graph Store Protocol, REST API | Stub |
-| `sutra-cli` | CLI tools: import, export, query, benchmark | Stub |
+| `sutra-core` | Triple storage engine, IRI interning, RDF-star IDs, sled persistence | Implemented |
+| `sutra-hnsw` | HNSW vector index with SIMD (AVX2/SSE), multiple distance metrics | Implemented |
+| `sutra-sparql` | SPARQL 1.1 parser, query planner, executor, hybrid extension | Implemented |
+| `sutra-proto` | HTTP server, SPARQL protocol, Graph Store Protocol | Implemented |
+| `sutra-cli` | CLI: serve, query, import, export, info | Implemented |
 
-**Dependency rules:**
-- `sutra-hnsw` has **zero** dependency on `sutra-sparql` — it is a pure data structure crate
-- `sutra-sparql` depends on both `sutra-core` and `sutra-hnsw`
-- `sutra-proto` depends on `sutra-sparql`
-- `sutra-cli` depends on `sutra-proto` and `sutra-sparql`
+## CLI
 
-### Storage Engine (`sutra-core`)
+```bash
+sutra serve                     # Start HTTP server (port 3030)
+sutra serve --memory-only       # In-memory only
+sutra query "SELECT ..."        # Run SPARQL query
+sutra import data.nt            # Import N-Triples
+sutra export -o dump.nt         # Export all triples
+sutra info                      # Show database stats
+```
 
-Six covering indexes over integer-interned term IDs:
+## SDKs
 
-| Index | Purpose |
-|---|---|
-| SPO | Subject-first traversal (primary store) |
-| POS | Predicate-first, range queries |
-| OSP | Object-first, reverse traversal |
-| SP | Star-shaped queries |
-| PO | Type lookups, range scans |
-| VECTOR(p) | One HNSW per vector predicate |
+| Language | Path |
+|----------|------|
+| Python | `sdks/python/` |
+| TypeScript | `sdks/typescript/` |
+| Go | `sdks/go/` |
+| Rust | `sdks/rust/` |
+| Java | `sdks/java/` |
+| .NET | `sdks/dotnet/` |
 
-Currently backed by `BTreeSet` for v0.1. Will be replaced by an LSM-tree for persistence and write throughput.
+## Sutra Studio
 
-**IRI interning:** All IRIs/blank nodes are interned to `u64` at write time. Quoted triples (RDF-star) get a content-addressed ID via xxHash3 of their (S, P, O) tuple.
+Flutter desktop/web client for visual database management. See `sutra-studio/README.md`.
 
-### HNSW Index (`sutra-hnsw`)
+```bash
+cd sutra-studio && flutter run -d chrome
+```
 
-The HNSW (Hierarchical Navigable Small World) implementation follows patterns from Qdrant:
+## Test Suite
 
-- **Normalize-then-dot-product** for cosine similarity (normalize at insert time, dot product at search time — avoids redundant normalization on the hot path)
-- **Three distance metrics:** Cosine, Euclidean, DotProduct
-- **Reusable visited list** to avoid per-search allocation
-- **O(1) deletion** via HashMap lookup (triple_id → node index)
-- **Lazy deletion** with tombstone flags — deleted nodes are skipped during search
-- **`deleted_ratio()`** for compaction threshold decisions
-- **Seeded RNG** (xorshift64) for reproducible layer assignment in tests
+200+ tests across 5 crates:
 
-**Key parameters:**
-- `M`: max connections per node per layer (default 16)
-- `M0 = 2*M`: max connections at layer 0
-- `ef_construction`: beam width during build
-- `ef_search`: beam width at query time (tunable per-query)
-- `dimensions`: fixed at predicate declaration, enforced on insert
+```bash
+cargo test --workspace
+```
 
 ## Building
 
@@ -118,12 +122,12 @@ cargo test --workspace
 cargo clippy --workspace -- -D warnings
 ```
 
-## Test Suite
+## Docker
 
-66 tests across unit and integration tests:
-
-- **sutra-core** (29 tests): TermDictionary, Triple key encoding, TripleStore CRUD, inline literals, RDF-star quoted triples, bulk operations
-- **sutra-hnsw** (37 tests): HNSW insert/search/delete, distance metrics, search quality, normalization, high-dimensional vectors, reproducibility, stress tests
+```bash
+docker build -t sutradb .
+docker run -p 3030:3030 -v sutra-data:/data sutradb
+```
 
 ## License
 
