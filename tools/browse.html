@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SutraDB Browser</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
     <style>
         :root {
             --bg: #0d1117; --surface: #161b22; --border: #30363d;
@@ -12,475 +12,415 @@
             --green: #3fb950; --orange: #d29922; --purple: #bc8cff; --red: #f85149;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
         a { color: var(--accent); text-decoration: none; cursor: pointer; }
 
+        /* Header */
         header {
-            padding: 8px 16px; border-bottom: 1px solid var(--border);
-            display: flex; align-items: center; gap: 12px; height: 44px;
+            height: 40px; padding: 0 12px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 10px; font-size: 0.85em;
         }
-        header h1 { font-size: 1em; white-space: nowrap; }
-        header h1 span { color: var(--accent); }
-        header h1::before { content: '\1F4DC '; }
-        #endpoint-input {
-            background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
-            color: var(--text); padding: 4px 8px; font-size: 0.8em; width: 200px;
-        }
+        header .logo { font-weight: 700; }
+        header .logo::before { content: '\1F4DC '; }
+        header .logo span { color: var(--accent); }
+        #endpoint { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; color: var(--text); padding: 2px 6px; font-size: 0.85em; width: 180px; }
         #status { font-size: 0.8em; }
-        .connected { color: var(--green); }
-        .disconnected { color: var(--red); }
-        .view-toggle { display: flex; gap: 4px; margin-left: auto; }
-        .view-toggle button {
-            background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-            padding: 4px 12px; cursor: pointer; font-size: 0.8em; border-radius: 4px;
-        }
-        .view-toggle button.active { color: var(--accent); border-color: var(--accent); }
-        .view-toggle button:hover { color: var(--text); }
+        .on { color: var(--green); } .off { color: var(--red); }
 
-        .layout { display: flex; height: calc(100vh - 44px); }
+        /* Layout */
+        .layout { display: flex; height: calc(100vh - 40px); }
 
-        /* Left panel: query + results */
-        .panel-left {
-            width: 340px; border-right: 1px solid var(--border);
-            display: flex; flex-direction: column; flex-shrink: 0;
-        }
-        #query-box {
+        /* Left panel */
+        .left { width: 320px; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+        #query {
             width: 100%; background: var(--surface); border: none; border-bottom: 1px solid var(--border);
-            color: var(--text); padding: 8px 12px; font-family: Consolas, monospace; font-size: 0.8em;
-            resize: vertical; min-height: 80px; max-height: 200px;
+            color: var(--text); padding: 6px 10px; font-family: Consolas, monospace; font-size: 0.78em;
+            resize: vertical; min-height: 60px; max-height: 150px;
         }
-        .query-bar { padding: 6px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; flex-wrap: wrap; }
-        .qbtn {
+        .bar { padding: 4px 10px; border-bottom: 1px solid var(--border); display: flex; gap: 4px; flex-wrap: wrap; }
+        .qb {
             background: none; border: 1px solid var(--border); color: var(--muted);
-            padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7em;
+            padding: 1px 6px; border-radius: 3px; cursor: pointer; font-size: 0.7em;
         }
-        .qbtn:hover { color: var(--accent); border-color: var(--accent); }
-        .btn-run {
-            background: var(--accent); color: var(--bg); border: none;
-            padding: 2px 12px; border-radius: 3px; cursor: pointer; font-size: 0.75em; font-weight: 600;
-        }
+        .qb:hover { color: var(--accent); border-color: var(--accent); }
+        .run { background: var(--accent); color: var(--bg); border: none; padding: 1px 10px; border-radius: 3px; cursor: pointer; font-size: 0.72em; font-weight: 600; }
+        .results { flex: 1; overflow-y: auto; font-size: 0.78em; }
+        .row { padding: 4px 10px; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .row:hover { background: var(--surface); }
+        .row.sel { background: #1c2333; border-left: 3px solid var(--accent); }
+        .s { color: var(--accent); } .p { color: var(--purple); } .o { color: var(--green); }
+        .vb { background: #1b2838; color: var(--orange); padding: 0 3px; border-radius: 2px; font-size: 0.75em; }
+        .info { padding: 3px 10px; border-top: 1px solid var(--border); font-size: 0.72em; color: var(--muted); }
 
-        .result-list { flex: 1; overflow-y: auto; font-size: 0.8em; }
-        .result-item {
-            padding: 6px 12px; border-bottom: 1px solid var(--border); cursor: pointer;
-        }
-        .result-item:hover { background: var(--surface); }
-        .result-item.active { background: #1c2333; border-left: 3px solid var(--accent); }
-        .subject { color: var(--accent); }
-        .predicate { color: var(--purple); }
-        .object { color: var(--green); }
-        .vec-badge {
-            display: inline-block; background: #1b2838; color: var(--orange);
-            padding: 0 4px; border-radius: 3px; font-size: 0.75em;
-        }
-        .stats-bar { padding: 4px 12px; border-top: 1px solid var(--border); font-size: 0.75em; color: var(--muted); }
+        /* Right: graph + detail */
+        .right { flex: 1; position: relative; }
+        #graph { width: 100%; height: 100%; }
 
-        /* Right panel: detail or graph */
-        .panel-right { flex: 1; position: relative; overflow: hidden; }
-
-        /* Graph view */
-        #graph-container { width: 100%; height: 100%; }
-        #graph-container svg { width: 100%; height: 100%; }
-
-        /* Detail view */
-        #detail-panel {
-            display: none; position: absolute; top: 0; right: 0; width: 360px; height: 100%;
-            background: var(--surface); border-left: 1px solid var(--border);
-            overflow-y: auto; z-index: 10;
+        /* Legend */
+        .legend {
+            position: absolute; top: 8px; left: 8px; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 6px; padding: 6px 10px; font-size: 0.75em; z-index: 5; display: flex; gap: 10px;
         }
-        #detail-panel .detail-header {
-            padding: 12px 16px; border-bottom: 1px solid var(--border);
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        #detail-panel .detail-header h3 { font-size: 0.95em; word-break: break-all; }
-        #detail-panel .close-btn { cursor: pointer; color: var(--muted); font-size: 1.2em; }
-        #detail-panel .detail-content { padding: 12px 16px; font-size: 0.85em; }
-        #detail-panel table { width: 100%; }
-        #detail-panel th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.85em; }
-        #detail-panel td { padding: 6px 8px; border-bottom: 1px solid var(--border); word-break: break-all; }
-        .detail-section { margin-bottom: 16px; }
-        .detail-section h4 { color: var(--accent); margin-bottom: 8px; font-size: 0.9em; }
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 
-        /* Tooltip */
-        .tooltip {
-            position: absolute; background: var(--surface); border: 1px solid var(--border);
-            border-radius: 4px; padding: 6px 10px; font-size: 0.8em; pointer-events: none;
-            z-index: 20; max-width: 300px; word-break: break-all;
+        /* Edge filter */
+        .filters {
+            position: absolute; top: 8px; right: 8px; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 6px; padding: 6px 10px; font-size: 0.72em; z-index: 5; max-width: 250px;
         }
+        .filters label { display: inline-block; margin: 1px 4px; cursor: pointer; }
+        .filters input { margin-right: 2px; }
 
-        /* SVG styles */
-        .link { stroke: var(--border); stroke-width: 1.5; fill: none; }
-        .link-label { fill: var(--muted); font-size: 8px; pointer-events: none; }
-        .node circle { stroke-width: 2; cursor: pointer; }
-        .node text { fill: var(--text); font-size: 9px; pointer-events: none; }
-        .node-iri circle { fill: var(--accent); stroke: #1a4a7a; }
-        .node-literal circle { fill: var(--green); stroke: #1a3a1f; }
-        .node-vector circle { fill: var(--orange); stroke: #3a2e1b; }
-        .node.selected circle { stroke: white; stroke-width: 3; }
+        /* Detail panel */
+        #detail {
+            display: none; position: absolute; bottom: 0; left: 0; right: 0; max-height: 40%;
+            background: var(--surface); border-top: 1px solid var(--border); overflow-y: auto;
+            z-index: 10; padding: 12px 16px; font-size: 0.82em;
+        }
+        #detail .close { float: right; cursor: pointer; color: var(--muted); font-size: 1.2em; }
+        #detail h3 { margin-bottom: 8px; font-size: 0.95em; }
+        #detail table { width: 100%; border-collapse: collapse; }
+        #detail th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.8em; }
+        #detail td { padding: 4px 8px; border-bottom: 1px solid var(--border); word-break: break-all; }
+        .section { margin-bottom: 12px; }
+        .section h4 { color: var(--accent); margin-bottom: 4px; font-size: 0.85em; }
+
+        /* Graph status */
+        .gstatus {
+            position: absolute; bottom: 8px; left: 8px; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 4px; padding: 3px 8px; font-size: 0.72em; color: var(--muted); z-index: 5;
+        }
     </style>
 </head>
 <body>
 
 <header>
-    <h1><span>Sutra</span>DB Browser</h1>
-    <input id="endpoint-input" value="http://localhost:3030">
-    <span id="status" class="disconnected">...</span>
-    <div class="view-toggle">
-        <button class="active" onclick="setView('graph')">Graph</button>
-        <button onclick="setView('table')">Table</button>
-    </div>
+    <span class="logo"><span>Sutra</span>DB Browser</span>
+    <input id="endpoint" value="http://localhost:3030">
+    <span id="status" class="off">...</span>
+    <span style="margin-left:auto;color:var(--muted);font-size:0.75em">Click node to expand | Double-click for detail | Drag to move</span>
 </header>
 
 <div class="layout">
-    <div class="panel-left">
-        <textarea id="query-box">SELECT ?s ?p ?o WHERE {
+    <div class="left">
+        <textarea id="query">SELECT ?s ?p ?o WHERE {
   ?s ?p ?o
 } LIMIT 30</textarea>
-        <div class="query-bar">
-            <button class="btn-run" onclick="runQuery()">Run (Ctrl+Enter)</button>
-            <button class="qbtn" onclick="qk('all')">All</button>
-            <button class="qbtn" onclick="qk('types')">Types</button>
-            <button class="qbtn" onclick="qk('vectors')">Vectors</button>
-            <button class="qbtn" onclick="qk('expand')">Expand</button>
+        <div class="bar">
+            <button class="run" onclick="runQuery()">Run (Ctrl+Enter)</button>
+            <button class="qb" onclick="qk('all')">All</button>
+            <button class="qb" onclick="qk('types')">Types</button>
+            <button class="qb" onclick="qk('vecs')">Vectors</button>
         </div>
-        <div class="result-list" id="result-list"></div>
-        <div class="stats-bar" id="stats"></div>
+        <div class="results" id="results"></div>
+        <div class="info" id="info"></div>
     </div>
 
-    <div class="panel-right">
-        <div id="graph-container"></div>
-        <div id="detail-panel">
-            <div class="detail-header">
-                <h3 id="detail-title"></h3>
-                <span class="close-btn" onclick="closeDetail()">&times;</span>
-            </div>
-            <div class="detail-content" id="detail-content"></div>
+    <div class="right">
+        <div id="graph"></div>
+        <div class="legend">
+            <span class="legend-item"><span class="dot" style="background:#e74c3c"></span> Selected</span>
+            <span class="legend-item"><span class="dot" style="background:#3498db"></span> IRI</span>
+            <span class="legend-item"><span class="dot" style="background:#3fb950"></span> Literal</span>
+            <span class="legend-item"><span class="dot" style="background:#d29922"></span> Vector</span>
         </div>
+        <div class="filters" id="filters"><strong>Edge filters:</strong> <label><input type="checkbox" id="toggleAll" checked> All</label><span id="filterBoxes"></span></div>
+        <div class="gstatus" id="gstatus">No data loaded</div>
+        <div id="detail"></div>
     </div>
 </div>
 
-<div class="tooltip" id="tooltip" style="display:none;"></div>
-
 <script>
-// ── Config ──
-const endpoint = () => document.getElementById('endpoint-input').value.replace(/\/$/, '');
-let currentView = 'graph';
-let graphData = { nodes: [], links: [] };
-let simulation = null;
-let lastResults = null;
+const EP = () => document.getElementById('endpoint').value.replace(/\/$/,'');
+const COLORS = { iri: '#3498db', literal: '#3fb950', vector: '#d29922', selected: '#e74c3c' };
 
 // ── Shorten IRIs ──
-function shorten(iri) {
+function sh(iri) {
     if (!iri) return '?';
     return iri
-        .replace('http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'rdf:')
-        .replace('http://www.w3.org/2001/XMLSchema#', 'xsd:')
-        .replace('http://www.wikidata.org/entity/', 'wd:')
-        .replace('http://www.wikidata.org/prop/direct/', 'wdt:')
-        .replace('http://embedding-mapping.local/ontology/', 'emb:')
-        .replace('http://stress.sutradb.dev/', 'stress:')
-        .replace('http://sutra.dev/', 'sutra:')
-        .replace(/^http:\/\/example\.org\//, 'ex:');
+        .replace('http://www.w3.org/1999/02/22-rdf-syntax-ns#','rdf:')
+        .replace('http://www.w3.org/2001/XMLSchema#','xsd:')
+        .replace('http://www.wikidata.org/entity/','wd:')
+        .replace('http://www.wikidata.org/prop/direct/','wdt:')
+        .replace('http://embedding-mapping.local/ontology/','emb:')
+        .replace('http://sutra.dev/','sutra:')
+        .replace(/^http:\/\/[^/]+\//,'');
+}
+function isVec(v) { return v && v.includes('f32vec'); }
+
+// ── vis-network ──
+const visNodes = new vis.DataSet();
+const visEdges = new vis.DataSet();
+const expandedNodes = new Set();
+const knownEdgeLabels = new Set();
+const filterState = {};
+let selectedNode = null;
+
+const network = new vis.Network(document.getElementById('graph'), { nodes: visNodes, edges: visEdges }, {
+    physics: {
+        barnesHut: { gravitationalConstant: -3000, springLength: 120, centralGravity: 0.2, springConstant: 0.04, damping: 0.09 },
+        stabilization: { iterations: 100 }
+    },
+    interaction: { hover: true, tooltipDelay: 200 },
+    nodes: { borderWidth: 2, borderWidthSelected: 3 },
+    edges: { width: 1.5, selectionWidth: 2.5 }
+});
+
+function addNode(id, label, type) {
+    if (visNodes.get(id)) return;
+    const isV = isVec(id) || type === 'vector';
+    const col = isV ? COLORS.vector : (type === 'literal' ? COLORS.literal : COLORS.iri);
+    visNodes.add({
+        id, label: label.length > 25 ? label.substring(0,22)+'...' : label,
+        title: id, color: col, size: isV ? 8 : 14,
+        font: { color: '#e6edf3', strokeWidth: 2, strokeColor: '#0d1117', size: 10 },
+        shape: 'dot', _type: type, _full: id
+    });
 }
 
-function isVector(val) { return val && val.includes('f32vec'); }
-
-// ── Health ──
-async function checkHealth() {
-    try {
-        const r = await fetch(endpoint() + '/health');
-        document.getElementById('status').textContent = r.ok ? 'connected' : 'error';
-        document.getElementById('status').className = r.ok ? 'connected' : 'disconnected';
-    } catch {
-        document.getElementById('status').textContent = 'disconnected';
-        document.getElementById('status').className = 'disconnected';
+function addEdge(from, to, label) {
+    const eid = from+'|'+to+'|'+label;
+    if (visEdges.get(eid)) return;
+    const hidden = filterState[label] === false;
+    visEdges.add({
+        id: eid, from, to, label, title: label, arrows: 'to',
+        color: { color: '#555', highlight: '#999' },
+        font: { size: 9, color: '#8b949e', strokeWidth: 0 },
+        smooth: { type: 'curvedCW', roundness: 0.12 },
+        hidden, _lbl: label
+    });
+    if (!knownEdgeLabels.has(label)) {
+        knownEdgeLabels.add(label);
+        if (!(label in filterState)) filterState[label] = true;
+        addFilterCheckbox(label);
     }
 }
 
+function addFilterCheckbox(label) {
+    const c = document.getElementById('filterBoxes');
+    const l = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true; cb.dataset.l = label;
+    cb.onchange = () => { filterState[label] = cb.checked; applyFilters(); };
+    l.appendChild(cb); l.appendChild(document.createTextNode(' '+label));
+    c.appendChild(l);
+}
+
+function applyFilters() {
+    const up = [];
+    visEdges.forEach(e => {
+        const hide = filterState[e._lbl] === false;
+        if (e.hidden !== hide) up.push({ id: e.id, hidden: hide });
+    });
+    if (up.length) visEdges.update(up);
+}
+
+document.getElementById('toggleAll').onchange = function() {
+    document.querySelectorAll('#filterBoxes input').forEach(cb => { cb.checked = this.checked; filterState[cb.dataset.l] = this.checked; });
+    applyFilters();
+};
+
+function updateGStatus() {
+    document.getElementById('gstatus').textContent = `${visNodes.length} nodes, ${visEdges.length} edges`;
+}
+
 // ── SPARQL ──
-async function sparql(query) {
-    const r = await fetch(endpoint() + '/sparql?query=' + encodeURIComponent(query));
+async function sparql(q) {
+    const r = await fetch(EP()+'/sparql?query='+encodeURIComponent(q));
     if (!r.ok) throw new Error(await r.text());
     return r.json();
 }
 
-// ── Quick queries ──
-function qk(type) {
-    const box = document.getElementById('query-box');
-    const q = {
-        all: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 30',
-        types: 'SELECT DISTINCT ?type WHERE {\n  ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type\n} LIMIT 30',
-        vectors: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 50',
-        expand: '# Click a node in the graph, then click "Expand" to load its neighbors',
-    };
-    box.value = q[type] || q.all;
-    if (type !== 'expand') runQuery();
-}
-
-function expandNode(iri) {
-    document.getElementById('query-box').value =
-        `SELECT ?s ?p ?o WHERE {\n  { <${iri}> ?p ?o . BIND(<${iri}> AS ?s) }\n  UNION\n  { ?s ?p <${iri}> . BIND(<${iri}> AS ?o) }\n} LIMIT 50`;
-    runQuery();
-}
-
-// ── Run query ──
-async function runQuery() {
-    const query = document.getElementById('query-box').value;
+// ── Expand node: fetch neighbors and add to graph ──
+async function expandNode(iri) {
+    if (expandedNodes.has(iri)) return;
+    expandedNodes.add(iri);
     try {
-        const data = await sparql(query);
-        lastResults = data;
+        // Outgoing
+        const out = await sparql(`SELECT ?p ?o WHERE { <${iri}> ?p ?o } LIMIT 50`);
+        for (const b of out.results.bindings) {
+            const pLabel = sh(b.p.value);
+            const oId = b.o.value;
+            const oType = b.o.type === 'uri' ? 'iri' : (isVec(oId) ? 'vector' : 'literal');
+            addNode(oId, sh(oId), oType);
+            addEdge(iri, oId, pLabel);
+        }
+        // Incoming
+        const inc = await sparql(`SELECT ?s ?p WHERE { ?s ?p <${iri}> } LIMIT 30`);
+        for (const b of inc.results.bindings) {
+            const pLabel = sh(b.p.value);
+            addNode(b.s.value, sh(b.s.value), 'iri');
+            addEdge(b.s.value, iri, pLabel);
+        }
+        updateGStatus();
+    } catch(e) { console.error('Expand failed:', e); }
+}
+
+// ── Click to expand ──
+let cooldown = false;
+network.on('click', params => {
+    if (cooldown || !params.nodes.length) return;
+    const nid = params.nodes[0];
+    cooldown = true; setTimeout(() => cooldown = false, 300);
+
+    // Highlight
+    if (selectedNode) {
+        const old = visNodes.get(selectedNode);
+        if (old) {
+            const t = old._type;
+            visNodes.update({ id: selectedNode, color: isVec(selectedNode) ? COLORS.vector : (t === 'literal' ? COLORS.literal : COLORS.iri) });
+        }
+    }
+    selectedNode = nid;
+    visNodes.update({ id: nid, color: COLORS.selected });
+
+    expandNode(nid);
+});
+
+// ── Double-click for detail panel ──
+network.on('doubleClick', params => {
+    if (!params.nodes.length) return;
+    showDetail(params.nodes[0]);
+});
+
+// ── Detail panel ──
+async function showDetail(iri) {
+    const d = document.getElementById('detail');
+    d.style.display = 'block';
+    d.innerHTML = `<span class="close" onclick="document.getElementById('detail').style.display='none'">&times;</span><h3>${sh(iri)}</h3><p style="color:var(--muted);font-size:0.8em;word-break:break-all">${iri}</p>Loading...`;
+
+    try {
+        const out = await sparql(`SELECT ?p ?o WHERE { <${iri}> ?p ?o } LIMIT 100`);
+        const inc = await sparql(`SELECT ?s ?p WHERE { ?s ?p <${iri}> } LIMIT 50`);
+
+        let html = `<span class="close" onclick="document.getElementById('detail').style.display='none'">&times;</span>`;
+        html += `<h3>${sh(iri)}</h3><p style="color:var(--muted);font-size:0.78em;word-break:break-all;margin-bottom:10px">${iri}</p>`;
+
+        // Vectors
+        const vecs = out.results.bindings.filter(b => isVec(b.o?.value));
+        const others = out.results.bindings.filter(b => !isVec(b.o?.value));
+
+        if (vecs.length) {
+            html += '<div class="section"><h4 style="color:var(--orange)">Vectors</h4><table>';
+            for (const b of vecs) {
+                const val = b.o.value.replace(/"/g,'').split('^^')[0].trim();
+                const dims = val.split(' ').length;
+                const preview = val.split(' ').slice(0,5).join(', ');
+                html += `<tr><td><span class="p">${sh(b.p.value)}</span></td><td><span class="vb">${dims}-dim</span> [${preview}, ...]</td></tr>`;
+            }
+            html += '</table></div>';
+        }
+
+        if (others.length) {
+            html += `<div class="section"><h4>Outgoing (${others.length})</h4><table>`;
+            for (const b of others) {
+                const oVal = b.o?.type === 'uri' ? `<a onclick="showDetail('${b.o.value}')">${sh(b.o.value)}</a>` : `<span class="o">"${sh(b.o?.value)}"</span>`;
+                html += `<tr><td><span class="p">${sh(b.p.value)}</span></td><td>${oVal}</td></tr>`;
+            }
+            html += '</table></div>';
+        }
+
+        if (inc.results.bindings.length) {
+            html += `<div class="section"><h4>Incoming (${inc.results.bindings.length})</h4><table>`;
+            for (const b of inc.results.bindings) {
+                html += `<tr><td><a onclick="showDetail('${b.s.value}')">${sh(b.s.value)}</a></td><td><span class="p">${sh(b.p.value)}</span></td></tr>`;
+            }
+            html += '</table></div>';
+        }
+
+        d.innerHTML = html;
+    } catch(e) { d.innerHTML += `<p style="color:var(--red)">${e.message}</p>`; }
+}
+
+// ── Query execution ──
+let lastData = null;
+
+async function runQuery() {
+    const q = document.getElementById('query').value;
+    try {
+        const data = await sparql(q);
+        lastData = data;
         renderResults(data);
         if (data.head.vars.includes('s') && data.head.vars.includes('p') && data.head.vars.includes('o')) {
-            buildGraph(data);
+            loadGraphFromSPO(data);
         }
-    } catch (e) {
-        document.getElementById('result-list').innerHTML =
-            `<div class="result-item" style="color:var(--red)">${e.message.substring(0, 200)}</div>`;
+    } catch(e) {
+        document.getElementById('results').innerHTML = `<div class="row" style="color:var(--red)">${e.message.substring(0,200)}</div>`;
     }
 }
 
-// ── Render result list ──
 function renderResults(data) {
-    const list = document.getElementById('result-list');
-    const bindings = data.results.bindings;
-    const vars = data.head.vars;
-
-    if (!bindings.length) {
-        list.innerHTML = '<div class="result-item" style="color:var(--muted)">No results</div>';
-        document.getElementById('stats').textContent = '0 results';
-        return;
-    }
-
-    const hasSPO = vars.includes('s') && vars.includes('p') && vars.includes('o');
-    list.innerHTML = bindings.map((b, i) => {
+    const el = document.getElementById('results');
+    const b = data.results.bindings;
+    const v = data.head.vars;
+    if (!b.length) { el.innerHTML = '<div class="row" style="color:var(--muted)">No results</div>'; document.getElementById('info').textContent = '0'; return; }
+    const hasSPO = v.includes('s') && v.includes('p') && v.includes('o');
+    el.innerHTML = b.map((r,i) => {
         if (hasSPO) {
-            const hasVec = b.o && isVector(b.o.value);
-            return `<div class="result-item" onclick="selectResult(${i})">
-                <span class="subject">${shorten(b.s?.value)}</span>
-                <span class="predicate">${shorten(b.p?.value)}</span>
-                <span class="object">${shorten(b.o?.value)?.substring(0, 40)}</span>
-                ${hasVec ? '<span class="vec-badge">VEC</span>' : ''}
-            </div>`;
+            const vec = r.o && isVec(r.o.value);
+            return `<div class="row" onclick="selectRow(${i})"><span class="s">${sh(r.s?.value)}</span> <span class="p">${sh(r.p?.value)}</span> <span class="o">${sh(r.o?.value)?.substring(0,30)}</span>${vec?'<span class="vb">VEC</span>':''}</div>`;
         }
-        return `<div class="result-item" onclick="selectResult(${i})">${vars.map(v => shorten(b[v]?.value)).join(' | ')}</div>`;
+        return `<div class="row" onclick="selectRow(${i})">${v.map(x=>sh(r[x]?.value)).join(' | ')}</div>`;
     }).join('');
-    document.getElementById('stats').textContent = `${bindings.length} results`;
+    document.getElementById('info').textContent = `${b.length} results`;
 }
 
-function selectResult(idx) {
-    document.querySelectorAll('.result-item').forEach((el, i) => el.classList.toggle('active', i === idx));
-    const b = lastResults.results.bindings[idx];
-    for (const v of lastResults.head.vars) {
+function selectRow(i) {
+    document.querySelectorAll('.row').forEach((el,j) => el.classList.toggle('sel', j===i));
+    const b = lastData.results.bindings[i];
+    for (const v of lastData.head.vars) {
         if (b[v]?.type === 'uri') { showDetail(b[v].value); return; }
     }
 }
 
-// ── View toggle ──
-function setView(view) {
-    currentView = view;
-    document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === view));
-    document.getElementById('graph-container').style.display = view === 'graph' ? 'block' : 'none';
-}
-
-// ── Build graph from SPO results ──
-function buildGraph(data) {
-    const nodeMap = new Map();
-    const links = [];
-
-    function getNode(binding) {
-        if (!binding) return null;
-        const id = binding.value;
-        if (nodeMap.has(id)) return nodeMap.get(id);
-        const isVec = isVector(id);
-        const node = {
-            id,
-            label: shorten(id),
-            type: binding.type === 'uri' ? 'iri' : (isVec ? 'vector' : 'literal'),
-        };
-        nodeMap.set(id, node);
-        return node;
-    }
+function loadGraphFromSPO(data) {
+    // Clear graph
+    visNodes.clear(); visEdges.clear(); expandedNodes.clear();
+    knownEdgeLabels.clear();
+    document.getElementById('filterBoxes').innerHTML = '';
 
     for (const b of data.results.bindings) {
-        const s = getNode(b.s);
-        const o = getNode(b.o);
-        if (s && o) {
-            links.push({
-                source: s.id,
-                target: o.id,
-                predicate: shorten(b.p?.value || '?'),
-            });
-        }
+        if (!b.s || !b.p || !b.o) continue;
+        const sId = b.s.value, oId = b.o.value;
+        const sType = b.s.type === 'uri' ? 'iri' : 'literal';
+        const oType = b.o.type === 'uri' ? 'iri' : (isVec(oId) ? 'vector' : 'literal');
+        addNode(sId, sh(sId), sType);
+        addNode(oId, sh(oId), oType);
+        addEdge(sId, oId, sh(b.p.value));
     }
-
-    graphData = { nodes: Array.from(nodeMap.values()), links };
-    renderGraph();
+    updateGStatus();
 }
 
-// ── D3 Force Graph ──
-function renderGraph() {
-    const container = document.getElementById('graph-container');
-    container.innerHTML = '';
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-
-    const svg = d3.select('#graph-container')
-        .append('svg')
-        .attr('width', width)
-        .attr('height', height);
-
-    // Zoom
-    const g = svg.append('g');
-    svg.call(d3.zoom().scaleExtent([0.1, 5]).on('zoom', (e) => g.attr('transform', e.transform)));
-
-    // Arrow markers
-    svg.append('defs').append('marker')
-        .attr('id', 'arrowhead').attr('viewBox', '-0 -5 10 10')
-        .attr('refX', 20).attr('refY', 0).attr('orient', 'auto')
-        .attr('markerWidth', 6).attr('markerHeight', 6)
-        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#30363d');
-
-    // Links
-    const link = g.append('g').selectAll('line')
-        .data(graphData.links).enter().append('line')
-        .attr('class', 'link')
-        .attr('marker-end', 'url(#arrowhead)');
-
-    // Link labels
-    const linkLabel = g.append('g').selectAll('text')
-        .data(graphData.links).enter().append('text')
-        .attr('class', 'link-label')
-        .text(d => d.predicate);
-
-    // Nodes
-    const node = g.append('g').selectAll('g')
-        .data(graphData.nodes).enter().append('g')
-        .attr('class', d => `node node-${d.type}`)
-        .call(d3.drag()
-            .on('start', dragStart)
-            .on('drag', dragging)
-            .on('end', dragEnd));
-
-    node.append('circle')
-        .attr('r', d => d.type === 'vector' ? 8 : (d.type === 'literal' ? 6 : 10))
-        .on('click', (e, d) => { e.stopPropagation(); showDetail(d.id); })
-        .on('dblclick', (e, d) => { e.stopPropagation(); if (d.type === 'iri') expandNode(d.id); })
-        .on('mouseover', (e, d) => showTooltip(e, d.id))
-        .on('mouseout', hideTooltip);
-
-    node.append('text')
-        .attr('dx', 14).attr('dy', 4)
-        .text(d => d.label.length > 25 ? d.label.substring(0, 22) + '...' : d.label);
-
-    // Simulation
-    simulation = d3.forceSimulation(graphData.nodes)
-        .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(100))
-        .force('charge', d3.forceManyBody().strength(-200))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collide', d3.forceCollide(25))
-        .on('tick', () => {
-            link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-            linkLabel
-                .attr('x', d => (d.source.x + d.target.x) / 2)
-                .attr('y', d => (d.source.y + d.target.y) / 2);
-            node.attr('transform', d => `translate(${d.x},${d.y})`);
-        });
-
-    function dragStart(e, d) { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
-    function dragging(e, d) { d.fx = e.x; d.fy = e.y; }
-    function dragEnd(e, d) { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
+// ── Quick queries ──
+function qk(t) {
+    const box = document.getElementById('query');
+    const qs = {
+        all: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 30',
+        types: 'SELECT DISTINCT ?type WHERE {\n  ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type\n} LIMIT 30',
+        vecs: 'SELECT ?s ?p ?o WHERE {\n  ?s ?p ?o\n} LIMIT 50',
+    };
+    box.value = qs[t] || qs.all;
+    runQuery();
 }
 
-// ── Tooltip ──
-function showTooltip(event, text) {
-    const tt = document.getElementById('tooltip');
-    tt.textContent = text;
-    tt.style.display = 'block';
-    tt.style.left = (event.pageX + 10) + 'px';
-    tt.style.top = (event.pageY - 20) + 'px';
-}
-function hideTooltip() { document.getElementById('tooltip').style.display = 'none'; }
-
-// ── Detail panel ──
-async function showDetail(iri) {
-    const panel = document.getElementById('detail-panel');
-    const title = document.getElementById('detail-title');
-    const content = document.getElementById('detail-content');
-
-    panel.style.display = 'block';
-    title.textContent = shorten(iri);
-    content.innerHTML = 'Loading...';
-
-    // Highlight in graph
-    d3.selectAll('.node').classed('selected', d => d.id === iri);
-
+// ── Health ──
+async function checkHealth() {
     try {
-        const outgoing = await sparql(`SELECT ?p ?o WHERE { <${iri}> ?p ?o } LIMIT 100`);
-        const incoming = await sparql(`SELECT ?s ?p WHERE { ?s ?p <${iri}> } LIMIT 100`);
-
-        let html = '';
-
-        // Separate vectors from other properties
-        const vecTriples = outgoing.results.bindings.filter(b => b.o && isVector(b.o.value));
-        const otherTriples = outgoing.results.bindings.filter(b => !b.o || !isVector(b.o.value));
-
-        if (vecTriples.length) {
-            html += '<div class="detail-section"><h4>Vectors</h4><table>';
-            vecTriples.forEach(b => {
-                const vec = b.o.value.replace(/"/g, '').split('^^')[0].trim();
-                const dims = vec.split(' ').length;
-                const preview = vec.split(' ').slice(0, 5).join(', ');
-                html += `<tr><td><span class="predicate">${shorten(b.p.value)}</span></td><td><span class="vec-badge">${dims}-dim</span> [${preview}, ...]</td></tr>`;
-            });
-            html += '</table></div>';
-        }
-
-        if (otherTriples.length) {
-            html += `<div class="detail-section"><h4>Outgoing (${otherTriples.length})</h4><table>`;
-            otherTriples.forEach(b => {
-                const oVal = b.o?.type === 'uri'
-                    ? `<a onclick="showDetail('${b.o.value}')">${shorten(b.o.value)}</a>`
-                    : `<span class="object">"${shorten(b.o?.value)}"</span>`;
-                html += `<tr><td><span class="predicate">${shorten(b.p.value)}</span></td><td>${oVal}</td></tr>`;
-            });
-            html += '</table></div>';
-        }
-
-        if (incoming.results.bindings.length) {
-            html += `<div class="detail-section"><h4>Incoming (${incoming.results.bindings.length})</h4><table>`;
-            incoming.results.bindings.forEach(b => {
-                html += `<tr><td><a onclick="showDetail('${b.s.value}')">${shorten(b.s.value)}</a></td><td><span class="predicate">${shorten(b.p.value)}</span></td></tr>`;
-            });
-            html += '</table></div>';
-        }
-
-        if (!html) html = '<p style="color:var(--muted)">No triples found for this entity.</p>';
-
-        html += `<div style="margin-top:16px;"><button class="qbtn" onclick="expandNode('${iri}')">Expand in graph</button></div>`;
-        content.innerHTML = html;
-    } catch (e) {
-        content.innerHTML = `<p style="color:var(--red)">${e.message}</p>`;
+        const r = await fetch(EP()+'/health');
+        document.getElementById('status').textContent = r.ok ? 'connected' : 'error';
+        document.getElementById('status').className = r.ok ? 'on' : 'off';
+    } catch {
+        document.getElementById('status').textContent = 'offline';
+        document.getElementById('status').className = 'off';
     }
-}
-
-function closeDetail() {
-    document.getElementById('detail-panel').style.display = 'none';
-    d3.selectAll('.node').classed('selected', false);
 }
 
 // ── Init ──
-document.getElementById('query-box').addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { runQuery(); e.preventDefault(); }
+document.getElementById('query').addEventListener('keydown', e => {
+    if ((e.ctrlKey||e.metaKey) && e.key === 'Enter') { runQuery(); e.preventDefault(); }
 });
-checkHealth();
-setInterval(checkHealth, 10000);
-
-// Legend
-window.addEventListener('load', () => {
-    const c = document.getElementById('graph-container');
-    if (c.clientWidth > 0) renderGraph(); // render empty graph
-});
+checkHealth(); setInterval(checkHealth, 10000);
 </script>
 </body>
 </html>
