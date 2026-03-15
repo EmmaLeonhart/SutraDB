@@ -184,9 +184,9 @@ drift, tombstone accumulation.
 - [ ] Content negotiation for SPARQL results (JSON, XML, CSV, TSV)
 - [ ] SPARQL results XML format (application/sparql-results+xml)
 - [x] SPARQL results CSV/TSV format (/sparql.csv, /sparql.tsv endpoints)
-- [ ] Simple passcode authentication (server mode only, opt-in)
-  - Just a passcode/API key to connect — nothing fancier in open source
-  - Anything beyond this (RBAC, per-user permissions) = premium tier
+- [x] Simple passcode authentication (`sutra serve --passcode <secret>`)
+  - Authorization: Bearer header on all requests except /health
+  - Zero config when no passcode set
 - [x] Query timeouts (execute_with_timeout + deadline checks in pattern evaluation)
 - [ ] Rate limiting (server mode, opt-in)
 - [x] HNSW health endpoint: `/vectors/health` — degree distribution, tombstone ratio, rebuild recommendation
