@@ -169,8 +169,17 @@ drift, tombstone accumulation.
 - [x] Ontology viewer (Protege-like class hierarchy browser)
 - [x] Authentication settings page (ready for server-side auth)
 - [x] Database health dashboard (connection status, stats)
-- [ ] Graph view: fetch HNSW virtual edges for vector-only/all view modes (currently only shows semantic triples)
-- [ ] Graph view: use Japanese labels for node display when available (LANGMATCHES)
+- [ ] **HIGH PRIORITY: Bring Flutter graph view to parity with browse.html** — the HTML/JS browser (tools/browse.html) is significantly superior:
+  - [ ] Show predicate labels on edges (not just nodes connected by invisible edges)
+  - [ ] Color-code by type: blue=IRI, green=literal, orange=vector, purple=HNSW edge
+  - [ ] Different node shapes for IRIs vs literals vs vectors
+  - [ ] Click-to-expand: clicking a node loads more triples about it
+  - [ ] Predicate-based edge filtering with checkboxes
+  - [ ] IRI shortening (wd:, wdt:, rdf:, rdfs:, sutra:, etc.)
+  - [ ] Detail panel: click node to see all its triples
+  - [ ] Left panel: triple list with color-coded S/P/O
+- [ ] Graph view: fetch HNSW virtual edges for vector-only/all view modes
+- [ ] Graph view: use Japanese labels for node display when available
 - [x] Graph view: reduce default limit to 50 to prevent combinatorial explosion
 - [x] Windows desktop platform support (flutter create --platforms windows)
 - [ ] HNSW health diagnostics: degree distribution visualization
