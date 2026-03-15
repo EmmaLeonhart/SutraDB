@@ -47,7 +47,11 @@
       "WebFetch(domain:*)",
       "WebFetch(domain:zishan-rahman.github.io)",
       "WebFetch(domain:protegewiki.stanford.edu)",
-      "Bash(mvn:*)"
+      "Bash(mvn:*)",
+      "Bash(for dir:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/Immanuelle/Documents/Github/SutraDB/sdks/**)",
+      "Bash(done)"
     ]
   }
 }
