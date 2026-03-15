@@ -1,37 +1,73 @@
 # SutraDB — TODO
 
-## Priority 1: Vector SPARQL Integration
+## Done
 
-The HNSW index and SPARQL engine are now connected.
-
-- [x] Add `VECTOR_SIMILAR` as a recognized pattern in the SPARQL parser
-- [x] Add `VECTOR_SCORE` as a recognized function in the SPARQL parser
-- [x] Wire VECTOR_SIMILAR into the query executor (call HnswIndex.search())
-- [x] Planner integration: detect bound/unbound subject for execution order
-- [x] Support `ef:=N` hint parameter for per-query ef_search tuning
-- [x] Support `k:=N` top-K mode (no threshold, return top K)
-- [x] Parse `sutra:f32vec` typed literals into actual float arrays
-- [ ] Schema declaration support (`sutra:declareVectorPredicate`) via SPARQL or config
-- [x] Predicate-to-HnswIndex registry (map predicate IDs to their HNSW indexes)
-
-## Priority 2: Data Ingestion — Experiment-Ready
-
-Minimum viable path to loading real data (e.g. embedding-mapping project).
-
-- [ ] N-Triples (.nt) parser for bulk import
-- [ ] Turtle (.ttl) parser for bulk import
-- [ ] NumPy (.npz) vector import — load embeddings from embedding-mapping project
-- [ ] `sutra import` CLI command (`sutra import data.nt`, `sutra import --vectors embeddings.npz`)
-- [ ] Wire PersistentStore to HTTP server (currently in-memory only)
-- [ ] Vector predicate declaration via config file or SPARQL syntax
-- [ ] SPARQL Update (INSERT DATA, DELETE DATA, DELETE/INSERT WHERE)
-- [ ] Bulk vector insert endpoint (POST vectors via HTTP)
-- [ ] Streaming import (line-by-line for large files)
-
-## Priority 3: SPARQL Completeness
-
-- [x] ORDER BY clause (ASC/DESC on variables and expressions)
+- [x] VECTOR_SIMILAR pattern in SPARQL parser
+- [x] VECTOR_SCORE function in SPARQL parser
+- [x] Wire VECTOR_SIMILAR into executor (calls HnswIndex.search())
+- [x] Planner integration: bound/unbound subject detection
+- [x] ef:=N and k:=N hint parameters
+- [x] Parse sutra:f32vec typed literals into float arrays
+- [x] Predicate-to-HnswIndex registry (VectorRegistry)
+- [x] ORDER BY clause (ASC/DESC)
 - [x] UNION patterns
+- [x] N-Triples parser (sutra-core/ntriples.rs)
+- [x] POST /triples endpoint (bulk N-Triples insert)
+- [x] POST /vectors/declare endpoint
+- [x] POST /vectors endpoint (creates triple + HNSW entry)
+- [x] Vector architecture: vectors are graph objects, multiple subjects can share a vector
+- [x] VECTOR_SIMILAR resolves back through POS index for entity resolution
+- [x] find_by_predicate_object() for vector reverse lookup
+- [x] First real data load: 82K triples + 79K vectors from embedding-mapping
+- [x] Stress test: 500K triples + 1M vectors (128-dim)
+- [x] Client SDKs scaffolded: Python, TypeScript, Rust, Java, C#, Go
+- [x] CI workflow: core Rust + all 6 SDK builds/tests
+- [x] GitHub Pages: landing page + 8 subpages
+- [x] Release workflow: cross-platform builds (Windows/Linux/macOS)
+- [x] Graph browser: D3 force-directed visualization (tools/browse.html)
+- [x] Serverless-by-default philosophy, .sdb file extension
+- [x] License: Apache 2.0
+- [x] Reference architecture: Oxigraph
+- [x] RDF-star (superset of RDF 1.2)
+- [x] Query language policy: SPARQL primary, Cypher planned, SQL/MongoQL never
+- [x] 4 index types documented: SPO, POS, OSP, VECTOR(p)
+
+## Priority 1: Persistence — Data Survives Restart
+
+The server is currently in-memory only. This is the #1 blocker.
+
+- [ ] Wire PersistentStore (sled) to the HTTP server instead of in-memory TripleStore
+- [ ] Persistent term dictionary: load on startup, save on insert
+- [ ] HNSW index persistence: serialize to disk, memory-map on startup
+- [ ] The .sdb file should contain all of the above in one directory/file
+- [ ] `sutra serve --data my.sdb` loads from disk, writes back on changes
+- [ ] `sutra query --data my.sdb` opens serverless (no HTTP)
+
+## Priority 2: Parser & Ingestion Gaps
+
+- [ ] Blank node support in N-Triples parser (`_:b0`, `_:genid123`)
+- [ ] Turtle (.ttl) parser for bulk import (consider using Oxigraph's oxttl crate)
+- [ ] `sutra import` CLI command (`sutra import data.nt --data my.sdb`)
+- [ ] `sutra export` CLI command (dump to Turtle/N-Triples)
+- [ ] SPARQL Update (INSERT DATA, DELETE DATA, DELETE/INSERT WHERE)
+- [ ] Schema declaration via SPARQL (`sutra:declareVectorPredicate`)
+- [ ] Streaming import (line-by-line for large files without loading all into memory)
+
+## Priority 3: Query Performance — Stress Test Findings
+
+The 1M-vector stress test revealed specific bottlenecks:
+
+- [ ] HNSW search took 281s at 1M scale — needs SIMD distance functions (AVX2/SSE/NEON)
+- [ ] 3-hop joins timeout at 500K triples — nested loop join is O(n^3)
+  - [ ] Cardinality estimation: count triples per subject/predicate/object for cost-based planning
+  - [ ] Hash joins for large intermediate result sets (instead of nested loop)
+  - [ ] Index selection: use the most selective index first based on cardinality stats
+- [ ] Wormhole queries (vector→graph→graph) need the planner to push vector results into bound positions before graph joins
+- [ ] Query timeout enforcement (kill long-running queries after N seconds)
+- [ ] Parallel HNSW construction (rayon) for faster bulk vector insert
+
+## Priority 4: SPARQL Completeness
+
 - [ ] BIND / VALUES
 - [ ] GROUP BY / HAVING / aggregates (COUNT, SUM, AVG, MIN, MAX)
 - [ ] Property paths (`+`, `*`, `?`) for multi-hop traversal
@@ -40,53 +76,36 @@ Minimum viable path to loading real data (e.g. embedding-mapping project).
 - [ ] CONSTRUCT queries (return triples instead of bindings)
 - [ ] ASK queries (boolean existence check)
 - [ ] DESCRIBE queries
-
-## Priority 4: String and Function Support
-
 - [ ] String functions: CONTAINS, STRSTARTS, STRENDS, STRLEN, SUBSTR
 - [ ] REGEX filter support
 - [ ] LANG() and LANGMATCHES() for language-tagged literals
-- [ ] DATATYPE() function
-- [ ] STR() cast function
-- [ ] COALESCE()
-- [ ] IF() conditional
+- [ ] DATATYPE(), STR(), COALESCE(), IF()
 - [ ] Arithmetic in expressions (+, -, *, /)
 - [ ] Boolean operators in FILTER (&&, ||, !)
 
-## Priority 5: Storage Engine
+## Priority 5: SDK Quality
 
-- [x] ~~LSM-tree decision~~ → Resolved: using sled for v0.1
-- [ ] Integrate PersistentStore with the HTTP server (currently server uses in-memory only)
-- [ ] Persistent term dictionary load/save in CLI
-- [ ] HNSW index persistence (serialize to disk, memory-map on startup)
-- [ ] HNSW compaction: background pass to remove deleted nodes when deleted_ratio > threshold
-- [ ] Transaction support (atomic multi-triple inserts)
-- [ ] Write-ahead log (WAL) for crash recovery
-- [ ] Benchmark sled vs RocksDB for triple workloads
+SDKs exist but need real integration testing and polish.
 
-## Priority 6: HTTP Protocol
+- [ ] Integration tests for each SDK against a running SutraDB instance
+- [ ] Python SDK: publish to PyPI
+- [ ] TypeScript SDK: publish to npm
+- [ ] Rust SDK: publish to crates.io
+- [ ] Java SDK: publish to Maven Central
+- [ ] C# SDK: publish to NuGet
+- [ ] Go SDK: tag for Go modules
+- [ ] CI: start SutraDB as a service in CI, run SDK integration tests against it
 
-- [ ] Content negotiation for SPARQL results (JSON, XML, CSV, TSV)
-- [ ] SPARQL results XML format (application/sparql-results+xml)
-- [ ] SPARQL results CSV/TSV format
-- [ ] Proper CORS configuration
-- [ ] Authentication / API keys
-- [ ] Rate limiting
-- [ ] Query timeout enforcement
-- [ ] SPARQL service description endpoint
+## Priority 6: Distribution & Ecosystem
 
-## Priority 7: Distribution & Ecosystem
+- [ ] Docker image on Docker Hub (`docker run sutradb/sutra --port 3030`)
+- [ ] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
+- [ ] Jupyter integration (%%sparql cell magic, inline result rendering)
+- [ ] LangChain / LlamaIndex integration (SutraDB as vector store + knowledge graph for RAG)
 
-- [ ] Docker image on Docker Hub — one-command deployment (`docker run sutradb`)
-- [ ] Protégé compatibility — OWL ontology editing via Protégé connected to SutraDB
-- [ ] N-Quads (.nq) parser for named graphs
-- [ ] RDF/XML parser (or use Oxigraph's oxrdfxml crate)
-- [ ] JSON-LD parser (or use Oxigraph's oxjsonld crate)
-- [ ] Graph Store Protocol (PUT/POST/DELETE graphs via HTTP)
+## Priority 7: OWL Support
 
-## Priority 8: OWL Support
-
-OWL is planned as an opt-in query-time layer (not stored inference).
+Opt-in, query-time reasoning layer. Never modifies stored data.
 
 - [ ] OWL class hierarchy resolution (rdfs:subClassOf transitive closure)
 - [ ] OWL property hierarchy (rdfs:subPropertyOf)
@@ -97,60 +116,60 @@ OWL is planned as an opt-in query-time layer (not stored inference).
 - [ ] Reasoning toggle per-query (opt-in, not default)
 - [ ] Materialization option (precompute inferences into stored triples)
 
-## Priority 9: Performance
+## Priority 8: HTTP Protocol
 
-- [ ] Benchmarks with criterion (triple insert, query, HNSW search)
+- [ ] Content negotiation for SPARQL results (JSON, XML, CSV, TSV)
+- [ ] SPARQL results XML format (application/sparql-results+xml)
+- [ ] SPARQL results CSV/TSV format
+- [ ] Authentication / API keys
+- [ ] Rate limiting
+- [ ] SPARQL service description endpoint
+
+## Priority 9: Additional Storage & Format Support
+
+- [ ] N-Quads (.nq) parser for named graphs
+- [ ] Named graph support (GRAPH clause, quad storage)
+- [ ] RDF/XML parser (or use Oxigraph's oxrdfxml crate)
+- [ ] JSON-LD parser (or use Oxigraph's oxjsonld crate)
+- [ ] Graph Store Protocol (PUT/POST/DELETE graphs via HTTP)
+- [ ] Benchmark sled vs RocksDB for triple workloads
+- [ ] IRI encoding: evaluate hash-based (Oxigraph SipHash) vs current sequential interning
+
+## Priority 10: Advanced Performance
+
 - [ ] SIMD distance functions (AVX2/SSE/NEON) for vector operations
 - [ ] Visited pool pattern (pre-allocated visited lists for HNSW search)
 - [ ] Builder/reader separation for HNSW (immutable index after construction)
-- [ ] Parallel HNSW construction (rayon)
 - [ ] Query result streaming (don't collect all results before returning)
-- [ ] Connection pooling for persistent store
 - [ ] Prefix compression for IRI storage (common prefixes stored once)
-
-## Priority 10: Tooling
-
-- [ ] `sutra import` CLI command
-- [ ] `sutra export` CLI command (dump to Turtle/N-Triples)
-- [ ] `sutra bench` CLI command (built-in benchmarks)
-- [ ] `sutra info` CLI command (database stats: triple count, term count, index sizes)
-- [ ] Docker image
-- [ ] Configuration file (TOML) for server settings
-- [ ] Logging configuration (structured JSON logs)
-
-## Test Data: embedding-mapping Project
-
-The `embedding-mapping` project (`C:\Users\Immanuelle\Documents\Github\embedding-mapping`) has real data ready to load:
-
-- **triples.nt** — 733KB of N-Triples RDF (Wikidata triples about mountains, shrines, geography)
-- **geodesics.ttl** — 3.6MB Turtle RDF (8,832 geodesic objects with distance metrics)
-- **embeddings.npz** — 585MB NumPy file (79,318 vectors × 1024 dimensions, mxbai-embed-large model)
-- **embedding_index.json** — maps vector positions to (QID, text, type)
-- **items.json** — 28,307 Wikidata items with labels, aliases, and triples
-
-This is the first real-world test: load the triples, attach the 1024-dim embeddings, and run combined graph+vector SPARQL queries over the data.
+- [ ] HNSW compaction: background pass to remove deleted nodes when deleted_ratio > threshold
+- [ ] Write-ahead log (WAL) for crash recovery
+- [ ] Adaptive query execution: runtime reordering based on intermediate cardinalities
 
 ## Open Architecture Questions
 
-- ~~**RDF-star vs. RDF 1.2**~~: **Resolved: RDF-star.** Direct edge annotation (`<< s p o >> :hasEmbedding ...`) is the natural pattern for vector/embedding work. RDF 1.2's object-only restriction adds unnecessary indirection. If compatibility is ever needed, a translation layer can handle it.
-- **IRI encoding strategy**: Current sequential interning vs. Oxigraph's hash-based approach (128-bit SipHash — no collision issues at scale, eliminates separate string→ID index). Hash-based is simpler but loses ordering; sequential preserves insertion order for range queries.
-- **HNSW compaction threshold**: What deleted_ratio triggers a rebuild? 0.3? 0.5? Should it be configurable?
+- **HNSW compaction threshold**: What deleted_ratio triggers a rebuild? 0.3? 0.5? Configurable?
 - **SPARQL property paths**: How to handle cycles on large graphs? Depth limit? Visited set?
-- **Adaptive query execution**: Runtime reordering based on intermediate cardinalities — worth the complexity for v0.2?
-- **Named graphs**: Support GRAPH clause and quad storage? Adds complexity but needed for provenance. Oxigraph supports named graphs with 6 extra indexes (SPOG, POSG, OSPG, GSPO, GPOS, GOSP).
+- **Named graphs**: GRAPH clause + quad storage adds complexity but needed for provenance.
 - **Blank node handling**: Skolemization vs. internal IDs? How to handle blank nodes across imports?
-- **RDF parsing crates**: Write our own parsers or use Oxigraph's crates (oxttl, oxrdfxml, oxjsonld) for data ingestion?
+- **RDF parsing crates**: Write our own parsers or use Oxigraph's crates (oxttl, oxrdfxml, oxjsonld)?
+- **IRI encoding**: Sequential interning (current) vs. hash-based (Oxigraph SipHash)?
 
-## Resolved
+## Test Data: embedding-mapping Project
 
-- [x] License → Apache 2.0
-- [x] Storage engine → sled for v0.1
-- [x] OWL → planned as opt-in query-time, not out of scope
-- [x] Naming → SutraDB
-- [x] Query language policy → SPARQL primary, Cypher planned as wrapper. SQL and MongoQL permanently out of scope.
-- [x] Reference architecture → Oxigraph (https://github.com/oxigraph/oxigraph) as implementation reference for storage, indexing, and SPARQL patterns
-- [x] RDF data model → RDF-star (superset of RDF 1.2). Triple terms allowed in any position. Direct edge annotation is the natural pattern for vector/embedding work.
-- [x] Vector SPARQL integration → VECTOR_SIMILAR, VECTOR_SCORE, VectorRegistry, ORDER BY, UNION all implemented (135→156 tests)
-- [x] Data insertion endpoints → POST /triples, POST /vectors/declare, POST /vectors, N-Triples parser
-- [x] First real data load → 82K triples + 79K vectors from embedding-mapping project loaded and queryable
-- [x] Deployment model → Serverless by default (.sdb file, like SQLite), server mode opt-in (sutra serve). File extension: .sdb
+The `embedding-mapping` project has real data loaded:
+
+- **82,177 triples** from 28,307 Wikidata items (mountains, shrines, geography)
+- **79,318 vectors** (1024-dim, mxbai-embed-large)
+- Geodesics not yet loaded (blocked on blank node support in N-Triples parser)
+- Import pipeline: `import_to_sutra.py --load-existing`
+
+## Stress Test Results (1M scale)
+
+- **500,303 triples** + **1,000,000 vectors** (128-dim) — zero insertion errors
+- Vector insertion: 762/sec sustained
+- Type-filtered lookups: 6ms
+- 1K result sets: 11ms
+- 2-hop traversals: 8.5s at 500K scale
+- VECTOR_SIMILAR over 1M vectors: 281s (needs SIMD)
+- 3-hop joins: timeout at 500K scale (needs query plan optimization)
