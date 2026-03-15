@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-14T18:33:48",
+  "timestamp": "2026-03-14T19:53:54",
   "version": "v2",
   "data": {
     "entities": 50000,
@@ -14,85 +14,85 @@
     {
       "name": "Type lookup: all alpha entities (LIMIT 100)",
       "status": "OK",
-      "time": 2.0401954650878906,
+      "time": 2.038677215576172,
       "rows": 100
     },
     {
       "name": "1-hop: alpha \u2192 link \u2192 ?target (LIMIT 100)",
       "status": "OK",
-      "time": 2.138500213623047,
+      "time": 0.004651069641113281,
       "rows": 100
     },
     {
       "name": "2-hop: alpha \u2192 link \u2192 ? \u2192 link \u2192 ? (LIMIT 50)",
       "status": "OK",
-      "time": 18.4525465965271,
+      "time": 0.003395557403564453,
       "rows": 50
     },
     {
       "name": "All types (DISTINCT)",
       "status": "OK",
-      "time": 0.03185701370239258,
+      "time": 0.03709983825683594,
       "rows": 5
     },
     {
       "name": "Large result: 1000 link triples",
       "status": "OK",
-      "time": 0.04223513603210449,
+      "time": 0.05007529258728027,
       "rows": 1000
     },
     {
       "name": "VECTOR_SIMILAR: find entities near alpha vector (threshold 0.7)",
       "status": "OK",
-      "time": 0.0027463436126708984,
+      "time": 0.002253293991088867,
       "rows": 20
     },
     {
       "name": "VECTOR_SIMILAR: find entities near beta vector (threshold 0.7)",
       "status": "LOW",
-      "time": 0.0018210411071777344,
+      "time": 0.0016245841979980469,
       "rows": 0
     },
     {
       "name": "WORMHOLE vector\u2192graph: similar to alpha, get their type",
       "status": "OK",
-      "time": 0.0017669200897216797,
+      "time": 0.0016417503356933594,
       "rows": 20
     },
     {
       "name": "WORMHOLE vector\u2192graph\u2192graph: similar to alpha, follow link, get type",
       "status": "OK",
-      "time": 0.003546476364135742,
+      "time": 0.0016589164733886719,
       "rows": 20
     },
     {
       "name": "WORMHOLE graph\u2192vector: alpha entities filtered by vector similarity",
       "status": "OK",
-      "time": 0.009573221206665039,
-      "rows": 20
+      "time": 0.0028901100158691406,
+      "rows": 1
     },
     {
       "name": "WORMHOLE graph\u2192vector\u2192graph: typed entities, vector filter, follow link",
       "status": "OK",
-      "time": 2.5497231483459473,
-      "rows": 20
+      "time": 0.0051496028900146484,
+      "rows": 2
     },
     {
       "name": "UNION: alpha OR beta entities",
       "status": "OK",
-      "time": 0.01154184341430664,
+      "time": 0.006586313247680664,
       "rows": 100
     },
     {
       "name": "UNION + VECTOR: (alpha UNION beta) filtered by vector similarity",
       "status": "OK",
-      "time": 0.0030412673950195312,
+      "time": 0.002317667007446289,
       "rows": 20
     },
     {
       "name": "Cross-cluster: search with alpha vector, find what types come back",
       "status": "OK",
-      "time": 0.0018262863159179688,
+      "time": 0.001983642578125,
       "rows": 50
     }
   ]
