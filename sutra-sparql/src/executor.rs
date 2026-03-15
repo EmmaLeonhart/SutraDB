@@ -10,6 +10,7 @@
 //! binding table like any other index access.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use sutra_core::{DatabaseConfig, HnswEdgeMode, TermDictionary, TermId, Triple, TripleStore};
 use sutra_hnsw::VectorRegistry;
@@ -39,6 +40,8 @@ pub struct ExecutionContext<'a> {
     pub vectors: &'a VectorRegistry,
     pub prefixes: &'a HashMap<String, String>,
     pub config: &'a DatabaseConfig,
+    /// Optional query timeout deadline.
+    pub deadline: Option<Instant>,
 }
 
 /// Execute a parsed query against an in-memory store with vector support.
@@ -60,14 +63,11 @@ pub fn execute_with_config(
     vectors: &VectorRegistry,
     config: &DatabaseConfig,
 ) -> Result<QueryResult> {
-    let mut ctx = ExecutionContext {
-        store,
-        dict,
-        vectors,
-        prefixes: &query.prefixes,
-        config,
-    };
+    execute_with_deadline(query, store, dict, vectors, config, None)
+}
 
+/// Core query execution logic.
+fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Result<QueryResult> {
     // Start with a single empty binding
     let mut results: Vec<Bindings> = vec![HashMap::new()];
     let mut scores: Vec<HashMap<String, f32>> = vec![HashMap::new()];
@@ -88,7 +88,7 @@ pub fn execute_with_config(
     // Evaluate each pattern, threading the pushable limit through
     for pattern in &query.patterns {
         let (new_results, new_scores) =
-            evaluate_pattern(pattern, &results, &scores, &mut ctx, pushable_limit)?;
+            evaluate_pattern(pattern, &results, &scores, ctx, pushable_limit)?;
         results = new_results;
         scores = new_scores;
 
@@ -130,7 +130,7 @@ pub fn execute_with_config(
 
     // Apply ORDER BY
     if !query.order_by.is_empty() {
-        apply_order_by(&mut results, &mut scores, &query.order_by, &mut ctx)?;
+        apply_order_by(&mut results, &mut scores, &query.order_by, ctx)?;
     }
 
     // Apply DISTINCT (only considers projected variables, per SPARQL spec)
@@ -194,6 +194,46 @@ pub fn execute_with_config(
     })
 }
 
+/// Execute a parsed query with a timeout in seconds.
+/// Returns `Err(SparqlError::Timeout)` if the query exceeds the time limit.
+pub fn execute_with_timeout(
+    query: &Query,
+    store: &TripleStore,
+    dict: &TermDictionary,
+    vectors: &VectorRegistry,
+    timeout_secs: u64,
+) -> Result<QueryResult> {
+    let default_config = DatabaseConfig::default();
+    execute_with_deadline(
+        query,
+        store,
+        dict,
+        vectors,
+        &default_config,
+        Some(Instant::now() + Duration::from_secs(timeout_secs)),
+    )
+}
+
+/// Internal executor that accepts an optional deadline.
+fn execute_with_deadline(
+    query: &Query,
+    store: &TripleStore,
+    dict: &TermDictionary,
+    vectors: &VectorRegistry,
+    config: &DatabaseConfig,
+    deadline: Option<Instant>,
+) -> Result<QueryResult> {
+    let mut ctx = ExecutionContext {
+        store,
+        dict,
+        vectors,
+        prefixes: &query.prefixes,
+        config,
+        deadline,
+    };
+    execute_query_with_ctx(query, &mut ctx)
+}
+
 /// Execute a parsed query without vector support (backward compatible).
 pub fn execute(query: &Query, store: &TripleStore, dict: &TermDictionary) -> Result<QueryResult> {
     let mut empty_registry = VectorRegistry::new();
@@ -207,6 +247,9 @@ fn evaluate_pattern(
     ctx: &mut ExecutionContext<'_>,
     row_limit: Option<usize>,
 ) -> Result<(Vec<Bindings>, Vec<HashMap<String, f32>>)> {
+    // Check timeout before evaluating each pattern
+    check_deadline(ctx)?;
+
     match pattern {
         Pattern::Triple {
             subject,
@@ -1162,6 +1205,16 @@ fn compute_aggregate(agg: &Aggregate, rows: &[&Bindings], _ctx: &ExecutionContex
             }
         }
     }
+}
+
+/// Check if the query has timed out.
+fn check_deadline(ctx: &ExecutionContext<'_>) -> Result<()> {
+    if let Some(deadline) = ctx.deadline {
+        if Instant::now() > deadline {
+            return Err(SparqlError::Timeout);
+        }
+    }
+    Ok(())
 }
 
 fn is_concrete(term: &Term) -> bool {

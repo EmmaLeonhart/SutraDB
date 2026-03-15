@@ -105,6 +105,15 @@ async fn sparql_post(
 /// Execute a SPARQL query and return JSON results.
 fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResults>, ProtoError> {
     let mut query = sutra_sparql::parse(query_str)?;
+
+    // Handle SPARQL Update (INSERT DATA / DELETE DATA)
+    if query.query_type == sutra_sparql::QueryType::InsertData {
+        return execute_insert_data(&query, state);
+    }
+    if query.query_type == sutra_sparql::QueryType::DeleteData {
+        return execute_delete_data(&query, state);
+    }
+
     sutra_sparql::optimize(&mut query);
 
     // Read locks: concurrent SPARQL queries don't block each other
@@ -155,6 +164,107 @@ fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResult
 }
 
 /// Convert a TermId back to a JSON value for the SPARQL results format.
+/// Execute INSERT DATA { triple patterns }.
+fn execute_insert_data(
+    query: &sutra_sparql::Query,
+    state: &AppState,
+) -> Result<Json<SparqlResults>, ProtoError> {
+    use sutra_sparql::parser::{Pattern, Term};
+
+    let mut dict = state.dict.write().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let mut store = state.store.write().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+
+    let mut inserted = 0i64;
+    for pattern in &query.patterns {
+        if let Pattern::Triple { subject, predicate, object } = pattern {
+            let s_id = resolve_term_to_id(subject, &mut dict, &query.prefixes)?;
+            let p_id = resolve_term_to_id(predicate, &mut dict, &query.prefixes)?;
+            let o_id = resolve_term_to_id(object, &mut dict, &query.prefixes)?;
+
+            if store.insert(sutra_core::Triple::new(s_id, p_id, o_id)).is_ok() {
+                if let Some(ref ps) = state.persistent {
+                    let _ = ps.insert(sutra_core::Triple::new(s_id, p_id, o_id));
+                }
+                inserted += 1;
+            }
+        }
+    }
+
+    let mut row = std::collections::HashMap::new();
+    if let Some(id) = sutra_core::inline_integer(inserted) {
+        row.insert("mutationCount".to_string(), id);
+    }
+
+    Ok(Json(SparqlResults {
+        head: SparqlHead { vars: vec!["mutationCount".to_string()] },
+        results: SparqlBindings {
+            bindings: vec![serde_json::json!({"mutationCount": {"type": "literal", "value": inserted.to_string()}})],
+        },
+    }))
+}
+
+/// Execute DELETE DATA { triple patterns }.
+fn execute_delete_data(
+    query: &sutra_sparql::Query,
+    state: &AppState,
+) -> Result<Json<SparqlResults>, ProtoError> {
+    use sutra_sparql::parser::{Pattern, Term};
+
+    let mut dict = state.dict.write().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let mut store = state.store.write().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+
+    let mut deleted = 0i64;
+    for pattern in &query.patterns {
+        if let Pattern::Triple { subject, predicate, object } = pattern {
+            let s_id = resolve_term_to_id(subject, &mut dict, &query.prefixes)?;
+            let p_id = resolve_term_to_id(predicate, &mut dict, &query.prefixes)?;
+            let o_id = resolve_term_to_id(object, &mut dict, &query.prefixes)?;
+
+            if store.remove(&sutra_core::Triple::new(s_id, p_id, o_id)) {
+                if let Some(ref ps) = state.persistent {
+                    let _ = ps.remove(&sutra_core::Triple::new(s_id, p_id, o_id));
+                }
+                deleted += 1;
+            }
+        }
+    }
+
+    Ok(Json(SparqlResults {
+        head: SparqlHead { vars: vec!["mutationCount".to_string()] },
+        results: SparqlBindings {
+            bindings: vec![serde_json::json!({"mutationCount": {"type": "literal", "value": deleted.to_string()}})],
+        },
+    }))
+}
+
+/// Resolve a parsed Term to a TermId, interning if necessary.
+fn resolve_term_to_id(
+    term: &sutra_sparql::parser::Term,
+    dict: &mut TermDictionary,
+    prefixes: &std::collections::HashMap<String, String>,
+) -> std::result::Result<sutra_core::TermId, ProtoError> {
+    use sutra_sparql::parser::Term;
+    match term {
+        Term::Iri(iri) => Ok(dict.intern(iri)),
+        Term::PrefixedName { prefix, local } => {
+            let ns = prefixes
+                .get(prefix.as_str())
+                .ok_or_else(|| ProtoError::BadRequest(format!("unknown prefix: {}", prefix)))?;
+            Ok(dict.intern(&format!("{}{}", ns, local)))
+        }
+        Term::Literal(s) => Ok(dict.intern(&format!("\"{}\"", s))),
+        Term::TypedLiteral { value, datatype } => {
+            let full = format!("\"{}\"^^<{}>", value, datatype);
+            Ok(intern_object(dict, &full))
+        }
+        Term::IntegerLiteral(n) => {
+            sutra_core::inline_integer(*n).ok_or_else(|| ProtoError::BadRequest("integer out of range".into()))
+        }
+        Term::A => Ok(dict.intern("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")),
+        _ => Err(ProtoError::BadRequest("variables not allowed in INSERT/DELETE DATA".into())),
+    }
+}
+
 fn resolve_term_to_json(id: sutra_core::TermId, dict: &TermDictionary) -> serde_json::Value {
     if let Some(n) = sutra_core::decode_inline_integer(id) {
         return serde_json::json!({

@@ -12,6 +12,8 @@ use crate::error::{Result, SparqlError};
 pub enum QueryType {
     Select,
     Ask,
+    InsertData,
+    DeleteData,
 }
 
 /// An aggregate expression in the projection.
@@ -207,10 +209,20 @@ impl<'a> Parser<'a> {
             self.skip_whitespace();
         }
 
-        // Determine query type: SELECT or ASK
+        // Determine query type: SELECT, ASK, INSERT DATA, DELETE DATA
         let query_type = if self.peek_keyword("ASK") {
             self.expect_keyword("ASK")?;
             QueryType::Ask
+        } else if self.peek_keyword("INSERT") {
+            self.expect_keyword("INSERT")?;
+            self.skip_whitespace();
+            self.expect_keyword("DATA")?;
+            QueryType::InsertData
+        } else if self.peek_keyword("DELETE") {
+            self.expect_keyword("DELETE")?;
+            self.skip_whitespace();
+            self.expect_keyword("DATA")?;
+            QueryType::DeleteData
         } else {
             self.expect_keyword("SELECT")?;
             QueryType::Select
@@ -230,6 +242,27 @@ impl<'a> Parser<'a> {
             let (proj, aggs) = self.parse_projection_with_aggregates()?;
             projection = proj;
             aggregates = aggs;
+        }
+
+        // For INSERT DATA / DELETE DATA, go straight to the { } block
+        if query_type == QueryType::InsertData || query_type == QueryType::DeleteData {
+            self.skip_whitespace();
+            self.expect_char('{')?;
+            let patterns = self.parse_patterns()?;
+            self.expect_char('}')?;
+
+            return Ok(Query {
+                prefixes,
+                query_type,
+                projection: vec![],
+                aggregates: vec![],
+                distinct: false,
+                patterns,
+                group_by: vec![],
+                order_by: vec![],
+                limit: None,
+                offset: None,
+            });
         }
 
         // Parse WHERE (optional keyword for ASK)

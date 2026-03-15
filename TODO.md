@@ -64,7 +64,7 @@ The server is currently in-memory only. This is the #1 blocker.
 - [ ] Turtle (.ttl) parser for bulk import (consider using Oxigraph's oxttl crate)
 - [x] `sutra import` CLI command (`sutra import data.nt --data my.sdb`)
 - [x] `sutra export` CLI command (dump to Turtle/N-Triples)
-- [ ] SPARQL Update (INSERT DATA, DELETE DATA, DELETE/INSERT WHERE)
+- [x] SPARQL Update (INSERT DATA, DELETE DATA)
 - [ ] Schema declaration via SPARQL (`sutra:declareVectorPredicate`)
 - [x] Streaming import (line-by-line for large files without loading all into memory)
 
@@ -78,7 +78,7 @@ The 1M-vector stress test revealed specific bottlenecks:
   - [ ] Hash joins for large intermediate result sets (instead of nested loop)
   - [ ] Index selection: use the most selective index first based on cardinality stats
 - [ ] Wormhole queries (vector→graph→graph) need the planner to push vector results into bound positions before graph joins
-- [ ] Query timeout enforcement (kill long-running queries after N seconds)
+- [x] Query timeout enforcement (execute_with_timeout + deadline checks)
 - [ ] Parallel HNSW construction (rayon) for faster bulk vector insert
 
 ## Priority 4: SPARQL Completeness
@@ -117,8 +117,8 @@ SDKs exist but need real integration testing and polish.
 
 ## Priority 6: Distribution & Ecosystem
 
-- [ ] Docker image on Docker Hub (`docker run sutradb/sutra --port 3030`)
-- [ ] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
+- [x] Dockerfile added (`docker build -t sutradb . && docker run -p 3030:3030 sutradb`)
+- [x] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
 - [ ] Jupyter integration (%%sparql cell magic, inline result rendering)
 - [ ] LangChain / LlamaIndex integration (SutraDB as vector store + knowledge graph for RAG)
 
