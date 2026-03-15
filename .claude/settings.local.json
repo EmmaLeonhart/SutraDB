@@ -46,7 +46,8 @@
       "Bash(git:*)",
       "WebFetch(domain:*)",
       "WebFetch(domain:zishan-rahman.github.io)",
-      "WebFetch(domain:protegewiki.stanford.edu)"
+      "WebFetch(domain:protegewiki.stanford.edu)",
+      "Bash(mvn:*)"
     ]
   }
 }
