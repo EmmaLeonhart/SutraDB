@@ -53,6 +53,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/vectors/declare", post(declare_vector_predicate))
         .route("/vectors", post(insert_vector))
         .route("/health", get(health))
+        .route("/vectors/health", get(vectors_health))
         .route("/.well-known/void", get(service_description))
         .route("/service-description", get(service_description))
         .layer(CorsLayer::permissive())
@@ -805,6 +806,37 @@ async fn insert_vector(
 /// GET /health
 async fn health() -> (StatusCode, &'static str) {
     (StatusCode::OK, "ok")
+}
+
+/// GET /vectors/health — HNSW index health diagnostics.
+async fn vectors_health(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, ProtoError> {
+    let vectors = state.vectors.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let dict = state.dict.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+
+    let mut indexes = Vec::new();
+    for pred_id in vectors.predicates() {
+        if let Some(index) = vectors.get(pred_id) {
+            let pred_name = dict.resolve(pred_id).unwrap_or("unknown");
+            indexes.push(serde_json::json!({
+                "predicate": pred_name,
+                "predicate_id": pred_id,
+                "total_nodes": index.len(),
+                "active_nodes": index.active_count(),
+                "deleted_ratio": index.deleted_ratio(),
+                "dimensions": index.dimensions(),
+                "metric": format!("{:?}", index.metric()),
+                "needs_compaction": index.deleted_ratio() > 0.3,
+            }));
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "index_count": indexes.len(),
+        "total_edge_count": vectors.total_edge_count(),
+        "indexes": indexes,
+    })))
 }
 
 /// GET /service-description — SPARQL service description (Turtle).
