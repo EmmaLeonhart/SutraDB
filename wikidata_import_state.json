@@ -1,0 +1,10 @@
+{
+  "seed": "Q11064932",
+  "total_entities": 439,
+  "total_triples": 16084,
+  "total_vectors": 439,
+  "errors": 0,
+  "queue_remaining": 7316,
+  "elapsed_seconds": 3601.7,
+  "visited_count": 439
+}
