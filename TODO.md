@@ -169,6 +169,10 @@ drift, tombstone accumulation.
 - [x] Ontology viewer (Protege-like class hierarchy browser)
 - [x] Authentication settings page (ready for server-side auth)
 - [x] Database health dashboard (connection status, stats)
+- [ ] Graph view: fetch HNSW virtual edges for vector-only/all view modes (currently only shows semantic triples)
+- [ ] Graph view: use Japanese labels for node display when available (LANGMATCHES)
+- [x] Graph view: reduce default limit to 50 to prevent combinatorial explosion
+- [x] Windows desktop platform support (flutter create --platforms windows)
 - [ ] HNSW health diagnostics: degree distribution visualization
 - [ ] HNSW health diagnostics: tombstone ratio monitoring with rebuild recommendations
 - [ ] Per-cluster PageRank health metric (detect drift from heavy insert/delete)
