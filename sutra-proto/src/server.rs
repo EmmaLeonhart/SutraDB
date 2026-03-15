@@ -53,6 +53,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/vectors/declare", post(declare_vector_predicate))
         .route("/vectors", post(insert_vector))
         .route("/health", get(health))
+        .route("/.well-known/void", get(service_description))
+        .route("/service-description", get(service_description))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -803,6 +805,38 @@ async fn insert_vector(
 /// GET /health
 async fn health() -> (StatusCode, &'static str) {
     (StatusCode::OK, "ok")
+}
+
+/// GET /service-description — SPARQL service description (Turtle).
+async fn service_description(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let store = state.store.read().ok();
+    let triple_count = store.as_ref().map(|s| s.len()).unwrap_or(0);
+
+    let ttl = format!(
+        r#"@prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
+@prefix void: <http://rdfs.org/ns/void#> .
+
+<> a sd:Service ;
+    sd:endpoint <sparql> ;
+    sd:supportedLanguage sd:SPARQL11Query ;
+    sd:resultFormat <http://www.w3.org/ns/formats/SPARQL_Results_JSON> ,
+                    <http://www.w3.org/ns/formats/SPARQL_Results_CSV> ,
+                    <http://www.w3.org/ns/formats/SPARQL_Results_TSV> ;
+    sd:feature sd:BasicFederatedQuery ;
+    sd:defaultDataset [
+        a sd:Dataset ;
+        sd:defaultGraph [
+            a sd:Graph , void:Dataset ;
+            void:triples {} ;
+        ]
+    ] .
+"#,
+        triple_count
+    );
+
+    ([(header::CONTENT_TYPE, "text/turtle; charset=utf-8")], ttl)
 }
 
 #[cfg(test)]

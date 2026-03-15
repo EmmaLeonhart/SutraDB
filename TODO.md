@@ -146,7 +146,7 @@ Blocked on Priority 6 Protégé plugin — the two should be designed together.
 - [x] SPARQL results CSV/TSV format (/sparql.csv, /sparql.tsv endpoints)
 - [ ] Authentication / API keys
 - [ ] Rate limiting
-- [ ] SPARQL service description endpoint
+- [x] SPARQL service description endpoint (/service-description)
 
 ## Priority 9: Additional Storage & Format Support
 
