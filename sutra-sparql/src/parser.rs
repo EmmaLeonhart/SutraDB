@@ -110,6 +110,16 @@ pub enum Pattern {
     },
     /// UNION { ... } { ... }
     Union(Vec<Vec<Pattern>>),
+    /// BIND(expr AS ?var)
+    Bind {
+        expression: Term,
+        variable: String,
+    },
+    /// VALUES ?var { val1 val2 ... }
+    Values {
+        variable: String,
+        values: Vec<Term>,
+    },
 }
 
 /// A term in a triple pattern.
@@ -456,6 +466,46 @@ impl<'a> Parser<'a> {
             } else if self.peek_keyword("VECTOR_SIMILAR") {
                 let vs = self.parse_vector_similar()?;
                 patterns.push(vs);
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
+            } else if self.peek_keyword("BIND") {
+                self.expect_keyword("BIND")?;
+                self.expect_char('(')?;
+                self.skip_whitespace();
+                let expr = self.parse_term()?;
+                self.skip_whitespace();
+                self.expect_keyword("AS")?;
+                self.skip_whitespace();
+                let var = self.parse_variable_name()?;
+                self.skip_whitespace();
+                self.expect_char(')')?;
+                patterns.push(Pattern::Bind {
+                    expression: expr,
+                    variable: var,
+                });
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
+            } else if self.peek_keyword("VALUES") {
+                self.expect_keyword("VALUES")?;
+                self.skip_whitespace();
+                let var = self.parse_variable_name()?;
+                self.skip_whitespace();
+                self.expect_char('{')?;
+                self.skip_whitespace();
+                let mut values = Vec::new();
+                while self.peek_char() != Some('}') && self.pos < self.input.len() {
+                    values.push(self.parse_term()?);
+                    self.skip_whitespace();
+                }
+                self.expect_char('}')?;
+                patterns.push(Pattern::Values {
+                    variable: var,
+                    values,
+                });
                 self.skip_whitespace();
                 if self.peek_char() == Some('.') {
                     self.pos += 1;

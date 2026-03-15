@@ -47,6 +47,8 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/sparql", get(sparql_get).post(sparql_post))
         .route("/graph", get(export_graph))
+        .route("/sparql.csv", get(sparql_csv_get).post(sparql_csv_post))
+        .route("/sparql.tsv", get(sparql_tsv_get).post(sparql_tsv_post))
         .route("/triples", post(insert_triples))
         .route("/vectors/declare", post(declare_vector_predicate))
         .route("/vectors", post(insert_vector))
@@ -100,6 +102,86 @@ async fn sparql_post(
         body
     };
     execute_sparql(&query, &state)
+}
+
+// ─── SPARQL CSV/TSV ─────────────────────────────────────────────────────────
+
+async fn sparql_csv_get(
+    State(state): State<Arc<AppState>>,
+    AxumQuery(params): AxumQuery<SparqlQueryParams>,
+) -> Result<impl IntoResponse, ProtoError> {
+    sparql_delimited(&params.query, &state, ",", "text/csv; charset=utf-8")
+}
+
+async fn sparql_csv_post(
+    State(state): State<Arc<AppState>>,
+    body: String,
+) -> Result<impl IntoResponse, ProtoError> {
+    sparql_delimited(&body, &state, ",", "text/csv; charset=utf-8")
+}
+
+async fn sparql_tsv_get(
+    State(state): State<Arc<AppState>>,
+    AxumQuery(params): AxumQuery<SparqlQueryParams>,
+) -> Result<impl IntoResponse, ProtoError> {
+    sparql_delimited(&params.query, &state, "\t", "text/tab-separated-values; charset=utf-8")
+}
+
+async fn sparql_tsv_post(
+    State(state): State<Arc<AppState>>,
+    body: String,
+) -> Result<impl IntoResponse, ProtoError> {
+    sparql_delimited(&body, &state, "\t", "text/tab-separated-values; charset=utf-8")
+}
+
+fn sparql_delimited(
+    query_str: &str,
+    state: &AppState,
+    delimiter: &str,
+    content_type: &'static str,
+) -> Result<impl IntoResponse, ProtoError> {
+    let mut query = sutra_sparql::parse(query_str)?;
+    sutra_sparql::optimize(&mut query);
+
+    let store = state.store.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let dict = state.dict.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let vectors = state.vectors.read().map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &vectors)?;
+
+    let mut output = String::new();
+
+    // Header row
+    output.push_str(&result.columns.join(delimiter));
+    output.push('\n');
+
+    // Data rows
+    for row in &result.rows {
+        let vals: Vec<String> = result
+            .columns
+            .iter()
+            .map(|col| {
+                row.get(col)
+                    .map(|&id| resolve_term_for_csv(id, &dict))
+                    .unwrap_or_default()
+            })
+            .collect();
+        output.push_str(&vals.join(delimiter));
+        output.push('\n');
+    }
+
+    Ok(([(header::CONTENT_TYPE, content_type)], output))
+}
+
+fn resolve_term_for_csv(id: sutra_core::TermId, dict: &TermDictionary) -> String {
+    if let Some(n) = sutra_core::decode_inline_integer(id) {
+        return n.to_string();
+    }
+    if let Some(b) = sutra_core::decode_inline_boolean(id) {
+        return b.to_string();
+    }
+    dict.resolve(id)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("_:id{}", id))
 }
 
 /// Execute a SPARQL query and return JSON results.

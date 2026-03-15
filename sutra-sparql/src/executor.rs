@@ -331,6 +331,41 @@ fn evaluate_pattern(
             }
             Ok((result, result_scores))
         }
+        Pattern::Bind { expression, variable } => {
+            // BIND(term AS ?var): resolve the term and add it as a binding
+            let mut result = Vec::new();
+            let mut result_scores = Vec::new();
+            for (i, row) in current.iter().enumerate() {
+                let value = resolve_term(expression, row, ctx.dict, ctx.prefixes)?;
+                if let Some(id) = value {
+                    let mut new_row = row.clone();
+                    new_row.insert(variable.clone(), id);
+                    result.push(new_row);
+                    result_scores.push(current_scores[i].clone());
+                } else {
+                    // If the expression can't be resolved, keep the row without the binding
+                    result.push(row.clone());
+                    result_scores.push(current_scores[i].clone());
+                }
+            }
+            Ok((result, result_scores))
+        }
+        Pattern::Values { variable, values } => {
+            // VALUES ?var { val1 val2 ... }: cross-join current rows with each value
+            let mut result = Vec::new();
+            let mut result_scores = Vec::new();
+            for (i, row) in current.iter().enumerate() {
+                for value_term in values {
+                    if let Some(id) = resolve_term(value_term, row, ctx.dict, ctx.prefixes)? {
+                        let mut new_row = row.clone();
+                        new_row.insert(variable.clone(), id);
+                        result.push(new_row);
+                        result_scores.push(current_scores[i].clone());
+                    }
+                }
+            }
+            Ok((result, result_scores))
+        }
     }
 }
 

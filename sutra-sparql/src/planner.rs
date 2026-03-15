@@ -72,6 +72,10 @@ fn pattern_weight(pattern: &Pattern, bound: &HashSet<String>) -> u32 {
         }
         // FILTERs should come after the patterns that bind their variables
         Pattern::Filter(_) => 10,
+        // BIND should come after patterns that provide its input variables
+        Pattern::Bind { .. } => 11,
+        // VALUES can come early (they provide bindings)
+        Pattern::Values { .. } => 0,
         // UNIONs after regular patterns, before OPTIONAL
         Pattern::Union(_) => 15,
         // OPTIONALs should come last
@@ -121,6 +125,12 @@ fn collect_variables(pattern: &Pattern, vars: &mut HashSet<String>) {
             }
         }
         Pattern::Filter(_) => {}
+        Pattern::Bind { variable, .. } => {
+            vars.insert(variable.clone());
+        }
+        Pattern::Values { variable, .. } => {
+            vars.insert(variable.clone());
+        }
     }
 }
 

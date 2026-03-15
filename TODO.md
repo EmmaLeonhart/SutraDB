@@ -83,7 +83,7 @@ The 1M-vector stress test revealed specific bottlenecks:
 
 ## Priority 4: SPARQL Completeness
 
-- [ ] BIND / VALUES
+- [x] BIND / VALUES
 - [x] GROUP BY / aggregates (COUNT, SUM, AVG, MIN, MAX)
 - [ ] HAVING clause
 - [ ] Property paths (`+`, `*`, `?`) for multi-hop traversal
@@ -143,7 +143,7 @@ Blocked on Priority 6 Protégé plugin — the two should be designed together.
 
 - [ ] Content negotiation for SPARQL results (JSON, XML, CSV, TSV)
 - [ ] SPARQL results XML format (application/sparql-results+xml)
-- [ ] SPARQL results CSV/TSV format
+- [x] SPARQL results CSV/TSV format (/sparql.csv, /sparql.tsv endpoints)
 - [ ] Authentication / API keys
 - [ ] Rate limiting
 - [ ] SPARQL service description endpoint
