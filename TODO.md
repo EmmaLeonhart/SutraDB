@@ -21,6 +21,12 @@ or implement multiple entry points in the HNSW graph.
 
 ## Done
 
+- [x] Database configuration model (RdfMode: Star/1.2/Legacy, HnswEdgeMode: Virtual/Materialized, OWL toggle)
+- [x] HNSW edges as RDF triples — virtual view via `sutra:hnswNeighbor` predicate
+- [x] HNSW edge generation API: `edge_triples()`, `edge_triples_for_source()`, `edge_triples_for_target()`
+- [x] SPARQL executor intercepts `sutra:hnswNeighbor` for virtual HNSW edge queries
+- [x] `execute_with_config()` API for full database configuration control
+- [x] Stress tests: chain traversals (2/3/4-hop), large joins (1K/5K leaves), grid traversals, self-joins, combined vector+graph 3-hop
 - [x] VECTOR_SIMILAR pattern in SPARQL parser
 - [x] VECTOR_SCORE function in SPARQL parser
 - [x] Wire VECTOR_SIMILAR into executor (calls HnswIndex.search())
