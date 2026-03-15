@@ -14,7 +14,7 @@
 //! - The RNG is seeded per-index for reproducible layer assignment.
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use sutra_core::TermId;
 
@@ -360,8 +360,10 @@ impl HnswIndex {
 
     /// Beam search at a single layer using a raw query vector.
     ///
-    /// Visited list is allocated per-call (Qdrant pattern) so search is &self,
-    /// enabling concurrent reads without locking.
+    /// Uses a HashSet for visited tracking instead of a dense Vec<bool>.
+    /// This avoids allocating and zeroing O(n) memory on every search call,
+    /// which caused ~2s cold-start latency due to page faults at scale.
+    /// Search is still &self, enabling concurrent reads without locking.
     fn search_layer_by_vec(
         &self,
         query: &[f32],
@@ -369,9 +371,9 @@ impl HnswIndex {
         ef: usize,
         layer: u8,
     ) -> Vec<(f32, u32)> {
-        // Per-call visited list (not stored in struct — enables concurrent search)
-        let n = self.nodes.len();
-        let mut visited = vec![false; n];
+        // HashSet only allocates for nodes actually visited (typically ef * M),
+        // not for all N nodes in the index. Much better cold-start behavior.
+        let mut visited = HashSet::with_capacity(ef * 2);
 
         let start_score = self.score_vec_node(query, start);
 
@@ -380,7 +382,7 @@ impl HnswIndex {
         // results: min-heap — worst of the ef-best results is at top
         let mut results: BinaryHeap<Reverse<OrdF32Pair>> = BinaryHeap::new();
 
-        visited[start as usize] = true;
+        visited.insert(start);
         candidates.push(OrdF32Pair(start_score, start));
         results.push(Reverse(OrdF32Pair(start_score, start)));
 
@@ -398,10 +400,9 @@ impl HnswIndex {
 
             for i in 0..neighbor_count {
                 let neighbor = self.nodes[c_idx as usize].neighbors[layer_idx][i];
-                if visited[neighbor as usize] {
-                    continue;
+                if !visited.insert(neighbor) {
+                    continue; // already visited
                 }
-                visited[neighbor as usize] = true;
 
                 let score = self.score_vec_node(query, neighbor);
                 let worst_result = results.peek().map(|r| r.0 .0).unwrap_or(f32::NEG_INFINITY);
