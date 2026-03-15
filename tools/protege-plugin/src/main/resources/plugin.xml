@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?eclipse version="3.0"?>
+
+<plugin>
+
+    <extension id="SutraDbView"
+               point="org.protege.editor.core.application.ViewComponent">
+        <label value="SutraDB"/>
+        <class value="dev.sutra.protege.SutraDbView"/>
+        <headerColor value="@org.protege.ontologycolor"/>
+        <category value="@org.protege.querycategory"/>
+    </extension>
+
+    <extension id="SutraDbTab"
+               point="org.protege.editor.core.application.WorkspaceTab">
+        <label value="SutraDB"/>
+        <class value="org.protege.editor.owl.ui.OWLWorkspaceViewsTab"/>
+        <editorKitId value="OWLEditorKit"/>
+        <index value="S"/>
+        <defaultViewConfigFileName value="viewconfig-sutradb.xml"/>
+    </extension>
+
+</plugin>

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>dev.sutra</groupId>
+    <artifactId>sutradb-protege-plugin</artifactId>
+    <version>0.1.0</version>
+    <packaging>bundle</packaging>
+
+    <name>SutraDB Protégé Plugin</name>
+    <description>Connect Protégé to a SutraDB instance: load, save, and validate ontologies.</description>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <protege.version>5.6.4</protege.version>
+    </properties>
+
+    <repositories>
+        <!-- Protege Maven repo -->
+        <repository>
+            <id>github-releases</id>
+            <url>https://raw.githubusercontent.com/protegeproject/mvn-repo/master/releases</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- Protege editor core (provided by Protege at runtime) -->
+        <dependency>
+            <groupId>edu.stanford.protege</groupId>
+            <artifactId>protege-editor-core</artifactId>
+            <version>${protege.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>edu.stanford.protege</groupId>
+            <artifactId>protege-editor-owl</artifactId>
+            <version>${protege.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- OWL API (provided by Protege) -->
+        <dependency>
+            <groupId>net.sourceforge.owlapi</groupId>
+            <artifactId>owlapi-osgidistribution</artifactId>
+            <version>4.5.29</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+        </resources>
+        <plugins>
+            <!-- OSGi bundle plugin (required for Protege plugins) -->
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+                <version>5.1.9</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <instructions>
+                        <Bundle-SymbolicName>dev.sutra.protege;singleton:=true</Bundle-SymbolicName>
+                        <Bundle-Name>SutraDB Plugin</Bundle-Name>
+                        <Bundle-Version>${project.version}</Bundle-Version>
+                        <Bundle-Vendor>SutraDB</Bundle-Vendor>
+                        <Import-Package>
+                            org.protege.editor.core.*;version="5.0",
+                            org.protege.editor.owl.*;version="5.0",
+                            org.semanticweb.owlapi.*;version="[4.5,6)",
+                            javax.swing.*,
+                            javax.swing.border.*,
+                            java.awt.*,
+                            java.awt.event.*,
+                            java.io.*,
+                            java.net.*,
+                            java.nio.charset.*
+                        </Import-Package>
+                        <Export-Package>dev.sutra.protege;version="${project.version}"</Export-Package>
+                    </instructions>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

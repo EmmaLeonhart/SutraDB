@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<layout>
+    <VSNode splits="1.0">
+        <CNode>
+            <Component label="SutraDB">
+                <Property id="pluginId" value="dev.sutra.protege.SutraDbView"/>
+            </Component>
+        </CNode>
+    </VSNode>
+</layout>
