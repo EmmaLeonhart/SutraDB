@@ -42,7 +42,8 @@
       "Bash(git pull:*)",
       "Bash(git stash:*)",
       "Read(//tmp/**)",
-      "Bash(start:*)"
+      "Bash(start:*)",
+      "Bash(git:*)"
     ]
   }
 }
