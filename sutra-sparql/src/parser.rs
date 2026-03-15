@@ -7,17 +7,60 @@ use std::collections::HashMap;
 
 use crate::error::{Result, SparqlError};
 
+/// The type of SPARQL query.
+#[derive(Debug, Clone, PartialEq)]
+pub enum QueryType {
+    Select,
+    Ask,
+    InsertData,
+    DeleteData,
+}
+
+/// An aggregate expression in the projection.
+#[derive(Debug, Clone)]
+pub struct Aggregate {
+    /// The aggregate function: COUNT, SUM, AVG, MIN, MAX.
+    pub function: AggregateFunction,
+    /// The variable or * being aggregated.
+    pub argument: AggregateArg,
+    /// The alias: (COUNT(*) AS ?count) → "count".
+    pub alias: String,
+    /// Whether DISTINCT is used inside the aggregate.
+    pub distinct: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AggregateFunction {
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+#[derive(Debug, Clone)]
+pub enum AggregateArg {
+    Variable(String),
+    Star,
+}
+
 /// A parsed SPARQL query.
 #[derive(Debug, Clone)]
 pub struct Query {
     /// PREFIX declarations.
     pub prefixes: HashMap<String, String>,
+    /// Query type (SELECT or ASK).
+    pub query_type: QueryType,
     /// Variables to project (empty = SELECT *).
     pub projection: Vec<String>,
+    /// Aggregate expressions in the projection.
+    pub aggregates: Vec<Aggregate>,
     /// Whether this is SELECT DISTINCT.
     pub distinct: bool,
     /// The WHERE clause patterns.
     pub patterns: Vec<Pattern>,
+    /// GROUP BY variables.
+    pub group_by: Vec<String>,
     /// ORDER BY clauses.
     pub order_by: Vec<OrderClause>,
     /// LIMIT clause.
@@ -67,6 +110,16 @@ pub enum Pattern {
     },
     /// UNION { ... } { ... }
     Union(Vec<Vec<Pattern>>),
+    /// BIND(expr AS ?var)
+    Bind {
+        expression: Term,
+        variable: String,
+    },
+    /// VALUES ?var { val1 val2 ... }
+    Values {
+        variable: String,
+        values: Vec<Term>,
+    },
 }
 
 /// A term in a triple pattern.
@@ -109,6 +162,34 @@ pub enum FilterExpr {
     NotExists(Vec<Pattern>),
     /// EXISTS { patterns }
     Exists(Vec<Pattern>),
+    /// expr && expr
+    And(Box<FilterExpr>, Box<FilterExpr>),
+    /// expr || expr
+    Or(Box<FilterExpr>, Box<FilterExpr>),
+    /// !expr
+    Not(Box<FilterExpr>),
+    /// CONTAINS(?var, "text")
+    Contains(Term, Term),
+    /// STRSTARTS(?var, "text")
+    StrStarts(Term, Term),
+    /// STRENDS(?var, "text")
+    StrEnds(Term, Term),
+    /// REGEX(?var, "pattern")
+    Regex(Term, Term),
+    /// LANG(?var) = "en"
+    LangEquals(String, String),
+    /// isIRI(?var) / isURI(?var)
+    IsIri(String),
+    /// isLiteral(?var)
+    IsLiteral(String),
+    /// LANG(?var) = "en" or LANGMATCHES(LANG(?var), "en")
+    LangMatches(String, String),
+    /// STR(?var) — cast to string for comparison
+    StrEquals(String, Term),
+    /// ?var >= term
+    GreaterThanOrEqual(Term, Term),
+    /// ?var <= term
+    LessThanOrEqual(Term, Term),
 }
 
 /// Parse a SPARQL query string into a Query AST.
@@ -142,20 +223,67 @@ impl<'a> Parser<'a> {
             self.skip_whitespace();
         }
 
-        // Parse SELECT
-        self.expect_keyword("SELECT")?;
+        // Determine query type: SELECT, ASK, INSERT DATA, DELETE DATA
+        let query_type = if self.peek_keyword("ASK") {
+            self.expect_keyword("ASK")?;
+            QueryType::Ask
+        } else if self.peek_keyword("INSERT") {
+            self.expect_keyword("INSERT")?;
+            self.skip_whitespace();
+            self.expect_keyword("DATA")?;
+            QueryType::InsertData
+        } else if self.peek_keyword("DELETE") {
+            self.expect_keyword("DELETE")?;
+            self.skip_whitespace();
+            self.expect_keyword("DATA")?;
+            QueryType::DeleteData
+        } else {
+            self.expect_keyword("SELECT")?;
+            QueryType::Select
+        };
 
-        // Check for DISTINCT
-        if self.peek_keyword("DISTINCT") {
-            self.expect_keyword("DISTINCT")?;
-            distinct = true;
+        let mut projection = Vec::new();
+        let mut aggregates = Vec::new();
+
+        if query_type == QueryType::Select {
+            // Check for DISTINCT
+            if self.peek_keyword("DISTINCT") {
+                self.expect_keyword("DISTINCT")?;
+                distinct = true;
+            }
+
+            // Parse projection (may include aggregates)
+            let (proj, aggs) = self.parse_projection_with_aggregates()?;
+            projection = proj;
+            aggregates = aggs;
         }
 
-        // Parse projection
-        let projection = self.parse_projection()?;
+        // For INSERT DATA / DELETE DATA, go straight to the { } block
+        if query_type == QueryType::InsertData || query_type == QueryType::DeleteData {
+            self.skip_whitespace();
+            self.expect_char('{')?;
+            let patterns = self.parse_patterns()?;
+            self.expect_char('}')?;
 
-        // Parse WHERE
-        self.expect_keyword("WHERE")?;
+            return Ok(Query {
+                prefixes,
+                query_type,
+                projection: vec![],
+                aggregates: vec![],
+                distinct: false,
+                patterns,
+                group_by: vec![],
+                order_by: vec![],
+                limit: None,
+                offset: None,
+            });
+        }
+
+        // Parse WHERE (optional keyword for ASK)
+        self.skip_whitespace();
+        if self.peek_keyword("WHERE") {
+            self.expect_keyword("WHERE")?;
+        }
         self.expect_char('{')?;
 
         let patterns = self.parse_patterns()?;
@@ -163,9 +291,21 @@ impl<'a> Parser<'a> {
         self.expect_char('}')?;
 
         // Parse solution modifiers
+        let mut group_by = Vec::new();
         let mut order_by = Vec::new();
         let mut limit = None;
         let mut offset = None;
+
+        self.skip_whitespace();
+        if self.peek_keyword("GROUP") {
+            self.expect_keyword("GROUP")?;
+            self.expect_keyword("BY")?;
+            self.skip_whitespace();
+            while self.peek_char() == Some('?') {
+                group_by.push(self.parse_variable_name()?);
+                self.skip_whitespace();
+            }
+        }
 
         self.skip_whitespace();
         if self.peek_keyword("ORDER") {
@@ -190,33 +330,114 @@ impl<'a> Parser<'a> {
 
         Ok(Query {
             prefixes,
+            query_type,
             projection,
+            aggregates,
             distinct,
             patterns,
+            group_by,
             order_by,
             limit,
             offset,
         })
     }
 
-    fn parse_projection(&mut self) -> Result<Vec<String>> {
+    fn parse_projection_with_aggregates(&mut self) -> Result<(Vec<String>, Vec<Aggregate>)> {
         self.skip_whitespace();
         if self.peek_char() == Some('*') {
             self.pos += 1;
-            return Ok(vec![]);
+            return Ok((vec![], vec![]));
         }
 
         let mut vars = Vec::new();
-        while self.peek_char() == Some('?') {
-            vars.push(self.parse_variable_name()?);
+        let mut aggregates = Vec::new();
+
+        loop {
+            self.skip_whitespace();
+            if self.peek_char() == Some('?') {
+                vars.push(self.parse_variable_name()?);
+            } else if self.peek_char() == Some('(') {
+                // Could be an aggregate: (COUNT(*) AS ?count)
+                let saved_pos = self.pos;
+                if let Ok(agg) = self.parse_aggregate_projection() {
+                    vars.push(agg.alias.clone());
+                    aggregates.push(agg);
+                } else {
+                    self.pos = saved_pos;
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        if vars.is_empty() && aggregates.is_empty() {
+            return Err(self.error("expected variable, aggregate, or * in SELECT"));
+        }
+
+        Ok((vars, aggregates))
+    }
+
+    fn parse_aggregate_projection(&mut self) -> Result<Aggregate> {
+        self.expect_char('(')?;
+        self.skip_whitespace();
+
+        // Parse function name
+        let func = if self.peek_keyword("COUNT") {
+            self.expect_keyword("COUNT")?;
+            AggregateFunction::Count
+        } else if self.peek_keyword("SUM") {
+            self.expect_keyword("SUM")?;
+            AggregateFunction::Sum
+        } else if self.peek_keyword("AVG") {
+            self.expect_keyword("AVG")?;
+            AggregateFunction::Avg
+        } else if self.peek_keyword("MIN") {
+            self.expect_keyword("MIN")?;
+            AggregateFunction::Min
+        } else if self.peek_keyword("MAX") {
+            self.expect_keyword("MAX")?;
+            AggregateFunction::Max
+        } else {
+            return Err(self.error("expected aggregate function"));
+        };
+
+        self.expect_char('(')?;
+        self.skip_whitespace();
+
+        let mut agg_distinct = false;
+        if self.peek_keyword("DISTINCT") {
+            self.expect_keyword("DISTINCT")?;
+            agg_distinct = true;
             self.skip_whitespace();
         }
 
-        if vars.is_empty() {
-            return Err(self.error("expected variable or * in SELECT"));
-        }
+        let arg = if self.peek_char() == Some('*') {
+            self.pos += 1;
+            AggregateArg::Star
+        } else if self.peek_char() == Some('?') {
+            AggregateArg::Variable(self.parse_variable_name()?)
+        } else {
+            return Err(self.error("expected * or variable in aggregate"));
+        };
 
-        Ok(vars)
+        self.skip_whitespace();
+        self.expect_char(')')?; // close inner parens
+        self.skip_whitespace();
+
+        // AS ?alias
+        self.expect_keyword("AS")?;
+        self.skip_whitespace();
+        let alias = self.parse_variable_name()?;
+        self.skip_whitespace();
+        self.expect_char(')')?; // close outer parens
+
+        Ok(Aggregate {
+            function: func,
+            argument: arg,
+            alias,
+            distinct: agg_distinct,
+        })
     }
 
     fn parse_patterns(&mut self) -> Result<Vec<Pattern>> {
@@ -249,6 +470,46 @@ impl<'a> Parser<'a> {
             } else if self.peek_keyword("VECTOR_SIMILAR") {
                 let vs = self.parse_vector_similar()?;
                 patterns.push(vs);
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
+            } else if self.peek_keyword("BIND") {
+                self.expect_keyword("BIND")?;
+                self.expect_char('(')?;
+                self.skip_whitespace();
+                let expr = self.parse_term()?;
+                self.skip_whitespace();
+                self.expect_keyword("AS")?;
+                self.skip_whitespace();
+                let var = self.parse_variable_name()?;
+                self.skip_whitespace();
+                self.expect_char(')')?;
+                patterns.push(Pattern::Bind {
+                    expression: expr,
+                    variable: var,
+                });
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
+            } else if self.peek_keyword("VALUES") {
+                self.expect_keyword("VALUES")?;
+                self.skip_whitespace();
+                let var = self.parse_variable_name()?;
+                self.skip_whitespace();
+                self.expect_char('{')?;
+                self.skip_whitespace();
+                let mut values = Vec::new();
+                while self.peek_char() != Some('}') && self.pos < self.input.len() {
+                    values.push(self.parse_term()?);
+                    self.skip_whitespace();
+                }
+                self.expect_char('}')?;
+                patterns.push(Pattern::Values {
+                    variable: var,
+                    values,
+                });
                 self.skip_whitespace();
                 if self.peek_char() == Some('.') {
                     self.pos += 1;
@@ -609,8 +870,140 @@ impl<'a> Parser<'a> {
                 self.expect_char(')')?;
                 return Ok(FilterExpr::NotBound(var));
             }
+            // General negation: !(expr)
+            let inner = self.parse_filter_inner()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(FilterExpr::Not(Box::new(inner)));
         }
 
+        // String functions: CONTAINS, STRSTARTS, STRENDS, REGEX
+        if self.peek_keyword("CONTAINS") {
+            return self.parse_two_arg_string_filter("CONTAINS", |a, b| FilterExpr::Contains(a, b));
+        }
+        if self.peek_keyword("STRSTARTS") {
+            return self.parse_two_arg_string_filter("STRSTARTS", |a, b| FilterExpr::StrStarts(a, b));
+        }
+        if self.peek_keyword("STRENDS") {
+            return self.parse_two_arg_string_filter("STRENDS", |a, b| FilterExpr::StrEnds(a, b));
+        }
+        if self.peek_keyword("REGEX") {
+            return self.parse_two_arg_string_filter("REGEX", |a, b| FilterExpr::Regex(a, b));
+        }
+        if self.peek_keyword("LANGMATCHES") {
+            self.expect_keyword("LANGMATCHES")?;
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            // Expect LANG(?var)
+            self.expect_keyword("LANG")?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            self.expect_char(',')?;
+            self.skip_whitespace();
+            let lang_term = self.parse_term()?;
+            let lang = match &lang_term {
+                Term::Literal(s) => s.clone(),
+                _ => return Err(self.error("LANGMATCHES expects a string literal")),
+            };
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(FilterExpr::LangMatches(var, lang));
+        }
+        if self.peek_keyword("LANG") {
+            self.expect_keyword("LANG")?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            let op = self.parse_comparison_op()?;
+            self.skip_whitespace();
+            let lang_term = self.parse_term()?;
+            let lang = match &lang_term {
+                Term::Literal(s) => s.clone(),
+                _ => return Err(self.error("LANG() comparison expects a string literal")),
+            };
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            if op == "=" {
+                return Ok(FilterExpr::LangMatches(var, lang));
+            }
+            return Err(self.error("LANG() only supports = comparison"));
+        }
+        if self.peek_keyword("isIRI") || self.peek_keyword("isURI") {
+            let kw = if self.peek_keyword("isIRI") { "isIRI" } else { "isURI" };
+            self.expect_keyword(kw)?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            self.expect_char(')')?;
+            return Ok(FilterExpr::IsIri(var));
+        }
+        if self.peek_keyword("isLiteral") {
+            self.expect_keyword("isLiteral")?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            self.expect_char(')')?;
+            return Ok(FilterExpr::IsLiteral(var));
+        }
+
+        // Parse a comparison expression, then check for && / ||
+        let expr = self.parse_comparison_expr()?;
+        self.skip_whitespace();
+
+        // Check for boolean connectives
+        if self.remaining().starts_with("&&") {
+            self.pos += 2;
+            self.skip_whitespace();
+            let right = self.parse_filter_inner()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(FilterExpr::And(Box::new(expr), Box::new(right)));
+        }
+        if self.remaining().starts_with("||") {
+            self.pos += 2;
+            self.skip_whitespace();
+            let right = self.parse_filter_inner()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(FilterExpr::Or(Box::new(expr), Box::new(right)));
+        }
+
+        self.expect_char(')')?;
+        Ok(expr)
+    }
+
+    /// Parse a filter expression without the outer parens (for recursive use).
+    fn parse_filter_inner(&mut self) -> Result<FilterExpr> {
+        self.skip_whitespace();
+        if self.peek_keyword("bound") {
+            self.expect_keyword("bound")?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            return Ok(FilterExpr::Bound(var));
+        }
+        if self.peek_char() == Some('!') {
+            self.pos += 1;
+            self.skip_whitespace();
+            if self.peek_keyword("bound") {
+                self.expect_keyword("bound")?;
+                self.expect_char('(')?;
+                let var = self.parse_variable_name()?;
+                self.expect_char(')')?;
+                return Ok(FilterExpr::NotBound(var));
+            }
+            let inner = self.parse_filter_inner()?;
+            return Ok(FilterExpr::Not(Box::new(inner)));
+        }
+        self.parse_comparison_expr()
+    }
+
+    fn parse_comparison_expr(&mut self) -> Result<FilterExpr> {
         let left = self.parse_term()?;
         self.skip_whitespace();
 
@@ -618,16 +1011,36 @@ impl<'a> Parser<'a> {
         self.skip_whitespace();
 
         let right = self.parse_term()?;
-        self.skip_whitespace();
-        self.expect_char(')')?;
 
         match op.as_str() {
             "=" => Ok(FilterExpr::Equals(left, right)),
             "!=" => Ok(FilterExpr::NotEquals(left, right)),
             "<" => Ok(FilterExpr::LessThan(left, right)),
             ">" => Ok(FilterExpr::GreaterThan(left, right)),
+            ">=" => Ok(FilterExpr::GreaterThanOrEqual(left, right)),
+            "<=" => Ok(FilterExpr::LessThanOrEqual(left, right)),
             _ => Err(self.error(&format!("unknown operator: {}", op))),
         }
+    }
+
+    fn parse_two_arg_string_filter(
+        &mut self,
+        keyword: &str,
+        ctor: impl FnOnce(Term, Term) -> FilterExpr,
+    ) -> Result<FilterExpr> {
+        self.expect_keyword(keyword)?;
+        self.expect_char('(')?;
+        self.skip_whitespace();
+        let arg1 = self.parse_term()?;
+        self.skip_whitespace();
+        self.expect_char(',')?;
+        self.skip_whitespace();
+        let arg2 = self.parse_term()?;
+        self.skip_whitespace();
+        self.expect_char(')')?;
+        self.skip_whitespace();
+        self.expect_char(')')?;
+        Ok(ctor(arg1, arg2))
     }
 
     fn parse_comparison_op(&mut self) -> Result<String> {
@@ -643,14 +1056,28 @@ impl<'a> Parser<'a> {
             }
             Some('<') => {
                 self.pos += 1;
-                Ok("<".to_string())
+                if self.peek_char() == Some('=') {
+                    self.pos += 1;
+                    Ok("<=".to_string())
+                } else {
+                    Ok("<".to_string())
+                }
             }
             Some('>') => {
                 self.pos += 1;
-                Ok(">".to_string())
+                if self.peek_char() == Some('=') {
+                    self.pos += 1;
+                    Ok(">=".to_string())
+                } else {
+                    Ok(">".to_string())
+                }
             }
             _ => Err(self.error("expected comparison operator")),
         }
+    }
+
+    fn remaining(&self) -> &str {
+        &self.input[self.pos..]
     }
 
     fn parse_variable_name(&mut self) -> Result<String> {

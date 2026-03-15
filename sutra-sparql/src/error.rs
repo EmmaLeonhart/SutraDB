@@ -21,6 +21,9 @@ pub enum SparqlError {
 
     #[error("core error: {0}")]
     Core(#[from] sutra_core::CoreError),
+
+    #[error("query timeout exceeded")]
+    Timeout,
 }
 
 pub type Result<T> = std::result::Result<T, SparqlError>;

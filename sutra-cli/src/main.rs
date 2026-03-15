@@ -1,5 +1,6 @@
-//! SutraDB CLI: server, query, import.
+//! SutraDB CLI: server, query, import, export.
 
+use std::io::{BufRead, Write};
 use std::sync::{Arc, RwLock};
 
 use clap::{Parser, Subcommand};
@@ -39,6 +40,35 @@ enum Commands {
         #[arg(short, long, default_value = "./sutra-data")]
         data_dir: String,
     },
+    /// Import N-Triples data from a file into the database.
+    Import {
+        /// Path to the N-Triples file (use - for stdin).
+        file: String,
+
+        /// Data directory.
+        #[arg(short, long, default_value = "./sutra-data")]
+        data_dir: String,
+    },
+    /// Export all triples as N-Triples.
+    Export {
+        /// Data directory.
+        #[arg(short, long, default_value = "./sutra-data")]
+        data_dir: String,
+
+        /// Output file (default: stdout).
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Export format: nt (N-Triples) or ttl (Turtle).
+        #[arg(short, long, default_value = "nt")]
+        format: String,
+    },
+    /// Show database statistics.
+    Info {
+        /// Data directory.
+        #[arg(short, long, default_value = "./sutra-data")]
+        data_dir: String,
+    },
 }
 
 #[tokio::main]
@@ -64,15 +94,12 @@ async fn main() -> anyhow::Result<()> {
                 tracing::info!("Opening persistent store at {}", data_dir);
                 let ps = sutra_core::PersistentStore::open(&data_dir)?;
 
-                // Hydrate in-memory stores from persistent storage
                 let mut dict = sutra_core::TermDictionary::new();
                 let mut store = sutra_core::TripleStore::new();
 
-                // Load all terms into the in-memory dictionary
                 let term_count = ps.load_terms_into(&mut dict);
                 tracing::info!("Loaded {} terms from disk", term_count);
 
-                // Load all triples into the in-memory store
                 let mut triple_count = 0usize;
                 for triple in ps.iter() {
                     let _ = store.insert(triple);
@@ -95,10 +122,10 @@ async fn main() -> anyhow::Result<()> {
             let listener = tokio::net::TcpListener::bind(&addr).await?;
             axum::serve(listener, app).await?;
         }
+
         Commands::Query { query, data_dir } => {
             let ps = sutra_core::PersistentStore::open(&data_dir)?;
 
-            // Hydrate in-memory stores
             let mut dict = sutra_core::TermDictionary::new();
             let mut store = sutra_core::TripleStore::new();
 
@@ -113,13 +140,172 @@ async fn main() -> anyhow::Result<()> {
             sutra_sparql::optimize(&mut parsed);
             let result = sutra_sparql::execute_with_vectors(&parsed, &store, &dict, &vectors)?;
 
-            println!("Columns: {:?}", result.columns);
-            println!("Rows: {}", result.rows.len());
-            for row in &result.rows {
-                println!("  {:?}", row);
+            // Print results as a simple table
+            if result.columns.len() == 1 && result.columns[0] == "result" {
+                // ASK query
+                if let Some(row) = result.rows.first() {
+                    if let Some(&id) = row.get("result") {
+                        if sutra_core::decode_inline_boolean(id) == Some(true) {
+                            println!("true");
+                        } else {
+                            println!("false");
+                        }
+                    }
+                }
+            } else {
+                // SELECT query
+                println!("{}", result.columns.join("\t"));
+                println!("{}", "-".repeat(result.columns.len() * 20));
+                for row in &result.rows {
+                    let vals: Vec<String> = result
+                        .columns
+                        .iter()
+                        .map(|col| {
+                            row.get(col)
+                                .map(|&id| resolve_id(id, &dict))
+                                .unwrap_or_default()
+                        })
+                        .collect();
+                    println!("{}", vals.join("\t"));
+                }
+                println!("\n{} rows", result.rows.len());
             }
+        }
+
+        Commands::Import { file, data_dir } => {
+            let ps = sutra_core::PersistentStore::open(&data_dir)?;
+
+            let reader: Box<dyn BufRead> = if file == "-" {
+                Box::new(std::io::stdin().lock())
+            } else {
+                let f = std::fs::File::open(&file)?;
+                Box::new(std::io::BufReader::new(f))
+            };
+
+            let mut inserted = 0usize;
+            let mut errors = 0usize;
+            let mut line_no = 0usize;
+
+            for line in reader.lines() {
+                let line = line?;
+                line_no += 1;
+
+                let parsed = match sutra_core::parse_ntriples_line(&line) {
+                    Some(t) => t,
+                    None => continue,
+                };
+
+                let (subj_str, pred_str, obj_str) = parsed;
+                let s_id = ps.intern(&subj_str)?;
+                let p_id = ps.intern(&pred_str)?;
+                let o_id = ps.intern(&obj_str)?;
+
+                match ps.insert(sutra_core::Triple::new(s_id, p_id, o_id)) {
+                    Ok(()) => inserted += 1,
+                    Err(_) => errors += 1,
+                }
+
+                if inserted % 10000 == 0 && inserted > 0 {
+                    eprintln!("  {} triples imported (line {})", inserted, line_no);
+                }
+            }
+
+            ps.flush()?;
+            println!("Imported {} triples ({} errors) from {}", inserted, errors, file);
+        }
+
+        Commands::Export {
+            data_dir,
+            output,
+            format,
+        } => {
+            let ps = sutra_core::PersistentStore::open(&data_dir)?;
+
+            let mut writer: Box<dyn Write> = if let Some(path) = &output {
+                Box::new(std::fs::File::create(path)?)
+            } else {
+                Box::new(std::io::stdout().lock())
+            };
+
+            let mut count = 0usize;
+            for triple in ps.iter() {
+                let s = ps.resolve(triple.subject)?.unwrap_or_else(|| format!("_:id{}", triple.subject));
+                let p = ps.resolve(triple.predicate)?.unwrap_or_else(|| format!("_:id{}", triple.predicate));
+                let o = ps.resolve(triple.object)?.unwrap_or_else(|| resolve_object_persistent(triple.object, &ps));
+
+                if format == "ttl" || format == "turtle" {
+                    // Simplified Turtle (no prefix compression for CLI)
+                    if s.starts_with("_:") {
+                        write!(writer, "{}", s)?;
+                    } else {
+                        write!(writer, "<{}>", s)?;
+                    }
+                    write!(writer, " <{}> ", p)?;
+                    if o.starts_with('"') || o.starts_with("_:") {
+                        writeln!(writer, "{} .", o)?;
+                    } else {
+                        writeln!(writer, "<{}> .", o)?;
+                    }
+                } else {
+                    // N-Triples
+                    if s.starts_with("_:") {
+                        write!(writer, "{}", s)?;
+                    } else {
+                        write!(writer, "<{}>", s)?;
+                    }
+                    write!(writer, " <{}> ", p)?;
+                    if o.starts_with('"') || o.starts_with("_:") {
+                        writeln!(writer, "{} .", o)?;
+                    } else {
+                        writeln!(writer, "<{}> .", o)?;
+                    }
+                }
+                count += 1;
+            }
+
+            if output.is_some() {
+                eprintln!("Exported {} triples", count);
+            }
+        }
+
+        Commands::Info { data_dir } => {
+            let ps = sutra_core::PersistentStore::open(&data_dir)?;
+            let triple_count = ps.len();
+
+            // Count terms
+            let mut dict = sutra_core::TermDictionary::new();
+            let term_count = ps.load_terms_into(&mut dict);
+
+            println!("SutraDB — {}", data_dir);
+            println!("  Triples: {}", triple_count);
+            println!("  Terms:   {}", term_count);
         }
     }
 
     Ok(())
+}
+
+fn resolve_id(id: sutra_core::TermId, dict: &sutra_core::TermDictionary) -> String {
+    if let Some(n) = sutra_core::decode_inline_integer(id) {
+        return n.to_string();
+    }
+    if let Some(b) = sutra_core::decode_inline_boolean(id) {
+        return b.to_string();
+    }
+    dict.resolve(id)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("_:id{}", id))
+}
+
+fn resolve_object_persistent(id: sutra_core::TermId, ps: &sutra_core::PersistentStore) -> String {
+    if let Some(n) = sutra_core::decode_inline_integer(id) {
+        return format!("\"{}\"^^<http://www.w3.org/2001/XMLSchema#integer>", n);
+    }
+    if let Some(b) = sutra_core::decode_inline_boolean(id) {
+        return format!("\"{}\"^^<http://www.w3.org/2001/XMLSchema#boolean>", b);
+    }
+    ps.resolve(id)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| format!("_:id{}", id))
 }

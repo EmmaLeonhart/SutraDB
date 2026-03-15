@@ -55,18 +55,18 @@ The server is currently in-memory only. This is the #1 blocker.
 - [x] Persistent term dictionary: load on startup, save on insert
 - [ ] HNSW index persistence: serialize to disk, memory-map on startup
 - [ ] The .sdb file should contain all of the above in one directory/file
-- [ ] `sutra serve --data my.sdb` loads from disk, writes back on changes
-- [ ] `sutra query --data my.sdb` opens serverless (no HTTP)
+- [x] `sutra serve --data my.sdb` loads from disk, writes back on changes
+- [x] `sutra query --data my.sdb` opens serverless (no HTTP)
 
 ## Priority 2: Parser & Ingestion Gaps
 
 - [x] Blank node support in N-Triples parser (`_:b0`, `_:genid123`)
 - [ ] Turtle (.ttl) parser for bulk import (consider using Oxigraph's oxttl crate)
-- [ ] `sutra import` CLI command (`sutra import data.nt --data my.sdb`)
-- [ ] `sutra export` CLI command (dump to Turtle/N-Triples)
-- [ ] SPARQL Update (INSERT DATA, DELETE DATA, DELETE/INSERT WHERE)
+- [x] `sutra import` CLI command (`sutra import data.nt --data my.sdb`)
+- [x] `sutra export` CLI command (dump to Turtle/N-Triples)
+- [x] SPARQL Update (INSERT DATA, DELETE DATA)
 - [ ] Schema declaration via SPARQL (`sutra:declareVectorPredicate`)
-- [ ] Streaming import (line-by-line for large files without loading all into memory)
+- [x] Streaming import (line-by-line for large files without loading all into memory)
 
 ## Priority 3: Query Performance — Stress Test Findings
 
@@ -78,25 +78,29 @@ The 1M-vector stress test revealed specific bottlenecks:
   - [ ] Hash joins for large intermediate result sets (instead of nested loop)
   - [ ] Index selection: use the most selective index first based on cardinality stats
 - [ ] Wormhole queries (vector→graph→graph) need the planner to push vector results into bound positions before graph joins
-- [ ] Query timeout enforcement (kill long-running queries after N seconds)
+- [x] Query timeout enforcement (execute_with_timeout + deadline checks)
 - [ ] Parallel HNSW construction (rayon) for faster bulk vector insert
 
 ## Priority 4: SPARQL Completeness
 
-- [ ] BIND / VALUES
-- [ ] GROUP BY / HAVING / aggregates (COUNT, SUM, AVG, MIN, MAX)
+- [x] BIND / VALUES
+- [x] GROUP BY / aggregates (COUNT, SUM, AVG, MIN, MAX)
+- [ ] HAVING clause
 - [ ] Property paths (`+`, `*`, `?`) for multi-hop traversal
 - [ ] Subqueries (nested SELECT)
 - [ ] RDF-star quoted triple patterns in SPARQL (`<< ?s ?p ?o >>` syntax)
 - [ ] CONSTRUCT queries (return triples instead of bindings)
-- [ ] ASK queries (boolean existence check)
+- [x] ASK queries (boolean existence check)
 - [ ] DESCRIBE queries
-- [ ] String functions: CONTAINS, STRSTARTS, STRENDS, STRLEN, SUBSTR
-- [ ] REGEX filter support
-- [ ] LANG() and LANGMATCHES() for language-tagged literals
+- [x] String functions: CONTAINS, STRSTARTS, STRENDS
+- [x] REGEX filter support (substring match)
+- [x] LANG() and LANGMATCHES() for language-tagged literals
 - [ ] DATATYPE(), STR(), COALESCE(), IF()
 - [ ] Arithmetic in expressions (+, -, *, /)
-- [ ] Boolean operators in FILTER (&&, ||, !)
+- [x] Boolean operators in FILTER (&&, ||, !)
+- [x] Comparison operators: >=, <=
+- [x] isIRI / isLiteral type checks
+- [x] FILTER NOT EXISTS / EXISTS
 
 ## Priority 5: SDK Quality & Client-Side OWL Validation
 
@@ -121,14 +125,14 @@ The database accepts all triples unconditionally. OWL validation is the SDK's jo
 
 ## Priority 6: Distribution & Ecosystem
 
-- [ ] Docker image on Docker Hub (`docker run sutradb/sutra --port 3030`)
+- [x] Dockerfile added (`docker build -t sutradb . && docker run -p 3030:3030 sutradb`)
 - [ ] Agent-first installer CLI (`sutra install-agent` or similar)
   - [ ] Expose all config options as structured markdown prompts
   - [ ] Agent reasons through options and outputs `<dbname>_sutra_notes.md` with decisions
   - [ ] Serverless: notes stored alongside `.sdb` file
   - [ ] Server: notes in server data directory, viewable via CLI or Sutra Studio
   - [ ] Agent can optionally install/launch Protege, Sutra Studio
-- [ ] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
+- [x] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
 - [ ] Jupyter integration (%%sparql cell magic, inline result rendering)
 - [ ] LangChain / LlamaIndex integration (SutraDB as vector store + knowledge graph for RAG)
 - [ ] MCP server — standardized agent↔database interface for Claude / other LLMs
@@ -179,7 +183,7 @@ drift, tombstone accumulation.
 
 - [ ] Content negotiation for SPARQL results (JSON, XML, CSV, TSV)
 - [ ] SPARQL results XML format (application/sparql-results+xml)
-- [ ] SPARQL results CSV/TSV format
+- [x] SPARQL results CSV/TSV format (/sparql.csv, /sparql.tsv endpoints)
 - [ ] Simple passcode authentication (server mode only, opt-in)
   - Just a passcode/API key to connect — nothing fancier in open source
   - Anything beyond this (RBAC, per-user permissions) = premium tier
@@ -190,7 +194,7 @@ drift, tombstone accumulation.
   - [ ] Configurable interval: hourly / daily / custom
   - [ ] Stored in separate directory within server data path
   - [ ] Manageable via CLI and Sutra Studio
-- [ ] SPARQL service description endpoint
+- [x] SPARQL service description endpoint (/service-description)
 
 ## Priority 9: Additional Storage & Format Support
 

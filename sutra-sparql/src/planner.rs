@@ -72,6 +72,10 @@ fn pattern_weight(pattern: &Pattern, bound: &HashSet<String>) -> u32 {
         }
         // FILTERs should come after the patterns that bind their variables
         Pattern::Filter(_) => 10,
+        // BIND should come after patterns that provide its input variables
+        Pattern::Bind { .. } => 11,
+        // VALUES can come early (they provide bindings)
+        Pattern::Values { .. } => 0,
         // UNIONs after regular patterns, before OPTIONAL
         Pattern::Union(_) => 15,
         // OPTIONALs should come last
@@ -121,6 +125,12 @@ fn collect_variables(pattern: &Pattern, vars: &mut HashSet<String>) {
             }
         }
         Pattern::Filter(_) => {}
+        Pattern::Bind { variable, .. } => {
+            vars.insert(variable.clone());
+        }
+        Pattern::Values { variable, .. } => {
+            vars.insert(variable.clone());
+        }
     }
 }
 
@@ -195,6 +205,9 @@ mod tests {
                     top_k: None,
                 },
             ],
+            query_type: crate::parser::QueryType::Select,
+            aggregates: vec![],
+            group_by: vec![],
             order_by: vec![],
             limit: None,
             offset: None,
@@ -236,6 +249,9 @@ mod tests {
                     object: Term::Iri("http://example.org/Document".into()),
                 },
             ],
+            query_type: crate::parser::QueryType::Select,
+            aggregates: vec![],
+            group_by: vec![],
             order_by: vec![],
             limit: None,
             offset: None,
@@ -282,6 +298,9 @@ mod tests {
                     object: Term::Variable("name".into()),
                 },
             ],
+            query_type: crate::parser::QueryType::Select,
+            aggregates: vec![],
+            group_by: vec![],
             order_by: vec![],
             limit: None,
             offset: None,

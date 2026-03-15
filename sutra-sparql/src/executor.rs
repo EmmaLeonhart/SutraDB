@@ -10,12 +10,13 @@
 //! binding table like any other index access.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use sutra_core::{DatabaseConfig, HnswEdgeMode, TermDictionary, TermId, Triple, TripleStore};
 use sutra_hnsw::VectorRegistry;
 
 use crate::error::{Result, SparqlError};
-use crate::parser::{FilterExpr, Pattern, Query, Term};
+use crate::parser::{Aggregate, AggregateArg, AggregateFunction, FilterExpr, Pattern, Query, QueryType, Term};
 
 /// A single row of variable bindings.
 pub type Bindings = HashMap<String, TermId>;
@@ -39,6 +40,8 @@ pub struct ExecutionContext<'a> {
     pub vectors: &'a VectorRegistry,
     pub prefixes: &'a HashMap<String, String>,
     pub config: &'a DatabaseConfig,
+    /// Optional query timeout deadline.
+    pub deadline: Option<Instant>,
 }
 
 /// Execute a parsed query against an in-memory store with vector support.
@@ -60,14 +63,11 @@ pub fn execute_with_config(
     vectors: &VectorRegistry,
     config: &DatabaseConfig,
 ) -> Result<QueryResult> {
-    let mut ctx = ExecutionContext {
-        store,
-        dict,
-        vectors,
-        prefixes: &query.prefixes,
-        config,
-    };
+    execute_with_deadline(query, store, dict, vectors, config, None)
+}
 
+/// Core query execution logic.
+fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Result<QueryResult> {
     // Start with a single empty binding
     let mut results: Vec<Bindings> = vec![HashMap::new()];
     let mut scores: Vec<HashMap<String, f32>> = vec![HashMap::new()];
@@ -88,7 +88,7 @@ pub fn execute_with_config(
     // Evaluate each pattern, threading the pushable limit through
     for pattern in &query.patterns {
         let (new_results, new_scores) =
-            evaluate_pattern(pattern, &results, &scores, &mut ctx, pushable_limit)?;
+            evaluate_pattern(pattern, &results, &scores, ctx, pushable_limit)?;
         results = new_results;
         scores = new_scores;
 
@@ -101,9 +101,36 @@ pub fn execute_with_config(
         }
     }
 
+    // ASK query: return a single boolean row
+    if query.query_type == QueryType::Ask {
+        let has_results = !results.is_empty();
+        let mut row = HashMap::new();
+        row.insert(
+            "result".to_string(),
+            if has_results {
+                sutra_core::inline_boolean(true)
+            } else {
+                sutra_core::inline_boolean(false)
+            },
+        );
+        return Ok(QueryResult {
+            columns: vec!["result".to_string()],
+            rows: vec![row],
+            scores: vec![HashMap::new()],
+        });
+    }
+
+    // Apply GROUP BY + Aggregates
+    if !query.group_by.is_empty() || !query.aggregates.is_empty() {
+        let (grouped_results, grouped_scores) =
+            apply_group_by_and_aggregates(&results, &query.group_by, &query.aggregates, &ctx)?;
+        results = grouped_results;
+        scores = grouped_scores;
+    }
+
     // Apply ORDER BY
     if !query.order_by.is_empty() {
-        apply_order_by(&mut results, &mut scores, &query.order_by, &mut ctx)?;
+        apply_order_by(&mut results, &mut scores, &query.order_by, ctx)?;
     }
 
     // Apply DISTINCT (only considers projected variables, per SPARQL spec)
@@ -167,6 +194,46 @@ pub fn execute_with_config(
     })
 }
 
+/// Execute a parsed query with a timeout in seconds.
+/// Returns `Err(SparqlError::Timeout)` if the query exceeds the time limit.
+pub fn execute_with_timeout(
+    query: &Query,
+    store: &TripleStore,
+    dict: &TermDictionary,
+    vectors: &VectorRegistry,
+    timeout_secs: u64,
+) -> Result<QueryResult> {
+    let default_config = DatabaseConfig::default();
+    execute_with_deadline(
+        query,
+        store,
+        dict,
+        vectors,
+        &default_config,
+        Some(Instant::now() + Duration::from_secs(timeout_secs)),
+    )
+}
+
+/// Internal executor that accepts an optional deadline.
+fn execute_with_deadline(
+    query: &Query,
+    store: &TripleStore,
+    dict: &TermDictionary,
+    vectors: &VectorRegistry,
+    config: &DatabaseConfig,
+    deadline: Option<Instant>,
+) -> Result<QueryResult> {
+    let mut ctx = ExecutionContext {
+        store,
+        dict,
+        vectors,
+        prefixes: &query.prefixes,
+        config,
+        deadline,
+    };
+    execute_query_with_ctx(query, &mut ctx)
+}
+
 /// Execute a parsed query without vector support (backward compatible).
 pub fn execute(query: &Query, store: &TripleStore, dict: &TermDictionary) -> Result<QueryResult> {
     let mut empty_registry = VectorRegistry::new();
@@ -180,6 +247,9 @@ fn evaluate_pattern(
     ctx: &mut ExecutionContext<'_>,
     row_limit: Option<usize>,
 ) -> Result<(Vec<Bindings>, Vec<HashMap<String, f32>>)> {
+    // Check timeout before evaluating each pattern
+    check_deadline(ctx)?;
+
     match pattern {
         Pattern::Triple {
             subject,
@@ -258,6 +328,41 @@ fn evaluate_pattern(
                 }
                 result.extend(branch_results);
                 result_scores.extend(branch_scores);
+            }
+            Ok((result, result_scores))
+        }
+        Pattern::Bind { expression, variable } => {
+            // BIND(term AS ?var): resolve the term and add it as a binding
+            let mut result = Vec::new();
+            let mut result_scores = Vec::new();
+            for (i, row) in current.iter().enumerate() {
+                let value = resolve_term(expression, row, ctx.dict, ctx.prefixes)?;
+                if let Some(id) = value {
+                    let mut new_row = row.clone();
+                    new_row.insert(variable.clone(), id);
+                    result.push(new_row);
+                    result_scores.push(current_scores[i].clone());
+                } else {
+                    // If the expression can't be resolved, keep the row without the binding
+                    result.push(row.clone());
+                    result_scores.push(current_scores[i].clone());
+                }
+            }
+            Ok((result, result_scores))
+        }
+        Pattern::Values { variable, values } => {
+            // VALUES ?var { val1 val2 ... }: cross-join current rows with each value
+            let mut result = Vec::new();
+            let mut result_scores = Vec::new();
+            for (i, row) in current.iter().enumerate() {
+                for value_term in values {
+                    if let Some(id) = resolve_term(value_term, row, ctx.dict, ctx.prefixes)? {
+                        let mut new_row = row.clone();
+                        new_row.insert(variable.clone(), id);
+                        result.push(new_row);
+                        result_scores.push(current_scores[i].clone());
+                    }
+                }
             }
             Ok((result, result_scores))
         }
@@ -902,7 +1007,280 @@ fn evaluate_filter(expr: &FilterExpr, row: &Bindings, ctx: &mut ExecutionContext
             }
             !results.is_empty()
         }
+        FilterExpr::And(left, right) => {
+            evaluate_filter(left, row, ctx) && evaluate_filter(right, row, ctx)
+        }
+        FilterExpr::Or(left, right) => {
+            evaluate_filter(left, row, ctx) || evaluate_filter(right, row, ctx)
+        }
+        FilterExpr::Not(inner) => !evaluate_filter(inner, row, ctx),
+        FilterExpr::GreaterThanOrEqual(left, right) => {
+            let l = filter_term_value(left, row);
+            let r = filter_term_value(right, row);
+            match (l, r) {
+                (Some(a), Some(b)) => a >= b,
+                _ => false,
+            }
+        }
+        FilterExpr::LessThanOrEqual(left, right) => {
+            let l = filter_term_value(left, row);
+            let r = filter_term_value(right, row);
+            match (l, r) {
+                (Some(a), Some(b)) => a <= b,
+                _ => false,
+            }
+        }
+        FilterExpr::Contains(haystack, needle) => {
+            string_filter_op(haystack, needle, row, ctx, |h, n| h.contains(n))
+        }
+        FilterExpr::StrStarts(haystack, prefix) => {
+            string_filter_op(haystack, prefix, row, ctx, |h, p| h.starts_with(p))
+        }
+        FilterExpr::StrEnds(haystack, suffix) => {
+            string_filter_op(haystack, suffix, row, ctx, |h, s| h.ends_with(s))
+        }
+        FilterExpr::Regex(term, pattern) => {
+            // Simple substring match (full regex would need a regex crate)
+            string_filter_op(term, pattern, row, ctx, |h, p| h.contains(p))
+        }
+        FilterExpr::LangEquals(var, lang) => {
+            if let Some(&id) = row.get(var) {
+                if let Some(term_str) = ctx.dict.resolve(id) {
+                    // Language-tagged literals look like: "value"@lang
+                    if let Some(at_pos) = term_str.rfind('@') {
+                        return &term_str[at_pos + 1..] == lang;
+                    }
+                }
+            }
+            false
+        }
+        FilterExpr::IsIri(var) => {
+            if let Some(&id) = row.get(var) {
+                if sutra_core::is_inline(id) {
+                    return false;
+                }
+                if let Some(term_str) = ctx.dict.resolve(id) {
+                    return !term_str.starts_with('"') && !term_str.starts_with("_:");
+                }
+            }
+            false
+        }
+        FilterExpr::LangMatches(var, lang) => {
+            if let Some(&id) = row.get(var) {
+                if let Some(term_str) = ctx.dict.resolve(id) {
+                    if let Some(at_pos) = term_str.rfind('@') {
+                        let term_lang = &term_str[at_pos + 1..];
+                        if lang == "*" {
+                            return !term_lang.is_empty();
+                        }
+                        return term_lang.eq_ignore_ascii_case(lang);
+                    }
+                }
+            }
+            false
+        }
+        FilterExpr::StrEquals(var, term) => {
+            let var_str = row.get(var).and_then(|&id| {
+                if let Some(s) = ctx.dict.resolve(id) {
+                    // Strip quotes and language tag
+                    if s.starts_with('"') {
+                        let end = s[1..].find('"').map(|p| p + 1).unwrap_or(s.len());
+                        Some(s[1..end].to_string())
+                    } else {
+                        Some(s.to_string())
+                    }
+                } else {
+                    None
+                }
+            });
+            let term_str = term_to_string(term, row, ctx);
+            var_str.is_some() && var_str == term_str
+        }
+        FilterExpr::IsLiteral(var) => {
+            if let Some(&id) = row.get(var) {
+                if sutra_core::is_inline(id) {
+                    return true; // inline integers/booleans are literals
+                }
+                if let Some(term_str) = ctx.dict.resolve(id) {
+                    return term_str.starts_with('"');
+                }
+            }
+            false
+        }
     }
+}
+
+/// Helper for string-based filter operations.
+fn string_filter_op(
+    left: &Term,
+    right: &Term,
+    row: &Bindings,
+    ctx: &ExecutionContext<'_>,
+    op: impl FnOnce(&str, &str) -> bool,
+) -> bool {
+    let left_str = term_to_string(left, row, ctx);
+    let right_str = term_to_string(right, row, ctx);
+    match (left_str, right_str) {
+        (Some(l), Some(r)) => op(&l, &r),
+        _ => false,
+    }
+}
+
+/// Resolve a term to its string value for string operations.
+fn term_to_string(term: &Term, row: &Bindings, ctx: &ExecutionContext<'_>) -> Option<String> {
+    match term {
+        Term::Variable(name) => {
+            let &id = row.get(name)?;
+            if let Some(n) = sutra_core::decode_inline_integer(id) {
+                return Some(n.to_string());
+            }
+            let resolved = ctx.dict.resolve(id)?;
+            // Strip quotes from literals
+            if resolved.starts_with('"') {
+                let end = resolved[1..].find('"').map(|p| p + 1).unwrap_or(resolved.len());
+                Some(resolved[1..end].to_string())
+            } else {
+                Some(resolved.to_string())
+            }
+        }
+        Term::Literal(s) => Some(s.clone()),
+        Term::Iri(s) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+/// Apply GROUP BY and aggregate functions.
+fn apply_group_by_and_aggregates(
+    results: &[Bindings],
+    group_by: &[String],
+    aggregates: &[Aggregate],
+    ctx: &ExecutionContext<'_>,
+) -> Result<(Vec<Bindings>, Vec<HashMap<String, f32>>)> {
+    // Group rows by the GROUP BY variables
+    let mut groups: HashMap<Vec<Option<TermId>>, Vec<&Bindings>> = HashMap::new();
+
+    for row in results {
+        let key: Vec<Option<TermId>> = group_by.iter().map(|v| row.get(v).copied()).collect();
+        groups.entry(key).or_default().push(row);
+    }
+
+    // If no GROUP BY but there are aggregates, treat all rows as one group
+    if group_by.is_empty() && !aggregates.is_empty() {
+        let all_rows: Vec<&Bindings> = results.iter().collect();
+        let mut result_row = HashMap::new();
+
+        for agg in aggregates {
+            let value = compute_aggregate(agg, &all_rows, ctx);
+            if let Some(id) = sutra_core::inline_integer(value) {
+                result_row.insert(agg.alias.clone(), id);
+            }
+        }
+
+        return Ok((vec![result_row], vec![HashMap::new()]));
+    }
+
+    let mut output_rows = Vec::new();
+    let mut output_scores = Vec::new();
+
+    for (key, group_rows) in &groups {
+        let mut row = HashMap::new();
+
+        // Set GROUP BY variable values from the key
+        for (i, var) in group_by.iter().enumerate() {
+            if let Some(id) = key[i] {
+                row.insert(var.clone(), id);
+            }
+        }
+
+        // Compute aggregates
+        for agg in aggregates {
+            let value = compute_aggregate(agg, group_rows, ctx);
+            if let Some(id) = sutra_core::inline_integer(value) {
+                row.insert(agg.alias.clone(), id);
+            }
+        }
+
+        output_rows.push(row);
+        output_scores.push(HashMap::new());
+    }
+
+    Ok((output_rows, output_scores))
+}
+
+fn compute_aggregate(agg: &Aggregate, rows: &[&Bindings], _ctx: &ExecutionContext<'_>) -> i64 {
+    match agg.function {
+        AggregateFunction::Count => {
+            if agg.distinct {
+                let mut seen = std::collections::HashSet::new();
+                for row in rows {
+                    let val = match &agg.argument {
+                        AggregateArg::Star => Some(format!("{:?}", row)),
+                        AggregateArg::Variable(v) => row.get(v).map(|id| id.to_string()),
+                    };
+                    if let Some(v) = val {
+                        seen.insert(v);
+                    }
+                }
+                seen.len() as i64
+            } else {
+                match &agg.argument {
+                    AggregateArg::Star => rows.len() as i64,
+                    AggregateArg::Variable(v) => rows.iter().filter(|r| r.contains_key(v)).count() as i64,
+                }
+            }
+        }
+        AggregateFunction::Sum | AggregateFunction::Avg => {
+            let values: Vec<i64> = match &agg.argument {
+                AggregateArg::Variable(v) => rows
+                    .iter()
+                    .filter_map(|r| r.get(v))
+                    .filter_map(|&id| sutra_core::decode_inline_integer(id))
+                    .collect(),
+                AggregateArg::Star => vec![],
+            };
+            if values.is_empty() {
+                return 0;
+            }
+            let sum: i64 = values.iter().sum();
+            if agg.function == AggregateFunction::Avg {
+                sum / values.len() as i64
+            } else {
+                sum
+            }
+        }
+        AggregateFunction::Min => {
+            match &agg.argument {
+                AggregateArg::Variable(v) => rows
+                    .iter()
+                    .filter_map(|r| r.get(v))
+                    .filter_map(|&id| sutra_core::decode_inline_integer(id))
+                    .min()
+                    .unwrap_or(0),
+                AggregateArg::Star => 0,
+            }
+        }
+        AggregateFunction::Max => {
+            match &agg.argument {
+                AggregateArg::Variable(v) => rows
+                    .iter()
+                    .filter_map(|r| r.get(v))
+                    .filter_map(|&id| sutra_core::decode_inline_integer(id))
+                    .max()
+                    .unwrap_or(0),
+                AggregateArg::Star => 0,
+            }
+        }
+    }
+}
+
+/// Check if the query has timed out.
+fn check_deadline(ctx: &ExecutionContext<'_>) -> Result<()> {
+    if let Some(deadline) = ctx.deadline {
+        if Instant::now() > deadline {
+            return Err(SparqlError::Timeout);
+        }
+    }
+    Ok(())
 }
 
 fn is_concrete(term: &Term) -> bool {
