@@ -64,16 +64,16 @@ sutra:declareVectorPredicate :hasEmbedding ;
 
 All triples are stored across six covering indexes to ensure any SPARQL access pattern hits an index rather than scanning. For RDF-star quoted triples, the quoted triple is assigned a deterministic content-addressed ID and treated as a node internally.
 
-| Index | Purpose |
-|---|---|
-| SPO | Subject → Predicate → Object (primary store) |
-| POS | Predicate → Object → Subject (range queries on predicates) |
-| OSP | Object → Subject → Predicate (reverse traversal) |
-| SP | Subject → Predicate (star-shaped queries) |
-| PO | Predicate → Object (type lookups, range scans) |
-| VECTOR(p) | One HNSW index per vector predicate (ANN queries) |
+SutraDB maintains **four types of indexes**. The first three are covering indexes over interned u64 IDs that ensure any triple access pattern hits an index rather than scanning. The fourth is what makes SutraDB unique — a native vector index that the query planner treats as a first-class access path alongside the triple indexes.
 
-The underlying storage for SPO/POS/OSP is an LSM-tree, chosen over B-tree for its write amplification characteristics on bulk ingestion workloads typical in graph construction. (See open questions: build vs. wrap.)
+| Index | Key Order | Purpose |
+|---|---|---|
+| **SPO** | Subject → Predicate → Object | Primary store. Subject-first traversal, star-shaped queries (prefix scan on S gives all of a subject's triples, prefix on S+P gives a specific predicate's values). |
+| **POS** | Predicate → Object → Subject | Predicate-first lookups: type queries (`?x rdf:type :Person`), predicate+object reverse lookup for vector resolution. |
+| **OSP** | Object → Subject → Predicate | Object-first reverse traversal: "what points to this entity?" |
+| **VECTOR(p)** | One HNSW graph per vector predicate | Approximate nearest neighbor search over vector embeddings. Keyed by the vector object's TermId. Returns ranked results that join back through POS for entity resolution. |
+
+All triple index keys are 24 bytes (3 × u64 in big-endian for correct sort order). Since they are sorted, prefix scans serve multiple access patterns — there is no need for separate SP or PO indexes because they are just prefix scans on SPO and POS respectively.
 
 ### 3.2 Node Identity
 

@@ -86,16 +86,16 @@ sutra:declareVectorPredicate :hasEmbedding ;
 ## Storage Engine
 
 ### Indexes
-Six indexes over integer-interned IRI IDs:
+Four index types over integer-interned IRI IDs:
 
 | Index | Purpose |
 |---|---|
-| SPO | Primary store, subject-first traversal |
-| POS | Predicate-first, range queries |
-| OSP | Object-first, reverse traversal |
-| SP | Star-shaped queries |
-| PO | Type lookups, range scans |
-| VECTOR(p) | One HNSW per vector predicate |
+| SPO | Subject → Predicate → Object (primary store, star-shaped queries via prefix scan) |
+| POS | Predicate → Object → Subject (type lookups, vector reverse resolution) |
+| OSP | Object → Subject → Predicate (reverse traversal) |
+| VECTOR(p) | One HNSW index per vector predicate (ANN search, keyed by vector object ID) |
+
+No separate SP or PO indexes needed — they are prefix scans on SPO and POS respectively.
 
 ### Implementation Notes
 - Underlying storage: LSM-tree (RocksDB or sled TBD — see open questions)
