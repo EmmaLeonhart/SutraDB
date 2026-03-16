@@ -65,7 +65,7 @@ The server is currently in-memory only. This is the #1 blocker.
 - [x] `sutra import` CLI command (`sutra import data.nt --data my.sdb`)
 - [x] `sutra export` CLI command (dump to Turtle/N-Triples)
 - [x] SPARQL Update (INSERT DATA, DELETE DATA)
-- [ ] Schema declaration via SPARQL (`sutra:declareVectorPredicate`)
+- [x] Schema declaration via SPARQL (INSERT DATA with sutra:dimensions auto-declares HNSW index)
 - [x] Streaming import (line-by-line for large files without loading all into memory)
 
 ## Priority 3: Query Performance — Stress Test Findings

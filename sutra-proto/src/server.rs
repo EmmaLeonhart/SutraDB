@@ -339,6 +339,30 @@ fn execute_insert_data(
             let p_id = resolve_term_to_id(predicate, &mut dict, &query.prefixes)?;
             let o_id = resolve_term_to_id(object, &mut dict, &query.prefixes)?;
 
+            // Check for schema declarations: sutra:declareVectorPredicate
+            let pred_str = dict.resolve(p_id).unwrap_or("").to_string();
+            if pred_str == "http://sutra.dev/dimensions"
+                || pred_str.contains("declareVectorPredicate")
+            {
+                // This is a vector schema triple — try to auto-declare
+                if let Some(dims) = sutra_core::decode_inline_integer(o_id) {
+                    let mut vectors = state
+                        .vectors
+                        .write()
+                        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+                    if !vectors.has_index(s_id) {
+                        let config = sutra_hnsw::VectorPredicateConfig {
+                            predicate_id: s_id,
+                            dimensions: dims as usize,
+                            m: 16,
+                            ef_construction: 200,
+                            metric: sutra_hnsw::DistanceMetric::Cosine,
+                        };
+                        let _ = vectors.declare(config);
+                    }
+                }
+            }
+
             if store
                 .insert(sutra_core::Triple::new(s_id, p_id, o_id))
                 .is_ok()
