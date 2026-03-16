@@ -3,7 +3,7 @@
 ## Remaining Items (33 of 176 total)
 
 ### Parser & Format Support
-- [ ] Turtle (.ttl) parser for bulk import (consider Oxigraph's oxttl crate)
+- [x] Turtle (.ttl) parser — handles @prefix, prefixed names, ;/, lists, lang tags, typed literals, blank nodes
 - [ ] RDF/XML parser (or use Oxigraph's oxrdfxml crate)
 - [ ] JSON-LD parser (or use Oxigraph's oxjsonld crate)
 - [ ] Arithmetic in FILTER expressions (+, -, *, /) — needs expression AST

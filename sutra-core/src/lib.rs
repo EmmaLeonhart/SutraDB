@@ -7,6 +7,7 @@ pub mod ntriples;
 pub mod persistent;
 pub mod store;
 pub mod triple;
+pub mod turtle;
 
 pub use config::{DatabaseConfig, HnswEdgeMode, RdfMode};
 pub use error::{CoreError, Result};
@@ -18,3 +19,4 @@ pub use ntriples::{parse_nquads_line, parse_ntriples_line};
 pub use persistent::PersistentStore;
 pub use store::TripleStore;
 pub use triple::Triple;
+pub use turtle::parse_turtle;
