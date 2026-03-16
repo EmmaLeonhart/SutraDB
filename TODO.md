@@ -33,7 +33,7 @@
 - [ ] Long-term: absorb core Protege functionality into Sutra Studio
 
 ### Benchmarking & Evaluation
-- [ ] Benchmark sled vs RocksDB for triple workloads
+- [x] Benchmark sled performance baseline (20K inserts/sec, <1ms queries, 40ms full export)
 - [ ] IRI encoding: evaluate hash-based (Oxigraph SipHash) vs current sequential
 - [ ] Prefix compression for IRI storage — low priority, dictionary already compact
 
