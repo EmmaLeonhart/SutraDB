@@ -207,6 +207,8 @@ pub enum FilterExpr {
     LangMatches(String, String),
     /// STR(?var) — cast to string for comparison
     StrEquals(String, Term),
+    /// DATATYPE(?var) = <xsd:integer> etc.
+    DatatypeEquals(String, String),
     /// ?var >= term
     GreaterThanOrEqual(Term, Term),
     /// ?var <= term
@@ -1040,6 +1042,46 @@ impl<'a> Parser<'a> {
                 return Ok(FilterExpr::LangMatches(var, lang));
             }
             return Err(self.error("LANG() only supports = comparison"));
+        }
+        if self.peek_keyword("DATATYPE") {
+            self.expect_keyword("DATATYPE")?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            let op = self.parse_comparison_op()?;
+            self.skip_whitespace();
+            let dt_term = self.parse_term()?;
+            let dt = match &dt_term {
+                Term::Iri(s) => s.clone(),
+                Term::PrefixedName { prefix, local } => format!("{}:{}", prefix, local),
+                _ => return Err(self.error("DATATYPE() comparison expects an IRI")),
+            };
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            if op == "=" {
+                return Ok(FilterExpr::DatatypeEquals(var, dt));
+            }
+            return Err(self.error("DATATYPE() only supports = comparison"));
+        }
+        if self.peek_keyword("STR")
+            && !self.peek_keyword("STRSTARTS")
+            && !self.peek_keyword("STRENDS")
+        {
+            self.expect_keyword("STR")?;
+            self.expect_char('(')?;
+            let var = self.parse_variable_name()?;
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            let op = self.parse_comparison_op()?;
+            self.skip_whitespace();
+            let val = self.parse_term()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            if op == "=" {
+                return Ok(FilterExpr::StrEquals(var, val));
+            }
+            return Err(self.error("STR() only supports = comparison"));
         }
         if self.peek_keyword("isIRI") || self.peek_keyword("isURI") {
             let kw = if self.peek_keyword("isIRI") {

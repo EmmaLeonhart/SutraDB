@@ -1248,6 +1248,24 @@ fn evaluate_filter(expr: &FilterExpr, row: &Bindings, ctx: &mut ExecutionContext
             let term_str = term_to_string(term, row, ctx);
             var_str.is_some() && var_str == term_str
         }
+        FilterExpr::DatatypeEquals(var, expected_dt) => {
+            if let Some(&id) = row.get(var) {
+                if sutra_core::decode_inline_integer(id).is_some() {
+                    return expected_dt.contains("integer");
+                }
+                if sutra_core::decode_inline_boolean(id).is_some() {
+                    return expected_dt.contains("boolean");
+                }
+                if let Some(term_str) = ctx.dict.resolve(id) {
+                    // Check for ^^<datatype>
+                    if let Some(dt_start) = term_str.find("^^<") {
+                        let dt = &term_str[dt_start + 3..term_str.len() - 1];
+                        return dt == expected_dt;
+                    }
+                }
+            }
+            false
+        }
         FilterExpr::IsLiteral(var) => {
             if let Some(&id) = row.get(var) {
                 if sutra_core::is_inline(id) {
