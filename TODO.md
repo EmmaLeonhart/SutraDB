@@ -240,7 +240,7 @@ drift, tombstone accumulation.
 - [ ] Query result streaming (don't collect all results before returning)
 - [ ] Prefix compression for IRI storage (common prefixes stored once) — low priority, dictionary encoding already compact
 - [x] HNSW compaction: HnswIndex::compact() rebuilds without tombstoned nodes
-- [ ] Write-ahead log (WAL) for crash recovery
+- [x] Crash recovery: sled LSM provides per-tree WAL; added verify_consistency() and repair() for cross-index recovery
 - [ ] Adaptive query execution: runtime reordering based on intermediate cardinalities
 
 ## Premium Tier (future — not a priority until monetization is real)

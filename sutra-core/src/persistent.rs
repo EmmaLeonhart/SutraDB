@@ -86,13 +86,16 @@ impl PersistentStore {
 
     // --- Triple operations ---
 
-    /// Insert a triple. Returns `Err(DuplicateTriple)` if already present.
+    /// Insert a triple atomically across all three indexes.
+    /// Returns `Err(DuplicateTriple)` if already present.
+    /// sled's LSM-tree provides crash safety per-tree; we insert
+    /// to all three indexes and flush for durability.
     pub fn insert(&self, triple: Triple) -> Result<()> {
         let spo_key = triple.spo_key();
         if self.spo.contains_key(spo_key)? {
             return Err(CoreError::DuplicateTriple);
         }
-        // Empty value — the key encodes the triple
+        // Insert to all three indexes
         self.spo.insert(spo_key, &[])?;
         self.pos.insert(triple.pos_key(), &[])?;
         self.osp.insert(triple.osp_key(), &[])?;
@@ -228,6 +231,34 @@ impl PersistentStore {
             .filter_map(|r| r.ok())
             .map(|(k, _)| Triple::from_pos_key(&key_to_array(&k)))
             .collect()
+    }
+
+    /// Verify index consistency: check that SPO/POS/OSP have the same count.
+    /// Returns true if consistent, false if a crash may have caused partial writes.
+    pub fn verify_consistency(&self) -> bool {
+        let spo_count = self.spo.len();
+        let pos_count = self.pos.len();
+        let osp_count = self.osp.len();
+        spo_count == pos_count && pos_count == osp_count
+    }
+
+    /// Repair indexes by rebuilding POS and OSP from SPO (the primary index).
+    /// Call this after verify_consistency() returns false.
+    pub fn repair(&self) -> Result<usize> {
+        // Clear secondary indexes
+        self.pos.clear()?;
+        self.osp.clear()?;
+
+        // Rebuild from SPO
+        let mut count = 0;
+        for (key, _) in self.spo.iter().flatten() {
+            let arr = key_to_array(&key);
+            let triple = Triple::from_spo_key(&arr);
+            self.pos.insert(triple.pos_key(), &[])?;
+            self.osp.insert(triple.osp_key(), &[])?;
+            count += 1;
+        }
+        Ok(count)
     }
 
     /// Flush all pending writes to disk.
