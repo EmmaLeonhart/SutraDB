@@ -216,6 +216,7 @@ class GraphCanvas extends StatefulWidget {
   final List<GraphEdge> edges;
   final GraphViewMode viewMode;
   final ValueChanged<String?>? onNodeSelected;
+  final ValueChanged<String>? onNodeDoubleTap;
 
   const GraphCanvas({
     super.key,
@@ -223,6 +224,7 @@ class GraphCanvas extends StatefulWidget {
     required this.edges,
     this.viewMode = GraphViewMode.all,
     this.onNodeSelected,
+    this.onNodeDoubleTap,
   });
 
   @override
@@ -388,6 +390,12 @@ class _GraphCanvasState extends State<GraphCanvas>
         final hit = _hitTest(d.localPosition);
         setState(() => _selectedNodeId = hit?.id);
         widget.onNodeSelected?.call(hit?.id);
+      },
+      onDoubleTapDown: (d) {
+        final hit = _hitTest(d.localPosition);
+        if (hit != null) {
+          widget.onNodeDoubleTap?.call(hit.id);
+        }
       },
       child: ClipRect(
         child: CustomPaint(

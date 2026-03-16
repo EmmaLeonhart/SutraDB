@@ -58,6 +58,30 @@ class _GraphScreenState extends State<GraphScreen> {
     }
   }
 
+  /// Expand a node: fetch its triples and add to the graph.
+  Future<void> _expandNode(String nodeId) async {
+    final conn = context.read<ConnectionProvider>();
+    if (!conn.connected) return;
+
+    try {
+      final triples = await conn.client.fetchTriplesForSubject(nodeId);
+      // Merge new triples into existing set
+      final existingKeys =
+          _triples.map((t) => '${t.subject}|${t.predicate}|${t.object}').toSet();
+      final newTriples = triples
+          .where((t) =>
+              !existingKeys.contains('${t.subject}|${t.predicate}|${t.object}'))
+          .toList();
+      if (newTriples.isNotEmpty) {
+        _triples.addAll(newTriples);
+        _buildGraph(_triples);
+        setState(() {});
+      }
+    } catch (e) {
+      // Silently fail on expand errors
+    }
+  }
+
   void _buildGraph(List<Triple> triples) {
     final nodeIds = <String>{};
     final nodes = <GraphNode>[];
@@ -86,16 +110,19 @@ class _GraphScreenState extends State<GraphScreen> {
       }
       degreeCounts[t.subject] = (degreeCounts[t.subject] ?? 0) + 1;
 
-      // Object node (only for IRI/blank node objects, not literals)
-      if (!t.object.startsWith('"') && !t.isVector) {
+      // Object node (skip vector literals)
+      if (!t.isVector) {
+        final NodeType objType = t.object.startsWith('"')
+            ? NodeType.literal
+            : t.object.startsWith('_:')
+                ? NodeType.blankNode
+                : NodeType.entity;
         if (!nodeIds.contains(t.object)) {
           nodeIds.add(t.object);
           nodes.add(GraphNode(
             id: t.object,
             label: Triple.shortName(t.object),
-            type: t.object.startsWith('_:')
-                ? NodeType.blankNode
-                : NodeType.entity,
+            type: objType,
           ));
         }
         degreeCounts[t.object] = (degreeCounts[t.object] ?? 0) + 1;
@@ -186,7 +213,7 @@ class _GraphScreenState extends State<GraphScreen> {
               // Limit selector
               DropdownButton<int>(
                 value: _limit,
-                items: [100, 250, 500, 1000, 2500]
+                items: [25, 50, 100, 250, 500]
                     .map((v) => DropdownMenuItem(
                         value: v,
                         child: Text('$v triples',
@@ -245,6 +272,7 @@ class _GraphScreenState extends State<GraphScreen> {
                             viewMode: _viewMode,
                             onNodeSelected: (id) =>
                                 setState(() => _selectedNodeId = id),
+                            onNodeDoubleTap: (id) => _expandNode(id),
                           ),
                         ),
                         // Detail panel

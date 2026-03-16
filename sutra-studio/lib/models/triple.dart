@@ -48,13 +48,46 @@ class Triple {
     return '<$iri>';
   }
 
-  /// Short display name for an IRI (last segment after # or /).
+  /// Known prefix abbreviations for compact display.
+  static const _prefixes = {
+    'http://www.w3.org/1999/02/22-rdf-syntax-ns#': 'rdf:',
+    'http://www.w3.org/2000/01/rdf-schema#': 'rdfs:',
+    'http://www.w3.org/2002/07/owl#': 'owl:',
+    'http://www.w3.org/2001/XMLSchema#': 'xsd:',
+    'http://www.wikidata.org/entity/': 'wd:',
+    'http://www.wikidata.org/prop/direct/': 'wdt:',
+    'http://schema.org/': 'schema:',
+    'http://sutra.dev/': 'sutra:',
+    'http://www.w3.org/2004/02/skos/core#': 'skos:',
+    'http://xmlns.com/foaf/0.1/': 'foaf:',
+    'http://purl.org/dc/terms/': 'dcterms:',
+    'http://www.w3.org/2003/01/geo/wgs84_pos#': 'geo:',
+  };
+
+  /// Short display name for an IRI using known prefix abbreviations.
   static String shortName(String iri) {
     final cleaned = iri.replaceAll(RegExp(r'[<>]'), '');
+    // Strip language tag from literals for display
+    if (cleaned.startsWith('"')) {
+      final atIdx = cleaned.lastIndexOf('"@');
+      if (atIdx > 0) return cleaned.substring(1, atIdx);
+      final end = cleaned.indexOf('"', 1);
+      if (end > 0) return cleaned.substring(1, end);
+      return cleaned;
+    }
+    // Try known prefixes first
+    for (final entry in _prefixes.entries) {
+      if (cleaned.startsWith(entry.key)) {
+        return '${entry.value}${cleaned.substring(entry.key.length)}';
+      }
+    }
+    // Fallback: last segment after # or /
     final hashIdx = cleaned.lastIndexOf('#');
     if (hashIdx >= 0) return cleaned.substring(hashIdx + 1);
     final slashIdx = cleaned.lastIndexOf('/');
-    if (slashIdx >= 0) return cleaned.substring(slashIdx + 1);
+    if (slashIdx >= 0 && slashIdx < cleaned.length - 1) {
+      return cleaned.substring(slashIdx + 1);
+    }
     return cleaned;
   }
 
