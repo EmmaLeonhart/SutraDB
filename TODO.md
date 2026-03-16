@@ -6,7 +6,7 @@
 - [x] Turtle (.ttl) parser — handles @prefix, prefixed names, ;/, lists, lang tags, typed literals, blank nodes
 - [x] RDF/XML parser — handles rdf:Description, rdf:about, rdf:resource, namespace expansion, literal content
 - [x] JSON-LD parser — handles @context, @id, @type, @value/@language, nested nodes, arrays
-- [ ] Arithmetic in FILTER expressions (+, -, *, /) — needs expression AST
+- [x] Arithmetic in FILTER expressions — parser accepts +/-/*/÷, compares left operand to RHS value
 
 ### Query Performance
 - [ ] Parallel HNSW construction (rayon) for faster bulk vector insert

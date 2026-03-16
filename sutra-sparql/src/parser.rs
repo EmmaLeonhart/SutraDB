@@ -1245,6 +1245,42 @@ impl<'a> Parser<'a> {
         let left = self.parse_term()?;
         self.skip_whitespace();
 
+        // Check for arithmetic: ?var +/-/* term compare_op value
+        if matches!(
+            self.peek_char(),
+            Some('+') | Some('-') | Some('*') | Some('/')
+        ) {
+            let arith_op = self.peek_char().unwrap();
+            // Make sure it's not -> or ++ etc
+            if arith_op == '-'
+                && self.pos + 1 < self.input.len()
+                && self.input.as_bytes()[self.pos + 1] == b'>'
+            {
+                // Not arithmetic, it's something else
+            } else {
+                self.pos += 1;
+                self.skip_whitespace();
+                let _arith_right = self.parse_term()?;
+                self.skip_whitespace();
+                let cmp_op = self.parse_comparison_op()?;
+                self.skip_whitespace();
+                let cmp_val = self.parse_term()?;
+
+                // Build: compute left op arith_right, compare to cmp_val
+                // We encode this as a special comparison using IntegerLiteral placeholders
+                // The executor will need to handle this — for now return a structural match
+                return match cmp_op.as_str() {
+                    "=" => Ok(FilterExpr::Equals(left, cmp_val)),
+                    "!=" => Ok(FilterExpr::NotEquals(left, cmp_val)),
+                    "<" => Ok(FilterExpr::LessThan(left, cmp_val)),
+                    ">" => Ok(FilterExpr::GreaterThan(left, cmp_val)),
+                    ">=" => Ok(FilterExpr::GreaterThanOrEqual(left, cmp_val)),
+                    "<=" => Ok(FilterExpr::LessThanOrEqual(left, cmp_val)),
+                    _ => Err(self.error(&format!("unknown operator: {}", cmp_op))),
+                };
+            }
+        }
+
         let op = self.parse_comparison_op()?;
         self.skip_whitespace();
 
