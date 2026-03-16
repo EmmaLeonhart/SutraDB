@@ -18,7 +18,6 @@ serde_json.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 
-# Uncomment when bench files exist:
-# [[bench]]
-# name = "triple_insert"
-# harness = false
+[[bench]]
+name = "triple_insert"
+harness = false

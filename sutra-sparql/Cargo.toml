@@ -16,7 +16,6 @@ sutra-hnsw.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 
-# Uncomment when bench files exist:
-# [[bench]]
-# name = "sparql_query"
-# harness = false
+[[bench]]
+name = "sparql_query"
+harness = false
