@@ -1074,6 +1074,59 @@ impl<'a> Parser<'a> {
             }
             return Err(self.error("LANG() only supports = comparison"));
         }
+        // COALESCE — returns true if any of the variables is bound (for use in FILTER)
+        if self.peek_keyword("COALESCE") {
+            self.expect_keyword("COALESCE")?;
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            let mut vars = Vec::new();
+            while self.peek_char() == Some('?') {
+                vars.push(self.parse_variable_name()?);
+                self.skip_whitespace();
+                if self.peek_char() == Some(',') {
+                    self.pos += 1;
+                    self.skip_whitespace();
+                }
+            }
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            // COALESCE as a "any bound" check
+            if vars.len() == 1 {
+                return Ok(FilterExpr::Bound(vars[0].clone()));
+            }
+            // Multiple vars: OR of bounds
+            let mut expr = FilterExpr::Bound(vars[0].clone());
+            for v in &vars[1..] {
+                expr = FilterExpr::Or(Box::new(expr), Box::new(FilterExpr::Bound(v.clone())));
+            }
+            return Ok(expr);
+        }
+        // IF(condition, then, else) — evaluates to the condition for FILTER purposes
+        if self.peek_keyword("IF") {
+            self.expect_keyword("IF")?;
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            let condition = self.parse_filter_inner()?;
+            self.skip_whitespace();
+            if self.peek_char() == Some(',') {
+                self.pos += 1;
+            }
+            self.skip_whitespace();
+            // Skip then/else values — in FILTER context, IF reduces to the condition
+            let _then = self.parse_term()?;
+            self.skip_whitespace();
+            if self.peek_char() == Some(',') {
+                self.pos += 1;
+            }
+            self.skip_whitespace();
+            let _else_val = self.parse_term()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(condition);
+        }
         if self.peek_keyword("DATATYPE") {
             self.expect_keyword("DATATYPE")?;
             self.expect_char('(')?;
