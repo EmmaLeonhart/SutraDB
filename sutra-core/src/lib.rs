@@ -5,6 +5,7 @@ pub mod error;
 pub mod id;
 pub mod ntriples;
 pub mod persistent;
+pub mod rdfxml;
 pub mod store;
 pub mod triple;
 pub mod turtle;
@@ -17,6 +18,7 @@ pub use id::{
 };
 pub use ntriples::{parse_nquads_line, parse_ntriples_line};
 pub use persistent::PersistentStore;
+pub use rdfxml::parse_rdfxml;
 pub use store::TripleStore;
 pub use triple::Triple;
 pub use turtle::parse_turtle;
