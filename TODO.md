@@ -74,7 +74,7 @@ The 1M-vector stress test revealed specific bottlenecks:
 
 - [x] HNSW search took 281s at 1M scale — needs SIMD distance functions (AVX2/SSE/NEON) ✅ Implemented AVX2+FMA, SSE, scalar fallback
 - [ ] 3-hop joins timeout at 500K triples — nested loop join is O(n^3)
-  - [ ] Cardinality estimation: count triples per subject/predicate/object for cost-based planning
+  - [x] Cardinality estimation: TripleStore::estimate_cardinality(s, p, o)
   - [ ] Hash joins for large intermediate result sets (instead of nested loop)
   - [ ] Index selection: use the most selective index first based on cardinality stats
 - [x] Wormhole queries — planner already pushes vector results first when subject is unbound, binding propagates to subsequent graph joins
