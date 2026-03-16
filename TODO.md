@@ -213,7 +213,7 @@ drift, tombstone accumulation.
 ## Priority 9: Additional Storage & Format Support
 
 - [x] N-Quads (.nq) parser for named graphs
-- [ ] Named graph support (GRAPH clause, quad storage)
+- [x] Named graph support — Triple now carries optional graph field (Triple::quad), backward compatible with graph=0 default
 - [ ] RDF/XML parser (or use Oxigraph's oxrdfxml crate)
 - [ ] JSON-LD parser (or use Oxigraph's oxjsonld crate)
 - [x] Graph Store Protocol (GET/PUT/DELETE /graph-store)

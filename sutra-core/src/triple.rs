@@ -5,7 +5,7 @@
 
 use crate::id::TermId;
 
-/// A single RDF triple, stored as three interned IDs.
+/// A single RDF triple (or quad when graph is set), stored as interned IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Triple {
     /// Subject: an IRI, blank node, or quoted triple ID.
@@ -14,15 +14,28 @@ pub struct Triple {
     pub predicate: TermId,
     /// Object: an IRI, blank node, literal, or quoted triple ID.
     pub object: TermId,
+    /// Optional named graph (0 = default graph).
+    pub graph: TermId,
 }
 
 impl Triple {
-    /// Create a new triple from three term IDs.
+    /// Create a new triple from three term IDs (default graph).
     pub fn new(subject: TermId, predicate: TermId, object: TermId) -> Self {
         Self {
             subject,
             predicate,
             object,
+            graph: 0,
+        }
+    }
+
+    /// Create a quad (triple in a named graph).
+    pub fn quad(subject: TermId, predicate: TermId, object: TermId, graph: TermId) -> Self {
+        Self {
+            subject,
+            predicate,
+            object,
+            graph,
         }
     }
 
@@ -59,6 +72,7 @@ impl Triple {
             subject: u64::from_be_bytes(key[0..8].try_into().unwrap()),
             predicate: u64::from_be_bytes(key[8..16].try_into().unwrap()),
             object: u64::from_be_bytes(key[16..24].try_into().unwrap()),
+            graph: 0,
         }
     }
 
@@ -68,6 +82,7 @@ impl Triple {
             subject: u64::from_be_bytes(key[16..24].try_into().unwrap()),
             predicate: u64::from_be_bytes(key[0..8].try_into().unwrap()),
             object: u64::from_be_bytes(key[8..16].try_into().unwrap()),
+            graph: 0,
         }
     }
 
@@ -77,6 +92,7 @@ impl Triple {
             subject: u64::from_be_bytes(key[8..16].try_into().unwrap()),
             predicate: u64::from_be_bytes(key[16..24].try_into().unwrap()),
             object: u64::from_be_bytes(key[0..8].try_into().unwrap()),
+            graph: 0,
         }
     }
 }
