@@ -216,7 +216,7 @@ drift, tombstone accumulation.
 - [ ] Named graph support (GRAPH clause, quad storage)
 - [ ] RDF/XML parser (or use Oxigraph's oxrdfxml crate)
 - [ ] JSON-LD parser (or use Oxigraph's oxjsonld crate)
-- [ ] Graph Store Protocol (PUT/POST/DELETE graphs via HTTP)
+- [x] Graph Store Protocol (GET/PUT/DELETE /graph-store)
 - [ ] Benchmark sled vs RocksDB for triple workloads
 - [ ] IRI encoding: evaluate hash-based (Oxigraph SipHash) vs current sequential interning
 

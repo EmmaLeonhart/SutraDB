@@ -59,6 +59,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/vectors/declare", post(declare_vector_predicate))
         .route("/vectors", post(insert_vector))
         .route("/health", get(health))
+        .route("/graph-store", get(gsp_get).put(gsp_put).delete(gsp_delete))
         .route("/vectors/health", get(vectors_health))
         .route("/.well-known/void", get(service_description))
         .route("/service-description", get(service_description))
@@ -1020,6 +1021,45 @@ async fn insert_vector(
         status: "ok".to_string(),
         triple_id: object_id,
     }))
+}
+
+// ─── Graph Store Protocol ────────────────────────────────────────────────────
+
+/// GET /graph-store — export graph as Turtle (same as GET /graph).
+async fn gsp_get(
+    State(state): State<Arc<AppState>>,
+    AxumQuery(params): AxumQuery<GraphQueryParams>,
+) -> Result<impl IntoResponse, ProtoError> {
+    export_graph(State(state), AxumQuery(params)).await
+}
+
+/// PUT /graph-store — replace all triples with new data.
+async fn gsp_put(
+    State(state): State<Arc<AppState>>,
+    body: String,
+) -> Result<impl IntoResponse, ProtoError> {
+    // Clear existing triples
+    {
+        let mut store = state
+            .store
+            .write()
+            .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+        *store = sutra_core::TripleStore::new();
+    }
+    // Insert new triples
+    let resp = insert_triples(State(state), body).await?;
+    Ok(resp.into_response())
+}
+
+/// DELETE /graph-store — delete all triples.
+async fn gsp_delete(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, ProtoError> {
+    let mut store = state
+        .store
+        .write()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let count = store.len();
+    *store = sutra_core::TripleStore::new();
+    Ok((StatusCode::OK, format!("Deleted {} triples", count)))
 }
 
 /// GET /health
