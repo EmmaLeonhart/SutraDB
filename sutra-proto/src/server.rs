@@ -136,11 +136,12 @@ async fn sparql_get(
     execute_sparql(&params.query, &state)
 }
 
-/// POST /sparql with query in body.
+/// POST /sparql with query in body. Supports content negotiation via Accept header.
 async fn sparql_post(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     body: String,
-) -> Result<Json<SparqlResults>, ProtoError> {
+) -> Result<axum::response::Response, ProtoError> {
     let query = if let Some(encoded) = body.strip_prefix("query=") {
         urlencoding::decode(encoded)
             .map_err(|e| ProtoError::BadRequest(format!("invalid encoding: {}", e)))?
@@ -148,7 +149,31 @@ async fn sparql_post(
     } else {
         body
     };
-    execute_sparql(&query, &state)
+
+    // Content negotiation via Accept header
+    let accept = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/sparql-results+json");
+
+    if accept.contains("text/csv") {
+        let resp = sparql_delimited(&query, &state, ",", "text/csv; charset=utf-8")?;
+        Ok(resp.into_response())
+    } else if accept.contains("text/tab-separated") || accept.contains("text/tsv") {
+        let resp = sparql_delimited(
+            &query,
+            &state,
+            "\t",
+            "text/tab-separated-values; charset=utf-8",
+        )?;
+        Ok(resp.into_response())
+    } else if accept.contains("application/sparql-results+xml") || accept.contains("text/xml") {
+        let resp = sparql_xml(&query, &state)?;
+        Ok(resp.into_response())
+    } else {
+        let resp = execute_sparql(&query, &state)?;
+        Ok(resp.into_response())
+    }
 }
 
 // ─── SPARQL CSV/TSV ─────────────────────────────────────────────────────────
@@ -302,8 +327,7 @@ fn sparql_xml(query_str: &str, state: &AppState) -> Result<impl IntoResponse, Pr
                     .replace('&', "&amp;")
                     .replace('<', "&lt;")
                     .replace('>', "&gt;");
-                if sutra_core::is_inline(id)
-                    || dict.resolve(id).is_some_and(|s| s.starts_with('"'))
+                if sutra_core::is_inline(id) || dict.resolve(id).is_some_and(|s| s.starts_with('"'))
                 {
                     xml.push_str(&format!(
                         "      <binding name=\"{}\"><literal>{}</literal></binding>\n",
