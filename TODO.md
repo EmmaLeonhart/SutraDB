@@ -5,7 +5,7 @@
 ### Parser & Format Support
 - [x] Turtle (.ttl) parser — handles @prefix, prefixed names, ;/, lists, lang tags, typed literals, blank nodes
 - [x] RDF/XML parser — handles rdf:Description, rdf:about, rdf:resource, namespace expansion, literal content
-- [ ] JSON-LD parser (or use Oxigraph's oxjsonld crate)
+- [x] JSON-LD parser — handles @context, @id, @type, @value/@language, nested nodes, arrays
 - [ ] Arithmetic in FILTER expressions (+, -, *, /) — needs expression AST
 
 ### Query Performance

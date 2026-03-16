@@ -3,6 +3,7 @@
 pub mod config;
 pub mod error;
 pub mod id;
+pub mod jsonld;
 pub mod ntriples;
 pub mod persistent;
 pub mod rdfxml;
@@ -16,6 +17,7 @@ pub use id::{
     decode_inline_boolean, decode_inline_integer, inline_boolean, inline_integer, inline_type,
     is_inline, quoted_triple_id, InlineType, TermDictionary, TermId, INVALID_ID,
 };
+pub use jsonld::parse_jsonld;
 pub use ntriples::{parse_nquads_line, parse_ntriples_line};
 pub use persistent::PersistentStore;
 pub use rdfxml::parse_rdfxml;

@@ -5,6 +5,7 @@
 //! For full RDF/XML compliance, use Oxigraph's oxrdfxml crate.
 
 /// Parse RDF/XML text into a list of (subject, predicate, object) string triples.
+#[allow(clippy::manual_pattern_char_comparison)]
 pub fn parse_rdfxml(input: &str) -> Vec<(String, String, String)> {
     let mut triples = Vec::new();
     let mut base_uri = String::new();
@@ -97,7 +98,7 @@ pub fn parse_rdfxml(input: &str) -> Vec<(String, String, String)> {
             {
                 prop_pos += 1;
                 let tag_end = body[prop_pos..]
-                    .find(|c: char| c == '>' || c == ' ' || c == '/')
+                    .find(|c: char| matches!(c, '>' | ' ' | '/'))
                     .unwrap_or(0)
                     + prop_pos;
                 let tag_name = &body[prop_pos..tag_end];
