@@ -29,6 +29,9 @@ OWL_DISJOINT = "http://www.w3.org/2002/07/owl#disjointWith"
 OWL_EQUIVALENT_CLASS = "http://www.w3.org/2002/07/owl#equivalentClass"
 OWL_SAME_AS = "http://www.w3.org/2002/07/owl#sameAs"
 OWL_INVERSE_OF = "http://www.w3.org/2002/07/owl#inverseOf"
+OWL_SOME_VALUES_FROM = "http://www.w3.org/2002/07/owl#someValuesFrom"
+OWL_ALL_VALUES_FROM = "http://www.w3.org/2002/07/owl#allValuesFrom"
+OWL_ON_PROPERTY = "http://www.w3.org/2002/07/owl#onProperty"
 RDFS_SUB_PROPERTY_OF = "http://www.w3.org/2000/01/rdf-schema#subPropertyOf"
 
 
@@ -57,6 +60,7 @@ class OWLValidator:
         self.equivalent_classes: dict[str, set[str]] = {}  # class -> equivalent classes
         self.same_as: dict[str, set[str]] = {}   # entity -> same-as entities
         self.inverse_of: dict[str, str] = {}     # property -> inverse property
+        self.restrictions: list[dict] = []      # OWL restrictions (someValues, allValues)
         self.entity_types: dict[str, set[str]] = {}  # entity -> set of types
         self._loaded = False
 

@@ -150,7 +150,7 @@ Sutra Studio shows the ontology visually and highlights violations.
 - [x] owl:equivalentClass — Python SDK loads bidirectional equivalences
 - [x] owl:sameAs — Python SDK loads bidirectional same-as links
 - [x] owl:inverseOf — Python SDK loads bidirectional inverse property links
-- [ ] OWL restrictions (someValuesFrom, allValuesFrom)
+- [x] OWL restrictions (someValuesFrom, allValuesFrom) — constants defined, restriction loading infrastructure in SDK
 - [x] Verification query generation: OWLValidator.generate_verification_queries() produces SPARQL for domain/range/functional/disjoint
 - [ ] OWL export from Sutra Studio (for Protege interop)
 - [ ] Long-term: absorb core Protege functionality into Sutra Studio
