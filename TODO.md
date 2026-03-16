@@ -109,7 +109,7 @@ SDKs exist but need real integration testing, polish, and client-side OWL valida
 
 The database accepts all triples unconditionally. OWL validation is the SDK's job.
 
-- [ ] Integration tests for each SDK against a running SutraDB instance
+- [x] Integration tests for each SDK against a running SutraDB instance (integration.yml)
 - [x] Client-side OWL validation layer (Python SDK done, others TODO):
   - [ ] Load OWL ontology triples from the database on connect
   - [ ] Validate inserts against rdfs:subClassOf, rdfs:domain, rdfs:range, owl:Restriction
@@ -122,7 +122,7 @@ The database accepts all triples unconditionally. OWL validation is the SDK's jo
 - [ ] Java SDK: publish to Maven Central
 - [ ] C# SDK: publish to NuGet
 - [ ] Go SDK: tag for Go modules
-- [ ] CI: start SutraDB as a service in CI, run SDK integration tests against it
+- [x] CI: start SutraDB as a service in CI, run SDK integration tests against it
 
 ## Priority 6: Distribution & Ecosystem
 
