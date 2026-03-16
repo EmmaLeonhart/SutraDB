@@ -88,7 +88,7 @@ The 1M-vector stress test revealed specific bottlenecks:
 - [x] HAVING clause
 - [x] Property paths (`+`, `*`, `?`, `/`) for multi-hop traversal
 - [x] Subqueries (nested SELECT)
-- [ ] RDF-star quoted triple patterns in SPARQL (`<< ?s ?p ?o >>` syntax)
+- [x] RDF-star quoted triple patterns in SPARQL (`<< ?s ?p ?o >>` syntax)
 - [x] CONSTRUCT queries (return triples instead of bindings)
 - [x] ASK queries (boolean existence check)
 - [x] DESCRIBE queries
