@@ -22,6 +22,9 @@ pub struct TripleStore {
     pos: BTreeSet<[u8; 24]>,
     /// Object → Subject → Predicate index.
     osp: BTreeSet<[u8; 24]>,
+    /// Materialized adjacency list: subject → list of (predicate, object) pairs.
+    /// Provides O(1) lookup for star-shaped queries (all edges from a node).
+    adjacency: std::collections::HashMap<TermId, Vec<(TermId, TermId)>>,
     /// Total number of triples stored.
     count: usize,
 }
@@ -33,6 +36,7 @@ impl TripleStore {
             spo: BTreeSet::new(),
             pos: BTreeSet::new(),
             osp: BTreeSet::new(),
+            adjacency: std::collections::HashMap::new(),
             count: 0,
         }
     }
@@ -45,6 +49,10 @@ impl TripleStore {
         }
         self.pos.insert(triple.pos_key());
         self.osp.insert(triple.osp_key());
+        self.adjacency
+            .entry(triple.subject)
+            .or_default()
+            .push((triple.predicate, triple.object));
         self.count += 1;
         Ok(())
     }
@@ -55,6 +63,9 @@ impl TripleStore {
         if removed {
             self.pos.remove(&triple.pos_key());
             self.osp.remove(&triple.osp_key());
+            if let Some(adj) = self.adjacency.get_mut(&triple.subject) {
+                adj.retain(|&(p, o)| p != triple.predicate || o != triple.object);
+            }
             self.count -= 1;
         }
         removed
@@ -138,6 +149,15 @@ impl TripleStore {
         hi[16..24].fill(0xFF);
 
         self.pos.range(lo..=hi).map(Triple::from_pos_key).collect()
+    }
+
+    /// Fast adjacency lookup: get all (predicate, object) pairs for a subject.
+    /// O(1) HashMap lookup instead of BTreeSet range scan.
+    pub fn adjacency(&self, subject: TermId) -> &[(TermId, TermId)] {
+        self.adjacency
+            .get(&subject)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Iterate all triples in SPO order.

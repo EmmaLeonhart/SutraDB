@@ -10,7 +10,7 @@
 
 ### Query Performance
 - [x] Parallel HNSW construction (rayon) — bulk_insert() preprocesses vectors in parallel
-- [ ] Materialized adjacency lists (Neo4j-style node→edge lists)
+- [x] Materialized adjacency lists — HashMap<subject, Vec<(pred, obj)>> maintained on insert/remove, O(1) lookup via adjacency()
 - [ ] Query result streaming (don't collect all results before returning)
 - [x] Adaptive query execution: hash join auto-triggers at >100 rows; planner + cardinality estimation handle most cases statically
 
