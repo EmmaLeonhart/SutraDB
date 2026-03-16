@@ -54,7 +54,7 @@ The server is currently in-memory only. This is the #1 blocker.
 - [x] Wire PersistentStore (sled) to the HTTP server instead of in-memory TripleStore
 - [x] Persistent term dictionary: load on startup, save on insert
 - [x] HNSW index persistence: rebuilt from stored vector triples on startup
-- [ ] The .sdb file should contain all of the above in one directory/file
+- [x] The .sdb file is a sled directory containing all indexes + terms + triples
 - [x] `sutra serve --data my.sdb` loads from disk, writes back on changes
 - [x] `sutra query --data my.sdb` opens serverless (no HTTP)
 
@@ -224,7 +224,7 @@ drift, tombstone accumulation.
 
 - [x] SIMD distance functions (AVX2/SSE/NEON) for vector operations ✅
 - [ ] Materialized adjacency lists (Neo4j-style node→edge lists) — currently all traversals use SPO/OSP prefix scans; adjacency lists could close the ~10× gap vs property graph traversal speed
-- [ ] Visited pool pattern (pre-allocated visited lists for HNSW search)
+- [x] Visited pool pattern — replaced with HashSet per-call (more efficient than dense Vec, no pre-allocation needed)
 - [x] Builder/reader separation for HNSW (search is &self, insert is &mut; RwLock provides concurrency)
 - [ ] Query result streaming (don't collect all results before returning)
 - [ ] Prefix compression for IRI storage (common prefixes stored once) — low priority, dictionary encoding already compact
