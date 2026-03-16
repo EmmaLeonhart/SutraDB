@@ -1,0 +1,92 @@
+{
+  "timestamp": "2026-03-15T19:58:59",
+  "endpoint": "http://localhost:3030",
+  "storage_backend": "sled",
+  "tests": [
+    {
+      "test": "bulk_insert",
+      "count": 500,
+      "inserted": 500,
+      "elapsed_ms": 27.3,
+      "rate_per_sec": 18334
+    },
+    {
+      "test": "bulk_insert",
+      "count": 2000,
+      "inserted": 1500,
+      "elapsed_ms": 76.1,
+      "rate_per_sec": 19704
+    },
+    {
+      "test": "point_lookup",
+      "runs": 100,
+      "avg_ms": 0.65,
+      "p50_ms": 0.61,
+      "p99_ms": 1.25
+    },
+    {
+      "test": "range_scan_10",
+      "limit": 10,
+      "avg_ms": 0.65,
+      "rows": 10
+    },
+    {
+      "test": "range_scan_100",
+      "limit": 100,
+      "avg_ms": 0.93,
+      "rows": 100
+    },
+    {
+      "test": "range_scan_500",
+      "limit": 500,
+      "avg_ms": 2.9,
+      "rows": 500
+    },
+    {
+      "test": "range_scan_1000",
+      "limit": 1000,
+      "avg_ms": 4.68,
+      "rows": 1000
+    },
+    {
+      "test": "predicate_scan_rdfs:label",
+      "avg_ms": 0.9,
+      "rows": 100
+    },
+    {
+      "test": "predicate_scan_rdf:type",
+      "avg_ms": 0.52,
+      "rows": 0
+    },
+    {
+      "test": "predicate_scan_schema:description",
+      "avg_ms": 0.91,
+      "rows": 100
+    },
+    {
+      "test": "join_1-hop",
+      "avg_ms": 0.98,
+      "rows": 50
+    },
+    {
+      "test": "join_2-hop",
+      "avg_ms": 0.79,
+      "rows": 50
+    },
+    {
+      "test": "join_self-join",
+      "avg_ms": 0.58,
+      "rows": 50
+    },
+    {
+      "test": "export_turtle",
+      "avg_ms": 40.2,
+      "size_kb": 9035.2
+    },
+    {
+      "test": "export_ntriples",
+      "avg_ms": 37.2,
+      "size_kb": 10454.7
+    }
+  ]
+}
