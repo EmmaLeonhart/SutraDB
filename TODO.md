@@ -111,11 +111,11 @@ The database accepts all triples unconditionally. OWL validation is the SDK's jo
 
 - [x] Integration tests for each SDK against a running SutraDB instance (integration.yml)
 - [x] Client-side OWL validation layer (Python SDK done, others TODO):
-  - [ ] Load OWL ontology triples from the database on connect
-  - [ ] Validate inserts against rdfs:subClassOf, rdfs:domain, rdfs:range, owl:Restriction
-  - [ ] Throw exception on constraint violation *before* sending to database
-  - [ ] OWL validation enabled by default, disableable per-client
-  - [ ] Cache ontology locally, refresh on schema change
+  - [x] Load OWL ontology triples from the database on connect (Python SDK)
+  - [x] Validate inserts against rdfs:subClassOf, rdfs:domain, rdfs:range (Python SDK)
+  - [x] Throw exception on constraint violation *before* sending to database (Python SDK)
+  - [x] OWL validation enabled by default, disableable per-client (Python SDK)
+  - [x] Cache ontology locally, refresh on schema change (Python SDK: reload_owl())
 - [ ] Python SDK: publish to PyPI
 - [ ] TypeScript SDK: publish to npm
 - [ ] Rust SDK: publish to crates.io
@@ -128,10 +128,10 @@ The database accepts all triples unconditionally. OWL validation is the SDK's jo
 
 - [x] Dockerfile added (`docker build -t sutradb . && docker run -p 3030:3030 sutradb`)
 - [x] Agent-first installer CLI (`sutra install-agent`)
-  - [ ] Expose all config options as structured markdown prompts
-  - [ ] Agent reasons through options and outputs `<dbname>_sutra_notes.md` with decisions
-  - [ ] Serverless: notes stored alongside `.sdb` file
-  - [ ] Server: notes in server data directory, viewable via CLI or Sutra Studio
+  - [x] Expose all config options as structured markdown prompts
+  - [x] Agent reasons through options and outputs `<dbname>_sutra_notes.md` with decisions
+  - [x] Serverless: notes stored alongside `.sdb` file
+  - [x] Server: notes in server data directory, viewable via CLI or Sutra Studio
   - [ ] Agent can optionally install/launch Protege, Sutra Studio
 - [x] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
 - [x] Jupyter integration (%%sparql cell magic, pandas DataFrame display)
@@ -212,7 +212,7 @@ drift, tombstone accumulation.
 
 ## Priority 9: Additional Storage & Format Support
 
-- [ ] N-Quads (.nq) parser for named graphs
+- [x] N-Quads (.nq) parser for named graphs
 - [ ] Named graph support (GRAPH clause, quad storage)
 - [ ] RDF/XML parser (or use Oxigraph's oxrdfxml crate)
 - [ ] JSON-LD parser (or use Oxigraph's oxjsonld crate)
