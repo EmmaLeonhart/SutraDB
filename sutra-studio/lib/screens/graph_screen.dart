@@ -28,6 +28,7 @@ class _GraphScreenState extends State<GraphScreen> {
   int _limit = 50;
   Set<String> _hiddenPredicates = {};
   Set<String> _allPredicates = {};
+  Map<String, String> _labelOverrides = {};
 
   @override
   void initState() {
@@ -49,6 +50,24 @@ class _GraphScreenState extends State<GraphScreen> {
 
     try {
       final triples = await conn.client.fetchTriples(limit: _limit);
+
+      // Fetch Japanese labels for better node display
+      final jaLabels = <String, String>{};
+      try {
+        final labelResult = await conn.client.query(
+          'SELECT ?s ?label WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?label } LIMIT 1000',
+        );
+        for (final row in labelResult.rows) {
+          final s = (row['s'] as Map?)?['value']?.toString() ?? '';
+          final label = (row['label'] as Map?)?['value']?.toString() ?? '';
+          // Prefer Japanese labels, fallback to any label
+          if (label.contains('@ja')) {
+            jaLabels[s] = Triple.shortName(label);
+          } else if (!jaLabels.containsKey(s) && label.isNotEmpty) {
+            jaLabels[s] = Triple.shortName(label);
+          }
+        }
+      } catch (_) {}
 
       // Also fetch HNSW neighbor edges if in vector/all mode
       if (_viewMode != GraphViewMode.semanticOnly) {
@@ -73,6 +92,7 @@ class _GraphScreenState extends State<GraphScreen> {
       }
 
       _triples = triples;
+      _labelOverrides = jaLabels;
       _buildGraph(triples);
       setState(() => _loading = false);
     } catch (e) {
@@ -127,7 +147,7 @@ class _GraphScreenState extends State<GraphScreen> {
         nodeIds.add(t.subject);
         nodes.add(GraphNode(
           id: t.subject,
-          label: Triple.shortName(t.subject),
+          label: _labelOverrides[t.subject] ?? Triple.shortName(t.subject),
           type: t.subject.startsWith('_:')
               ? NodeType.blankNode
               : NodeType.entity,
@@ -146,7 +166,7 @@ class _GraphScreenState extends State<GraphScreen> {
           nodeIds.add(t.object);
           nodes.add(GraphNode(
             id: t.object,
-            label: Triple.shortName(t.object),
+            label: _labelOverrides[t.object] ?? Triple.shortName(t.object),
             type: objType,
           ));
         }
