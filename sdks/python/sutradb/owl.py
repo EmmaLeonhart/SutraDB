@@ -26,6 +26,10 @@ RDFS_RANGE = "http://www.w3.org/2000/01/rdf-schema#range"
 RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf"
 OWL_FUNCTIONAL = "http://www.w3.org/2002/07/owl#FunctionalProperty"
 OWL_DISJOINT = "http://www.w3.org/2002/07/owl#disjointWith"
+OWL_EQUIVALENT_CLASS = "http://www.w3.org/2002/07/owl#equivalentClass"
+OWL_SAME_AS = "http://www.w3.org/2002/07/owl#sameAs"
+OWL_INVERSE_OF = "http://www.w3.org/2002/07/owl#inverseOf"
+RDFS_SUB_PROPERTY_OF = "http://www.w3.org/2000/01/rdf-schema#subPropertyOf"
 
 
 class OWLViolation(Exception):
@@ -47,8 +51,12 @@ class OWLValidator:
         self.domains: dict[str, str] = {}       # property -> domain class
         self.ranges: dict[str, str] = {}         # property -> range class
         self.subclass_of: dict[str, set[str]] = {}  # class -> set of parent classes
+        self.sub_property_of: dict[str, set[str]] = {}  # property -> parent properties
         self.functional: set[str] = set()        # functional properties
         self.disjoint: dict[str, set[str]] = {}  # class -> disjoint classes
+        self.equivalent_classes: dict[str, set[str]] = {}  # class -> equivalent classes
+        self.same_as: dict[str, set[str]] = {}   # entity -> same-as entities
+        self.inverse_of: dict[str, str] = {}     # property -> inverse property
         self.entity_types: dict[str, set[str]] = {}  # entity -> set of types
         self._loaded = False
 
@@ -92,6 +100,49 @@ class OWLValidator:
             p = row.get("p", {}).get("value", "")
             if p:
                 self.functional.add(p)
+
+        # Load property hierarchy
+        result = client.sparql(
+            f'SELECT ?p ?parent WHERE {{ ?p <{RDFS_SUB_PROPERTY_OF}> ?parent }}'
+        )
+        for row in result.get("results", {}).get("bindings", []):
+            p = row.get("p", {}).get("value", "")
+            parent = row.get("parent", {}).get("value", "")
+            if p and parent:
+                self.sub_property_of.setdefault(p, set()).add(parent)
+
+        # Load equivalent classes
+        result = client.sparql(
+            f'SELECT ?a ?b WHERE {{ ?a <{OWL_EQUIVALENT_CLASS}> ?b }}'
+        )
+        for row in result.get("results", {}).get("bindings", []):
+            a = row.get("a", {}).get("value", "")
+            b = row.get("b", {}).get("value", "")
+            if a and b:
+                self.equivalent_classes.setdefault(a, set()).add(b)
+                self.equivalent_classes.setdefault(b, set()).add(a)
+
+        # Load owl:sameAs
+        result = client.sparql(
+            f'SELECT ?a ?b WHERE {{ ?a <{OWL_SAME_AS}> ?b }}'
+        )
+        for row in result.get("results", {}).get("bindings", []):
+            a = row.get("a", {}).get("value", "")
+            b = row.get("b", {}).get("value", "")
+            if a and b:
+                self.same_as.setdefault(a, set()).add(b)
+                self.same_as.setdefault(b, set()).add(a)
+
+        # Load owl:inverseOf
+        result = client.sparql(
+            f'SELECT ?p ?inv WHERE {{ ?p <{OWL_INVERSE_OF}> ?inv }}'
+        )
+        for row in result.get("results", {}).get("bindings", []):
+            p = row.get("p", {}).get("value", "")
+            inv = row.get("inv", {}).get("value", "")
+            if p and inv:
+                self.inverse_of[p] = inv
+                self.inverse_of[inv] = p
 
         # Load entity types (for validation)
         result = client.sparql(

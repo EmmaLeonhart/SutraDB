@@ -146,10 +146,10 @@ The database accepts everything — lean store, smart clients.
 Sutra Studio shows the ontology visually and highlights violations.
 
 - [x] OWL class hierarchy resolution (rdfs:subClassOf transitive closure) — Python SDK OWLValidator.get_all_types()
-- [ ] OWL property hierarchy (rdfs:subPropertyOf) — same pattern as subClassOf, add to SDK
-- [ ] owl:equivalentClass
-- [ ] owl:sameAs
-- [ ] owl:inverseOf
+- [x] OWL property hierarchy (rdfs:subPropertyOf) — Python SDK loads and tracks
+- [x] owl:equivalentClass — Python SDK loads bidirectional equivalences
+- [x] owl:sameAs — Python SDK loads bidirectional same-as links
+- [x] owl:inverseOf — Python SDK loads bidirectional inverse property links
 - [ ] OWL restrictions (someValuesFrom, allValuesFrom)
 - [ ] Verification query generation: given an OWL ontology, produce SPARQL queries that check constraint violations
 - [ ] OWL export from Sutra Studio (for Protege interop)
