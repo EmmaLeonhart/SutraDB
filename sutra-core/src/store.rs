@@ -144,6 +144,29 @@ impl TripleStore {
     pub fn iter(&self) -> impl Iterator<Item = Triple> + '_ {
         self.spo.iter().map(Triple::from_spo_key)
     }
+
+    /// Estimate the cardinality (number of matches) for a partial pattern.
+    /// Used by the query planner for cost-based optimization.
+    pub fn estimate_cardinality(
+        &self,
+        subject: Option<TermId>,
+        predicate: Option<TermId>,
+        object: Option<TermId>,
+    ) -> usize {
+        match (subject, predicate, object) {
+            (Some(s), Some(p), Some(_)) => {
+                // Fully bound: 0 or 1
+                self.find_by_subject_predicate(s, p).len().min(1)
+            }
+            (Some(s), Some(p), None) => self.find_by_subject_predicate(s, p).len(),
+            (Some(s), None, None) => self.find_by_subject(s).len(),
+            (None, Some(p), Some(o)) => self.find_by_predicate_object(p, o).len(),
+            (None, Some(p), None) => self.find_by_predicate(p).len(),
+            (None, None, Some(o)) => self.find_by_object(o).len(),
+            (None, None, None) => self.count,
+            (Some(s), None, Some(_)) => self.find_by_subject(s).len(), // rough estimate
+        }
+    }
 }
 
 impl Default for TripleStore {

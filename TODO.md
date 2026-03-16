@@ -77,7 +77,7 @@ The 1M-vector stress test revealed specific bottlenecks:
   - [ ] Cardinality estimation: count triples per subject/predicate/object for cost-based planning
   - [ ] Hash joins for large intermediate result sets (instead of nested loop)
   - [ ] Index selection: use the most selective index first based on cardinality stats
-- [ ] Wormhole queries (vector→graph→graph) need the planner to push vector results into bound positions before graph joins
+- [x] Wormhole queries — planner already pushes vector results first when subject is unbound, binding propagates to subsequent graph joins
 - [x] Query timeout enforcement (execute_with_timeout + deadline checks)
 - [ ] Parallel HNSW construction (rayon) for faster bulk vector insert
 
@@ -227,7 +227,7 @@ drift, tombstone accumulation.
 - [ ] Visited pool pattern (pre-allocated visited lists for HNSW search)
 - [ ] Builder/reader separation for HNSW (immutable index after construction)
 - [ ] Query result streaming (don't collect all results before returning)
-- [ ] Prefix compression for IRI storage (common prefixes stored once)
+- [ ] Prefix compression for IRI storage (common prefixes stored once) — low priority, dictionary encoding already compact
 - [x] HNSW compaction: HnswIndex::compact() rebuilds without tombstoned nodes
 - [ ] Write-ahead log (WAL) for crash recovery
 - [ ] Adaptive query execution: runtime reordering based on intermediate cardinalities
