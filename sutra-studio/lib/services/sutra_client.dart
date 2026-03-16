@@ -197,6 +197,20 @@ class SutraClient {
     }
   }
 
+  /// Get HNSW vector index health from /vectors/health endpoint.
+  Future<Map<String, dynamic>> vectorsHealth() async {
+    final uri = Uri.parse('${config.endpoint}/vectors/health');
+    final res = await _http.get(uri, headers: _headers).timeout(config.timeout);
+    if (res.statusCode != 200) {
+      return {};
+    }
+    try {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      return {};
+    }
+  }
+
   void dispose() => _http.close();
 }
 

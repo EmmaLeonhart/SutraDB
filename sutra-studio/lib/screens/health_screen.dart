@@ -50,50 +50,25 @@ class _HealthScreenState extends State<HealthScreen> {
     try {
       final stats = await conn.client.stats();
 
-      // Try to detect vector predicates and their health
+      // Get real HNSW health data from /vectors/health endpoint
       final vectorHealth = <_VectorPredicateHealth>[];
       try {
-        // Query for vector predicates (hasEmbedding-like predicates)
-        final vecResult = await conn.client.query('''
-          SELECT ?pred (COUNT(?s) AS ?count) WHERE {
-            ?s ?pred ?o .
-            FILTER(CONTAINS(STR(?pred), "Embedding") || CONTAINS(STR(?pred), "embedding") || CONTAINS(STR(?pred), "vector"))
-          } GROUP BY ?pred
-        ''');
-        for (final row in vecResult.rows) {
-          final pred = _val(row, 'pred');
-          final count =
-              int.tryParse(_val(row, 'count')) ?? 0;
-          if (pred.isNotEmpty) {
-            vectorHealth.add(_VectorPredicateHealth(
-              predicate: pred,
-              vectorCount: count,
-            ));
-          }
+        final healthData = await conn.client.vectorsHealth();
+        final indexes = healthData['indexes'] as List<dynamic>? ?? [];
+        for (final idx in indexes) {
+          final m = idx as Map<String, dynamic>;
+          vectorHealth.add(_VectorPredicateHealth(
+            predicate: m['predicate']?.toString() ?? 'unknown',
+            vectorCount: m['total_nodes'] as int? ?? 0,
+            activeNodes: m['active_nodes'] as int? ?? 0,
+            deletedRatio: (m['deleted_ratio'] as num?)?.toDouble() ?? 0.0,
+            dimensions: m['dimensions'] as int? ?? 0,
+            metric: m['metric']?.toString() ?? 'unknown',
+            needsCompaction: m['needs_compaction'] as bool? ?? false,
+          ));
         }
       } catch (_) {
-        // GROUP BY / FILTER may not be implemented yet — that's fine
-      }
-
-      // Try to get HNSW neighbor edge counts for health assessment
-      try {
-        final hnswResult = await conn.client.query('''
-          SELECT ?src (COUNT(?tgt) AS ?degree) WHERE {
-            ?src <sutra:hnswNeighbor> ?tgt
-          } GROUP BY ?src LIMIT 500
-        ''');
-        // Compute degree distribution stats
-        final degrees = <int>[];
-        for (final row in hnswResult.rows) {
-          final d = int.tryParse(_val(row, 'degree')) ?? 0;
-          degrees.add(d);
-        }
-        if (degrees.isNotEmpty && vectorHealth.isNotEmpty) {
-          degrees.sort();
-          vectorHealth.first.hnswDegrees = degrees;
-        }
-      } catch (_) {
-        // GROUP BY may not be available yet
+        // /vectors/health may not be available
       }
 
       setState(() {
@@ -313,45 +288,74 @@ class _HealthScreenState extends State<HealthScreen> {
   Widget _buildVectorHealthRow(_VectorPredicateHealth v) {
     final shortPred = v.predicate.split('#').last.split('/').last;
 
-    // Compute degree distribution stats if available
-    String degreeSummary = 'Degree data not available';
-    Color healthColor = SutraTheme.muted;
-    if (v.hnswDegrees != null && v.hnswDegrees!.isNotEmpty) {
-      final d = v.hnswDegrees!;
-      final mean = d.reduce((a, b) => a + b) / d.length;
-      final median = d[d.length ~/ 2];
-      final max = d.last;
-      final min = d.first;
-      degreeSummary =
-          'Degree: min=$min median=$median mean=${mean.toStringAsFixed(1)} max=$max';
-
-      // Healthy if distribution is reasonably even (stddev < mean)
-      final variance =
-          d.map((x) => (x - mean) * (x - mean)).reduce((a, b) => a + b) /
-              d.length;
-      final stddev = variance > 0 ? variance * 0.5 : 0; // rough sqrt approx
-      healthColor =
-          stddev < mean * 1.5 ? SutraTheme.green : SutraTheme.orange;
+    // Determine health color based on deleted ratio
+    Color healthColor;
+    String healthLabel;
+    if (v.needsCompaction) {
+      healthColor = SutraTheme.red;
+      healthLabel = 'NEEDS COMPACTION';
+    } else if (v.deletedRatio > 0.15) {
+      healthColor = SutraTheme.orange;
+      healthLabel = 'Warning';
+    } else {
+      healthColor = SutraTheme.green;
+      healthLabel = 'Healthy';
     }
 
+    final tombstoneCount = v.vectorCount - v.activeNodes;
+    final tombstonePercent = (v.deletedRatio * 100).toStringAsFixed(1);
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.circle, size: 8, color: healthColor),
-          const SizedBox(width: 8),
-          Expanded(
+          Row(
+            children: [
+              Icon(Icons.circle, size: 10, color: healthColor),
+              const SizedBox(width: 8),
+              Text(shortPred,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 13)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: healthColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(healthLabel,
+                    style: TextStyle(color: healthColor, fontSize: 10, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(shortPred,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 13)),
-                Text('${v.vectorCount} vectors',
-                    style: const TextStyle(
-                        color: SutraTheme.muted, fontSize: 11)),
-                Text(degreeSummary,
-                    style: TextStyle(color: healthColor, fontSize: 11)),
+                Text(
+                  '${v.activeNodes} active / ${v.vectorCount} total nodes  •  '
+                  '${v.dimensions}d  •  ${v.metric}',
+                  style: const TextStyle(color: SutraTheme.muted, fontSize: 11),
+                ),
+                if (tombstoneCount > 0)
+                  Text(
+                    '$tombstoneCount tombstoned ($tombstonePercent% deleted)',
+                    style: TextStyle(color: healthColor, fontSize: 11),
+                  ),
+                // Tombstone ratio bar
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: v.deletedRatio.clamp(0, 1),
+                    backgroundColor: SutraTheme.border,
+                    valueColor: AlwaysStoppedAnimation(healthColor),
+                    minHeight: 4,
+                  ),
+                ),
               ],
             ),
           ),
@@ -509,13 +513,21 @@ class _HealthScreenState extends State<HealthScreen> {
 class _VectorPredicateHealth {
   final String predicate;
   final int vectorCount;
+  final int activeNodes;
+  final double deletedRatio;
+  final int dimensions;
+  final String metric;
+  final bool needsCompaction;
   List<int>? hnswDegrees;
-  double? tombstoneRatio;
 
   _VectorPredicateHealth({
     required this.predicate,
     required this.vectorCount,
+    this.activeNodes = 0,
+    this.deletedRatio = 0.0,
+    this.dimensions = 0,
+    this.metric = 'unknown',
+    this.needsCompaction = false,
     this.hnswDegrees,
-    this.tombstoneRatio,
   });
 }
