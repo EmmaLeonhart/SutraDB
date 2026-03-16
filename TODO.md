@@ -183,8 +183,8 @@ drift, tombstone accumulation.
 - [ ] Graph view: use Japanese labels for node display when available
 - [x] Graph view: reduce default limit to 50 to prevent combinatorial explosion
 - [x] Windows desktop platform support (flutter create --platforms windows)
-- [ ] HNSW health diagnostics: degree distribution visualization
-- [ ] HNSW health diagnostics: tombstone ratio monitoring with rebuild recommendations
+- [x] HNSW health diagnostics: per-index metrics from /vectors/health
+- [x] HNSW health diagnostics: tombstone ratio monitoring with rebuild recommendations
 - [ ] Per-cluster PageRank health metric (detect drift from heavy insert/delete)
 - [ ] Edge traversal counters (per-edge hit counts for HNSW and semantic edges)
 - [ ] HNSW cluster heatmap visualization
