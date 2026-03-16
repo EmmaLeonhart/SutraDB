@@ -42,6 +42,16 @@ pub fn parse_ntriples_line(line: &str) -> Option<(String, String, String)> {
         return None;
     };
 
+    // Parse optional graph name (N-Quads extension)
+    skip_whitespace(bytes, &mut pos);
+    let _graph = if pos < bytes.len() && bytes[pos] == b'<' {
+        Some(parse_iri(bytes, &mut pos)?)
+    } else if pos + 1 < bytes.len() && bytes[pos] == b'_' && bytes[pos + 1] == b':' {
+        Some(parse_blank_node(bytes, &mut pos)?)
+    } else {
+        None
+    };
+
     // Skip optional whitespace and trailing '.'
     skip_whitespace(bytes, &mut pos);
     if pos < bytes.len() && bytes[pos] == b'.' {
@@ -49,6 +59,44 @@ pub fn parse_ntriples_line(line: &str) -> Option<(String, String, String)> {
     }
 
     Some((subject, predicate, object))
+}
+
+/// Parse an N-Quads line into (subject, predicate, object, optional_graph).
+/// N-Quads is N-Triples with an optional 4th element for named graphs.
+pub fn parse_nquads_line(line: &str) -> Option<(String, String, String, Option<String>)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+
+    let mut pos = 0;
+    let bytes = line.as_bytes();
+
+    let subject = parse_node(bytes, &mut pos)?;
+    skip_whitespace(bytes, &mut pos);
+    let predicate = parse_iri(bytes, &mut pos)?;
+    skip_whitespace(bytes, &mut pos);
+
+    let object = if pos < bytes.len() && bytes[pos] == b'<' {
+        parse_iri(bytes, &mut pos)?
+    } else if pos < bytes.len() && bytes[pos] == b'"' {
+        parse_literal(bytes, &mut pos)?
+    } else if pos + 1 < bytes.len() && bytes[pos] == b'_' && bytes[pos + 1] == b':' {
+        parse_blank_node(bytes, &mut pos)?
+    } else {
+        return None;
+    };
+
+    skip_whitespace(bytes, &mut pos);
+    let graph = if pos < bytes.len() && bytes[pos] == b'<' {
+        Some(parse_iri(bytes, &mut pos)?)
+    } else if pos + 1 < bytes.len() && bytes[pos] == b'_' && bytes[pos + 1] == b':' {
+        Some(parse_blank_node(bytes, &mut pos)?)
+    } else {
+        None
+    };
+
+    Some((subject, predicate, object, graph))
 }
 
 /// Parse a node: either an IRI or a blank node.
