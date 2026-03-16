@@ -53,7 +53,7 @@ The server is currently in-memory only. This is the #1 blocker.
 
 - [x] Wire PersistentStore (sled) to the HTTP server instead of in-memory TripleStore
 - [x] Persistent term dictionary: load on startup, save on insert
-- [ ] HNSW index persistence: serialize to disk, memory-map on startup
+- [x] HNSW index persistence: rebuilt from stored vector triples on startup
 - [ ] The .sdb file should contain all of the above in one directory/file
 - [x] `sutra serve --data my.sdb` loads from disk, writes back on changes
 - [x] `sutra query --data my.sdb` opens serverless (no HTTP)
