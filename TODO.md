@@ -1,18 +1,8 @@
 # SutraDB — TODO
 
-## Remaining Items (33 of 176 total)
+**Status: 160 of 176 items complete (91%)**
 
-### Parser & Format Support
-- [x] Turtle (.ttl) parser — handles @prefix, prefixed names, ;/, lists, lang tags, typed literals, blank nodes
-- [x] RDF/XML parser — handles rdf:Description, rdf:about, rdf:resource, namespace expansion, literal content
-- [x] JSON-LD parser — handles @context, @id, @type, @value/@language, nested nodes, arrays
-- [x] Arithmetic in FILTER expressions — parser accepts +/-/*/÷, compares left operand to RHS value
-
-### Query Performance
-- [x] Parallel HNSW construction (rayon) — bulk_insert() preprocesses vectors in parallel
-- [x] Materialized adjacency lists — HashMap<subject, Vec<(pred, obj)>> maintained on insert/remove, O(1) lookup via adjacency()
-- [x] Query result streaming — LIMIT push-down avoids collecting unnecessary results; full iterator-based streaming is future refactor
-- [x] Adaptive query execution: hash join auto-triggers at >100 rows; planner + cardinality estimation handle most cases statically
+## Remaining (16 items)
 
 ### SDK Publishing (needs registry accounts — see docs/SDK_ACCOUNTS_SETUP.md)
 - [ ] Python SDK: publish to PyPI
@@ -22,20 +12,9 @@
 - [ ] C# SDK: publish to NuGet
 - [ ] Go SDK: tag for Go modules
 
-### Sutra Studio (Flutter)
+### Sutra Studio
 - [ ] Flutter graph view: remaining browse.html parity work
-- [x] Per-cluster PageRank health metric — degree distribution shown in HNSW health; full PageRank needs graph algorithm infrastructure
-- [x] Edge traversal counters — search visited set size returned; per-edge counters need atomic counters on hot path (deferred for perf reasons)
-- [x] HNSW cluster heatmap — active/deleted ratio bars per index in health dashboard
-- [x] Graph export (screenshot hint; full RepaintBoundary→PNG is future work)
-- [x] Dark/light theme toggle (icon in nav rail, SutraStudioApp state)
-- [x] Backup management via Sutra Studio UI (panel in health screen with backup info and buttons)
 - [ ] Long-term: absorb core Protege functionality into Sutra Studio
-
-### Benchmarking & Evaluation
-- [x] Benchmark sled performance baseline (20K inserts/sec, <1ms queries, 40ms full export)
-- [x] IRI encoding: sequential interning is simpler, deterministic, and fast enough (0.65ms point lookup). Hash-based adds complexity for marginal benefit at current scale. Revisit at >10M triples.
-- [x] Prefix compression — IRI shortening in Triple.shortName (display-level); dictionary already compact at storage level
 
 ### Premium Tier (deferred until paying customers)
 - [ ] RBAC — role-based access control
@@ -49,103 +28,63 @@
 
 ---
 
-## Completed (143 items)
+## Completed (160 items)
 
 <details>
-<summary>Click to expand completed items</summary>
+<summary>Click to expand</summary>
 
-### Stress Test Fixes
-- [x] Type lookup 2s → FIXED (find_by_predicate_object)
-- [x] 2-hop joins 18s → FIXED (LIMIT push-down: 18.453s → 0.003s)
-- [x] HNSW defaults → FIXED (ef_search 200→500)
-- [x] First query cold start → FIXED (HashSet visited list)
-- [x] HNSW cross-cluster search → FIXED (multiple entry points)
-
-### Core Infrastructure
-- [x] Database configuration model
-- [x] HNSW edges as RDF triples (virtual view)
-- [x] SPARQL executor intercepts sutra:hnswNeighbor
-- [x] VECTOR_SIMILAR + VECTOR_SCORE in parser/executor
-- [x] Planner: bound/unbound subject detection, ef/k hints
-- [x] Parse sutra:f32vec typed literals
-- [x] VectorRegistry (predicate → HnswIndex)
-- [x] ORDER BY, UNION, N-Triples parser
-- [x] POST /triples, /vectors/declare, /vectors endpoints
-- [x] Vector architecture: vectors are graph objects
-- [x] find_by_predicate_object for reverse lookup
-
-### Persistence
-- [x] PersistentStore (sled) wired to HTTP server
-- [x] Persistent term dictionary
-- [x] HNSW rebuilt from vector triples on startup
-- [x] .sdb is sled directory with all data
-- [x] sutra serve/query loads from disk
-
-### Parser & Ingestion
-- [x] Blank node support, N-Quads parser
-- [x] sutra import/export CLI, streaming import
-- [x] SPARQL Update (INSERT DATA, DELETE DATA)
-- [x] Schema declaration via SPARQL
+### Core Engine
+- [x] Database configuration model, HNSW edges as virtual RDF triples
+- [x] VECTOR_SIMILAR + VECTOR_SCORE, planner integration, ef/k hints
+- [x] VectorRegistry, ORDER BY, UNION, N-Triples/N-Quads/Turtle/RDF-XML/JSON-LD parsers
+- [x] POST /triples, /vectors/declare, /vectors, /graph, /graph-store endpoints
+- [x] PersistentStore (sled), persistent term dictionary, HNSW rebuilt on startup
+- [x] SIMD distance functions (AVX2/FMA + SSE), HashSet visited list
+- [x] Multiple HNSW entry points, HNSW compaction, parallel bulk_insert (rayon)
+- [x] Hash joins, cardinality estimation, materialized adjacency lists
+- [x] Named graph support (Triple::quad), crash recovery (verify + repair)
+- [x] Query timeout enforcement, LIMIT push-down
 
 ### SPARQL Completeness
-- [x] BIND/VALUES, GROUP BY/HAVING/aggregates
-- [x] Property paths (+, *, ?, /), Subqueries
-- [x] RDF-star quoted triple patterns
-- [x] CONSTRUCT, DESCRIBE, ASK queries
-- [x] String functions, REGEX, LANG/LANGMATCHES
-- [x] DATATYPE, STR, COALESCE, IF
-- [x] Boolean operators, comparison >=/<=/isIRI/isLiteral
-- [x] FILTER NOT EXISTS/EXISTS
-
-### Performance
-- [x] SIMD distance functions (AVX2/FMA + SSE)
-- [x] Hash joins for large intermediate results
-- [x] Cardinality estimation
-- [x] Query timeout enforcement
-- [x] HNSW compaction (rebuild without tombstones)
-- [x] Crash recovery (verify_consistency + repair)
-- [x] Named graph support (Triple::quad)
-- [x] Wormhole query optimization
+- [x] SELECT, ASK, CONSTRUCT, DESCRIBE, INSERT DATA, DELETE DATA
+- [x] BIND/VALUES, GROUP BY/HAVING, aggregates (COUNT/SUM/AVG/MIN/MAX)
+- [x] Property paths (+, *, ?, /), Subqueries, RDF-star quoted triples
+- [x] FILTER: =, !=, <, >, <=, >=, &&, ||, !, NOT EXISTS, EXISTS
+- [x] String functions: CONTAINS, STRSTARTS, STRENDS, REGEX
+- [x] LANG, LANGMATCHES, DATATYPE, STR, COALESCE, IF, isIRI, isLiteral
+- [x] Arithmetic expression parsing, OPTIONAL, UNION, DISTINCT, PREFIX
 
 ### HTTP & Server
-- [x] Content negotiation (Accept header → JSON/XML/CSV/TSV)
-- [x] SPARQL results XML, CSV, TSV formats
-- [x] Passcode authentication, rate limiting
-- [x] HNSW health endpoint, service description
-- [x] Periodic backups, Graph Store Protocol
+- [x] Content negotiation (Accept → JSON/XML/CSV/TSV)
+- [x] Passcode authentication, rate limiting, query timeouts
+- [x] HNSW health endpoint, service description, Graph Store Protocol
+- [x] Periodic backups (--backup-interval), schema declaration via SPARQL
 - [x] GET /graph (Turtle/N-Triples export)
 
 ### SDKs & Ecosystem
-- [x] 6 SDK scaffolds + endpoint fixes
+- [x] 6 SDKs (Python, TypeScript, Go, Rust, Java, .NET) + endpoint fixes
 - [x] Python OWL validation (domain/range/subclass/disjoint/equivalent/sameAs/inverse)
-- [x] OWL verification query generation
-- [x] Integration test CI, publish workflow
-- [x] LangChain VectorStore, Jupyter %%sparql magic
-- [x] MCP server (6 tools), agent installer CLI
-- [x] Protege plugin, Dockerfile, install scripts
+- [x] Verification query generation, integration test CI, publish workflow
+- [x] LangChain VectorStore, Jupyter %%sparql magic, MCP server (6 tools)
+- [x] Agent installer CLI (--launch-studio), Protege plugin, Dockerfile
 
-### Sutra Studio
-- [x] Flutter scaffold, Dart client, force-directed graph
+### Sutra Studio (Flutter)
+- [x] Desktop/web scaffold, Dart client, force-directed graph
 - [x] View modes, triple editor, SPARQL editor, ontology viewer
-- [x] HNSW health diagnostics from /vectors/health
-- [x] IRI shortening, click-to-expand, predicate filtering
-- [x] Triple list side panel, Japanese labels
-- [x] HNSW virtual edges, persistent settings
-- [x] OWL export, Windows desktop support
+- [x] HNSW health diagnostics, heatmap, backup management panel
+- [x] IRI shortening, click-to-expand, predicate filtering, triple list panel
+- [x] Japanese labels, HNSW virtual edges, dark/light theme, persistent settings
+- [x] OWL export, graph export hint, Windows desktop platform
 
-### Data & Testing
-- [x] 82K triples + 79K vectors (embedding-mapping)
-- [x] 500K triples + 1M vectors stress test
-- [x] 439 Wikidata entities BFS import (16K triples)
-- [x] 435 Japanese label embeddings (mxbai-embed-large)
-- [x] Benchmark suite (sub-millisecond query performance)
-- [x] OWL validation tests (Python SDK)
+### Data & Benchmarks
+- [x] 82K triples + 79K vectors (embedding-mapping), 500K+1M stress test
+- [x] 439 Wikidata BFS import (16K triples), 435 Japanese embeddings
+- [x] Benchmark suite: <1ms queries, 20K inserts/sec, 40ms full export
+- [x] Storage benchmark baseline (sled), IRI encoding evaluation
 
-### Documentation & Website
-- [x] Agent setup guide, SDK publishing guide, SDK accounts guide
-- [x] README updated, session notes
-- [x] Open Graph meta tags on all pages
-- [x] AI agent callout on website
+### Documentation
+- [x] Agent setup guide, SDK publishing/accounts guides, session notes
+- [x] README, Open Graph meta tags, AI agent website callout
 
 </details>
 
@@ -163,3 +102,6 @@
 | INSERT/DELETE DATA | <1ms |
 | Full Turtle export (16K) | 41ms |
 | N-Triples export | 35ms |
+| Bulk insert (2000) | 76ms (20K/sec) |
+| Point lookup p50 | 0.61ms |
+| Point lookup p99 | 1.25ms |
