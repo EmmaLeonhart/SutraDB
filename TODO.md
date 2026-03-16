@@ -220,6 +220,17 @@ drift, tombstone accumulation.
 - [ ] Benchmark sled vs RocksDB for triple workloads
 - [ ] IRI encoding: evaluate hash-based (Oxigraph SipHash) vs current sequential interning
 
+## Assessment of Remaining Items (2026-03-16)
+
+133 items done, 43 remaining. The remaining items fall into categories:
+
+**Attempting now:** Hash joins, named graphs, WAL — these are the biggest architectural gaps.
+**Blocked on credentials:** SDK publishing (6 items) — see docs/SDK_PUBLISHING.md
+**Deferred by design:** Premium tier (8 items) — RBAC, encryption, replication, etc.
+**Need external crates:** Turtle/RDF-XML/JSON-LD parsers — consider oxttl/oxrdfxml/oxjsonld
+**Flutter advanced:** PageRank, heatmap, traversal counters — need computation infrastructure
+**Nice-to-have:** Rate limiting, backups, dark theme, arithmetic expressions
+
 ## Priority 10: Advanced Performance
 
 - [x] SIMD distance functions (AVX2/SSE/NEON) for vector operations ✅
