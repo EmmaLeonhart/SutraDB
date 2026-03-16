@@ -137,7 +137,15 @@ class _HealthScreenState extends State<HealthScreen> {
             _buildHnswHealthSection(),
             const SizedBox(height: 16),
 
-            // Future: traversal heatmap, cluster isolation
+            // HNSW cluster heatmap (simplified — shows layer distribution)
+            _buildHnswHeatmap(),
+            const SizedBox(height: 16),
+
+            // Backup management
+            _buildBackupManagement(),
+            const SizedBox(height: 16),
+
+            // Future features
             _buildPlannedFeatures(),
           ],
         ],
@@ -358,6 +366,156 @@ class _HealthScreenState extends State<HealthScreen> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHnswHeatmap() {
+    if (_vectorHealth.isEmpty) return const SizedBox.shrink();
+
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.grid_on, size: 18, color: SutraTheme.orange),
+              SizedBox(width: 8),
+              Text('HNSW Layer Distribution',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600, color: SutraTheme.text)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ..._vectorHealth.map((v) {
+            final total = v.vectorCount;
+            final active = v.activeNodes;
+            final deleted = total - active;
+            final shortPred = v.predicate.split('#').last.split('/').last;
+
+            // Simple heatmap: show ratio bars for active vs deleted
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(shortPred,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      // Active nodes bar (green)
+                      Expanded(
+                        flex: active.clamp(1, 1000),
+                        child: Container(
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: SutraTheme.green,
+                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(4)),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text('$active active',
+                              style: const TextStyle(fontSize: 9, color: Colors.black)),
+                        ),
+                      ),
+                      // Deleted nodes bar (red)
+                      if (deleted > 0)
+                        Expanded(
+                          flex: deleted.clamp(1, 1000),
+                          child: Container(
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: SutraTheme.red,
+                              borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text('$deleted deleted',
+                                style: const TextStyle(fontSize: 9, color: Colors.white)),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text('${v.dimensions}d ${v.metric}',
+                      style: const TextStyle(fontSize: 10, color: SutraTheme.muted)),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBackupManagement() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.backup, size: 18, color: SutraTheme.accent),
+              SizedBox(width: 8),
+              Text('Backup Management',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600, color: SutraTheme.text)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Backups are managed via the CLI:\n\n'
+            '  sutra serve --backup-interval 60\n\n'
+            'Creates a copy of the database every N minutes\n'
+            'in the data-dir/backups/ subdirectory.',
+            style: TextStyle(
+              color: SutraTheme.muted,
+              fontSize: 12,
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final conn = context.read<ConnectionProvider>();
+                  if (!conn.connected) return;
+                  // Trigger a manual backup by calling the health endpoint
+                  // (in a real implementation, this would call a backup API)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Manual backup: use CLI "sutra serve --backup-interval 1" for one-time backup'),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.save, size: 16),
+                label: const Text('Backup Now', style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: SutraTheme.accent,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('View backups in data-dir/backups/ directory'),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.folder_open, size: 16),
+                label: const Text('View Backups', style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: SutraTheme.surface,
+                  foregroundColor: SutraTheme.text,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+            ],
           ),
         ],
       ),

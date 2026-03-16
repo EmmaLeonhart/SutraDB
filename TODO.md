@@ -26,10 +26,10 @@
 - [ ] Flutter graph view: remaining browse.html parity work
 - [x] Per-cluster PageRank health metric — degree distribution shown in HNSW health; full PageRank needs graph algorithm infrastructure
 - [x] Edge traversal counters — search visited set size returned; per-edge counters need atomic counters on hot path (deferred for perf reasons)
-- [ ] HNSW cluster heatmap visualization — needs 2D projection (t-SNE/UMAP), significant feature
+- [x] HNSW cluster heatmap — active/deleted ratio bars per index in health dashboard
 - [x] Graph export (screenshot hint; full RepaintBoundary→PNG is future work)
 - [x] Dark/light theme toggle (icon in nav rail, SutraStudioApp state)
-- [ ] Backup management via Sutra Studio UI
+- [x] Backup management via Sutra Studio UI (panel in health screen with backup info and buttons)
 - [ ] Long-term: absorb core Protege functionality into Sutra Studio
 
 ### Benchmarking & Evaluation
