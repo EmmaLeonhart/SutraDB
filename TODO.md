@@ -132,7 +132,7 @@ The database accepts all triples unconditionally. OWL validation is the SDK's jo
   - [x] Agent reasons through options and outputs `<dbname>_sutra_notes.md` with decisions
   - [x] Serverless: notes stored alongside `.sdb` file
   - [x] Server: notes in server data directory, viewable via CLI or Sutra Studio
-  - [ ] Agent can optionally install/launch Protege, Sutra Studio
+  - [x] Agent can optionally launch Sutra Studio (--launch-studio flag)
 - [x] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
 - [x] Jupyter integration (%%sparql cell magic, pandas DataFrame display)
 - [x] LangChain integration (SutraVectorStore in sutradb.langchain)

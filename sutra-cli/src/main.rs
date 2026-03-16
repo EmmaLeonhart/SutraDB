@@ -101,6 +101,10 @@ enum Commands {
         /// Skip server startup.
         #[arg(long)]
         no_serve: bool,
+
+        /// Launch Sutra Studio after setup.
+        #[arg(long)]
+        launch_studio: bool,
     },
 }
 
@@ -376,6 +380,7 @@ async fn main() -> anyhow::Result<()> {
             dimensions,
             metric,
             no_serve,
+            launch_studio,
         } => {
             let data_dir = format!("./{}", name);
             let notes_file = format!("{}_sutra_notes.md", name);
@@ -484,6 +489,24 @@ SutraDB Agent Installer v0.1.0
 
             std::fs::write(&notes_file, &notes)?;
             println!("[OK] Notes written to {}", notes_file);
+
+            if launch_studio {
+                println!("Launching Sutra Studio...");
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = std::process::Command::new("cmd")
+                        .args(["/c", "start", "", "flutter", "run", "-d", "windows"])
+                        .current_dir("sutra-studio")
+                        .spawn();
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = std::process::Command::new("flutter")
+                        .args(["run", "-d", "linux"])
+                        .current_dir("sutra-studio")
+                        .spawn();
+                }
+            }
 
             if !no_serve {
                 println!();
