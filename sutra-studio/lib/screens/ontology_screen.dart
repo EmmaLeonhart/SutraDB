@@ -21,6 +21,44 @@ class OntologyScreen extends StatefulWidget {
 }
 
 class _OntologyScreenState extends State<OntologyScreen> {
+  Future<void> _exportOntology() async {
+    final conn = context.read<ConnectionProvider>();
+    if (!conn.connected) return;
+    try {
+      final turtle = await conn.client.exportGraph();
+      // Show in a dialog for copy/save
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Ontology Export (Turtle)'),
+          content: SizedBox(
+            width: 600,
+            height: 400,
+            child: SingleChildScrollView(
+              child: SelectableText(
+                turtle,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    }
+  }
+
   List<_OntologyClass> _classes = [];
   List<_OntologyProperty> _properties = [];
   _OntologyClass? _selectedClass;
@@ -173,6 +211,11 @@ class _OntologyScreenState extends State<OntologyScreen> {
               IconButton(
                 icon: const Icon(Icons.refresh, size: 18),
                 onPressed: _loadOntology,
+              ),
+              IconButton(
+                icon: const Icon(Icons.download, size: 18),
+                tooltip: 'Export as Turtle',
+                onPressed: _exportOntology,
               ),
             ],
           ),

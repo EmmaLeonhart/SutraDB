@@ -152,7 +152,7 @@ Sutra Studio shows the ontology visually and highlights violations.
 - [x] owl:inverseOf — Python SDK loads bidirectional inverse property links
 - [x] OWL restrictions (someValuesFrom, allValuesFrom) — constants defined, restriction loading infrastructure in SDK
 - [x] Verification query generation: OWLValidator.generate_verification_queries() produces SPARQL for domain/range/functional/disjoint
-- [ ] OWL export from Sutra Studio (for Protege interop)
+- [x] OWL export from Sutra Studio (Turtle export via dialog, copies from GET /graph)
 - [ ] Long-term: absorb core Protege functionality into Sutra Studio
 
 ## Priority 7.5: Sutra Studio — Flutter Desktop/Web Client
