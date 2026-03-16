@@ -204,10 +204,10 @@ drift, tombstone accumulation.
 - [x] Query timeouts (execute_with_timeout + deadline checks in pattern evaluation)
 - [x] Rate limiting (server mode, rate_limit_per_min counter in auth middleware)
 - [x] HNSW health endpoint: `/vectors/health` — degree distribution, tombstone ratio, rebuild recommendation
-- [ ] Periodic backups (server mode)
-  - [ ] Configurable interval: hourly / daily / custom
-  - [ ] Stored in separate directory within server data path
-  - [ ] Manageable via CLI and Sutra Studio
+- [x] Periodic backups (--backup-interval N minutes, copies sled dir)
+  - [x] Configurable interval via CLI flag
+  - [x] Stored in data-dir/backups/ subdirectory
+  - [ ] Manageable via Sutra Studio UI
 - [x] SPARQL service description endpoint (/service-description)
 
 ## Priority 9: Additional Storage & Format Support

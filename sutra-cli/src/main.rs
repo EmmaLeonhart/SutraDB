@@ -35,6 +35,10 @@ enum Commands {
         /// (except /health) require Authorization: Bearer <passcode>.
         #[arg(long)]
         passcode: Option<String>,
+
+        /// Enable periodic backups (interval in minutes, 0 = disabled).
+        #[arg(long, default_value = "0")]
+        backup_interval: u64,
     },
     /// Execute a SPARQL query from the command line.
     Query {
@@ -119,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
             data_dir,
             memory_only,
             passcode,
+            backup_interval,
         } => {
             let state = if memory_only {
                 tracing::info!("Running in-memory only (no persistence)");
@@ -200,6 +205,40 @@ async fn main() -> anyhow::Result<()> {
                     rate_counter: std::sync::atomic::AtomicU64::new(0),
                 })
             };
+
+            // Start periodic backup task if configured
+            if backup_interval > 0 && !memory_only {
+                let backup_dir = format!("{}/backups", data_dir);
+                let _ = std::fs::create_dir_all(&backup_dir);
+                let data_dir_clone = data_dir.clone();
+                let interval = std::time::Duration::from_secs(backup_interval * 60);
+                tokio::spawn(async move {
+                    loop {
+                        tokio::time::sleep(interval).await;
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let backup_path =
+                            format!("{}/backups/backup_{}", data_dir_clone, timestamp);
+                        tracing::info!("Creating backup at {}", backup_path);
+                        // Copy the sled directory
+                        if let Err(e) = copy_dir_recursive(
+                            std::path::Path::new(&data_dir_clone),
+                            std::path::Path::new(&backup_path),
+                        ) {
+                            tracing::error!("Backup failed: {}", e);
+                        } else {
+                            tracing::info!("Backup complete: {}", backup_path);
+                        }
+                    }
+                });
+                tracing::info!(
+                    "Periodic backups enabled: every {} minutes to {}/backups/",
+                    backup_interval,
+                    data_dir
+                );
+            }
 
             let app = sutra_proto::router(state);
             let addr = format!("0.0.0.0:{}", port);
@@ -572,4 +611,24 @@ fn resolve_object_persistent(id: sutra_core::TermId, ps: &sutra_core::Persistent
         .ok()
         .flatten()
         .unwrap_or_else(|| format!("_:id{}", id))
+}
+
+/// Recursively copy a directory (for backups).
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            // Skip the backups subdirectory to avoid recursive backup
+            if entry.file_name() == "backups" {
+                continue;
+            }
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
 }
