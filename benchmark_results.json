@@ -1,0 +1,149 @@
+{
+  "endpoint": "http://localhost:3030",
+  "timestamp": "2026-03-15T19:40:00",
+  "benchmarks": [
+    {
+      "label": "GET /health",
+      "avg_ms": 0.6,
+      "best_ms": 0.4,
+      "runs": 10
+    },
+    {
+      "label": "SELECT * LIMIT 10",
+      "query": "SELECT * WHERE { ?s ?p ?o } LIMIT 10",
+      "avg_ms": 0.7,
+      "best_ms": 0.6,
+      "worst_ms": 1.0,
+      "result_count": 10,
+      "runs": 3
+    },
+    {
+      "label": "SELECT * LIMIT 100",
+      "query": "SELECT * WHERE { ?s ?p ?o } LIMIT 100",
+      "avg_ms": 0.9,
+      "best_ms": 0.8,
+      "worst_ms": 1.0,
+      "result_count": 100,
+      "runs": 3
+    },
+    {
+      "label": "SELECT * LIMIT 1000",
+      "query": "SELECT * WHERE { ?s ?p ?o } LIMIT 1000",
+      "avg_ms": 5.2,
+      "best_ms": 4.4,
+      "worst_ms": 6.1,
+      "result_count": 1000,
+      "runs": 3
+    },
+    {
+      "label": "Labels LIMIT 50",
+      "query": "SELECT ?s ?label WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?label } LIMIT 50",
+      "avg_ms": 0.9,
+      "best_ms": 0.6,
+      "worst_ms": 1.3,
+      "result_count": 50,
+      "runs": 3
+    },
+    {
+      "label": "Type lookup LIMIT 100",
+      "query": "SELECT ?s WHERE { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type } LIMIT 100",
+      "avg_ms": 0.5,
+      "best_ms": 0.5,
+      "worst_ms": 0.5,
+      "result_count": 0,
+      "runs": 3
+    },
+    {
+      "label": "2-pattern join LIMIT 50",
+      "query": "SELECT ?s ?label ?type WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?label . ?s <http://w",
+      "avg_ms": 0.6,
+      "best_ms": 0.5,
+      "worst_ms": 0.8,
+      "result_count": 0,
+      "runs": 3
+    },
+    {
+      "label": "Self-join on type LIMIT 50",
+      "query": "SELECT ?a ?b WHERE { ?a <http://www.wikidata.org/prop/direct/P31> ?type . ?b <http://www.wikidata.or",
+      "avg_ms": 0.6,
+      "best_ms": 0.6,
+      "worst_ms": 0.7,
+      "result_count": 50,
+      "runs": 3
+    },
+    {
+      "label": "COUNT GROUP BY predicate",
+      "query": "SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p LIMIT 20",
+      "avg_ms": 0.6,
+      "best_ms": 0.4,
+      "worst_ms": 0.7,
+      "result_count": 0,
+      "runs": 3
+    },
+    {
+      "label": "ASK labels exist",
+      "query": "ASK WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?o }",
+      "avg_ms": 0.7,
+      "best_ms": 0.6,
+      "worst_ms": 0.7,
+      "result_count": 0,
+      "runs": 3
+    },
+    {
+      "label": "FILTER CONTAINS shrine",
+      "query": "SELECT ?s ?label WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?label . FILTER(CONTAINS(?l",
+      "avg_ms": 0.4,
+      "best_ms": 0.4,
+      "worst_ms": 0.5,
+      "result_count": 0,
+      "runs": 3
+    },
+    {
+      "label": "OPTIONAL description LIMIT 50",
+      "query": "SELECT ?s ?label ?desc WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?label . OPTIONAL { ?",
+      "avg_ms": 0.7,
+      "best_ms": 0.7,
+      "worst_ms": 0.8,
+      "result_count": 50,
+      "runs": 3
+    },
+    {
+      "label": "GET /graph (Turtle export)",
+      "avg_ms": 41.4,
+      "best_ms": 40.0,
+      "runs": 3
+    },
+    {
+      "label": "GET /graph (N-Triples)",
+      "avg_ms": 35.4,
+      "best_ms": 33.7,
+      "runs": 3
+    },
+    {
+      "label": "POST /sparql.csv",
+      "avg_ms": 0.7,
+      "best_ms": 0.4,
+      "runs": 3
+    },
+    {
+      "label": "GET /vectors/health",
+      "avg_ms": 681.1,
+      "best_ms": 0.7,
+      "runs": 3
+    },
+    {
+      "label": "GET /service-description",
+      "avg_ms": 0.9,
+      "best_ms": 0.7,
+      "runs": 3
+    },
+    {
+      "label": "INSERT DATA",
+      "avg_ms": 0.9
+    },
+    {
+      "label": "DELETE DATA",
+      "avg_ms": 0.8
+    }
+  ]
+}
