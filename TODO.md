@@ -95,7 +95,8 @@ The 1M-vector stress test revealed specific bottlenecks:
 - [x] String functions: CONTAINS, STRSTARTS, STRENDS
 - [x] REGEX filter support (substring match)
 - [x] LANG() and LANGMATCHES() for language-tagged literals
-- [ ] DATATYPE(), STR(), COALESCE(), IF()
+- [x] DATATYPE(), STR() filter functions
+- [ ] COALESCE(), IF()
 - [ ] Arithmetic in expressions (+, -, *, /)
 - [x] Boolean operators in FILTER (&&, ||, !)
 - [x] Comparison operators: >=, <=
