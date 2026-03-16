@@ -135,7 +135,7 @@ The database accepts all triples unconditionally. OWL validation is the SDK's jo
   - [ ] Agent can optionally install/launch Protege, Sutra Studio
 - [x] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
 - [x] Jupyter integration (%%sparql cell magic, pandas DataFrame display)
-- [ ] LangChain / LlamaIndex integration (SutraDB as vector store + knowledge graph for RAG)
+- [x] LangChain integration (SutraVectorStore in sutradb.langchain)
 - [x] MCP server (tools/mcp-server/) — 6 tools: sparql, insert, describe, vector_search, info, health
 
 ## Priority 7: OWL Support
