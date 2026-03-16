@@ -283,8 +283,75 @@ class _GraphScreenState extends State<GraphScreen> {
           ),
         ),
 
-        // Graph area
+        // Main area: triple list + graph
         Expanded(
+          child: Row(
+            children: [
+              // Left panel: triple list
+              if (_triples.isNotEmpty)
+                SizedBox(
+                  width: 280,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: SutraTheme.surface,
+                      border: Border(right: BorderSide(color: SutraTheme.border)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Text(
+                            '${_triples.length} triples',
+                            style: const TextStyle(color: SutraTheme.muted, fontSize: 11),
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: _triples.length,
+                            itemBuilder: (ctx, i) {
+                              final t = _triples[i];
+                              return InkWell(
+                                onTap: () => setState(() => _selectedNodeId = t.subject),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  child: RichText(
+                                    overflow: TextOverflow.ellipsis,
+                                    text: TextSpan(
+                                      style: const TextStyle(fontSize: 11),
+                                      children: [
+                                        TextSpan(
+                                          text: Triple.shortName(t.subject),
+                                          style: const TextStyle(color: SutraTheme.accent),
+                                        ),
+                                        const TextSpan(text: ' '),
+                                        TextSpan(
+                                          text: Triple.shortName(t.predicate),
+                                          style: const TextStyle(color: SutraTheme.purple),
+                                        ),
+                                        const TextSpan(text: ' '),
+                                        TextSpan(
+                                          text: Triple.shortName(t.object),
+                                          style: TextStyle(
+                                            color: t.object.startsWith('"')
+                                                ? SutraTheme.green
+                                                : SutraTheme.text,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              // Graph canvas
+              Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
@@ -324,7 +391,10 @@ class _GraphScreenState extends State<GraphScreen> {
                           _buildDetailPanel(),
                       ],
                     ),
-        ),
+              ), // Expanded (graph canvas)
+            ],
+          ), // Row
+        ), // Expanded (main area)
 
         // Status bar
         Container(
