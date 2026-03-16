@@ -188,7 +188,7 @@ drift, tombstone accumulation.
 - [ ] Per-cluster PageRank health metric (detect drift from heavy insert/delete)
 - [ ] Edge traversal counters (per-edge hit counts for HNSW and semantic edges)
 - [ ] HNSW cluster heatmap visualization
-- [ ] Automatic rebuild recommendation threshold (configurable)
+- [x] Automatic rebuild recommendation threshold (needs_compaction in /vectors/health when deleted_ratio > 0.3)
 - [ ] Graph export (PNG/SVG of current visualization)
 - [ ] Dark/light theme toggle
 - [ ] Persistent connection settings (shared_preferences)
