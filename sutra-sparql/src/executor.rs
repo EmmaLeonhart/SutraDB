@@ -770,6 +770,65 @@ fn evaluate_triple_pattern(
     let mut results = Vec::new();
     let mut source_indices = Vec::new();
 
+    // Hash join optimization: when current is large and the subject variable
+    // is already bound in all rows, group by subject and batch-lookup.
+    if current.len() > 100 {
+        if let Term::Variable(subj_var) = subject {
+            if current.iter().all(|r| r.contains_key(subj_var)) {
+                let mut grouped: HashMap<TermId, Vec<usize>> = HashMap::new();
+                for (idx, row) in current.iter().enumerate() {
+                    if let Some(&sid) = row.get(subj_var) {
+                        grouped.entry(sid).or_default().push(idx);
+                    }
+                }
+
+                for (sid, row_indices) in &grouped {
+                    let p_id_first =
+                        resolve_term(predicate, &current[row_indices[0]], ctx.dict, ctx.prefixes)?;
+                    let candidates = if let Some(pid) = p_id_first {
+                        ctx.store.find_by_subject_predicate(*sid, pid)
+                    } else {
+                        ctx.store.find_by_subject(*sid)
+                    };
+
+                    for triple in &candidates {
+                        for &row_idx in row_indices {
+                            let row = &current[row_idx];
+                            let mut new_row = row.clone();
+
+                            if let Term::Variable(name) = predicate {
+                                new_row.insert(name.clone(), triple.predicate);
+                            }
+                            if let Some(oid) = resolve_term(object, row, ctx.dict, ctx.prefixes)? {
+                                if triple.object != oid {
+                                    continue;
+                                }
+                            }
+                            if let Term::Variable(name) = object {
+                                if let Some(&existing) = new_row.get(name) {
+                                    if existing != triple.object {
+                                        continue;
+                                    }
+                                } else {
+                                    new_row.insert(name.clone(), triple.object);
+                                }
+                            }
+
+                            results.push(new_row);
+                            source_indices.push(row_idx);
+                            if let Some(limit) = row_limit {
+                                if results.len() >= limit {
+                                    return Ok((results, source_indices));
+                                }
+                            }
+                        }
+                    }
+                }
+                return Ok((results, source_indices));
+            }
+        }
+    }
+
     'outer: for (row_idx, row) in current.iter().enumerate() {
         let s_id = resolve_term(subject, row, ctx.dict, ctx.prefixes)?;
         let p_id = resolve_term(predicate, row, ctx.dict, ctx.prefixes)?;
