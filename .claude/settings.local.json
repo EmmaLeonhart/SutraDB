@@ -52,7 +52,16 @@
       "Bash(do echo:*)",
       "Read(//c/Users/Immanuelle/Documents/Github/SutraDB/sdks/**)",
       "Read(//c/Users/Immanuelle/Documents/Github/**)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(ollama list:*)",
+      "Bash(which flutter:*)",
+      "Bash(flutter create:*)",
+      "Bash(flutter pub:*)",
+      "Bash(flutter run:*)",
+      "Bash(flutter devices:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(for sdk:*)",
+      "Read(//c/Users/Immanuelle/Documents/Github/SutraDB/sdks/$sdk/**)"
     ]
   }
 }
