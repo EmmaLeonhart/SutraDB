@@ -54,6 +54,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/graph", get(export_graph))
         .route("/sparql.csv", get(sparql_csv_get).post(sparql_csv_post))
         .route("/sparql.tsv", get(sparql_tsv_get).post(sparql_tsv_post))
+        .route("/sparql.xml", get(sparql_xml_get).post(sparql_xml_post))
         .route("/triples", post(insert_triples))
         .route("/vectors/declare", post(declare_vector_predicate))
         .route("/vectors", post(insert_vector))
@@ -247,6 +248,86 @@ fn resolve_term_for_csv(id: sutra_core::TermId, dict: &TermDictionary) -> String
     dict.resolve(id)
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("_:id{}", id))
+}
+
+// ─── SPARQL XML ─────────────────────────────────────────────────────────────
+
+async fn sparql_xml_get(
+    State(state): State<Arc<AppState>>,
+    AxumQuery(params): AxumQuery<SparqlQueryParams>,
+) -> Result<impl IntoResponse, ProtoError> {
+    sparql_xml(&params.query, &state)
+}
+
+async fn sparql_xml_post(
+    State(state): State<Arc<AppState>>,
+    body: String,
+) -> Result<impl IntoResponse, ProtoError> {
+    sparql_xml(&body, &state)
+}
+
+fn sparql_xml(query_str: &str, state: &AppState) -> Result<impl IntoResponse, ProtoError> {
+    let mut query = sutra_sparql::parse(query_str)?;
+    sutra_sparql::optimize(&mut query);
+
+    let store = state
+        .store
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let dict = state
+        .dict
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let vectors = state
+        .vectors
+        .read()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+    let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &vectors)?;
+
+    let mut xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n  <head>\n",
+    );
+    for col in &result.columns {
+        xml.push_str(&format!("    <variable name=\"{}\"/>\n", col));
+    }
+    xml.push_str("  </head>\n  <results>\n");
+
+    for row in &result.rows {
+        xml.push_str("    <result>\n");
+        for col in &result.columns {
+            if let Some(&id) = row.get(col) {
+                let val = resolve_term_for_csv(id, &dict);
+                let escaped = val
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                if sutra_core::is_inline(id)
+                    || dict.resolve(id).is_some_and(|s| s.starts_with('"'))
+                {
+                    xml.push_str(&format!(
+                        "      <binding name=\"{}\"><literal>{}</literal></binding>\n",
+                        col, escaped
+                    ));
+                } else {
+                    xml.push_str(&format!(
+                        "      <binding name=\"{}\"><uri>{}</uri></binding>\n",
+                        col, escaped
+                    ));
+                }
+            }
+        }
+        xml.push_str("    </result>\n");
+    }
+    xml.push_str("  </results>\n</sparql>\n");
+
+    Ok((
+        [(
+            header::CONTENT_TYPE,
+            "application/sparql-results+xml; charset=utf-8",
+        )],
+        xml,
+    ))
 }
 
 /// Execute a SPARQL query and return JSON results.

@@ -196,7 +196,7 @@ drift, tombstone accumulation.
 ## Priority 8: HTTP Protocol & Server-Mode Features
 
 - [ ] Content negotiation for SPARQL results (JSON, XML, CSV, TSV)
-- [ ] SPARQL results XML format (application/sparql-results+xml)
+- [x] SPARQL results XML format (/sparql.xml endpoint)
 - [x] SPARQL results CSV/TSV format (/sparql.csv, /sparql.tsv endpoints)
 - [x] Simple passcode authentication (`sutra serve --passcode <secret>`)
   - Authorization: Bearer header on all requests except /health
