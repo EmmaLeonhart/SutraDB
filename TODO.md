@@ -145,8 +145,8 @@ Validation happens client-side in SDKs (enabled by default, throwable exceptions
 The database accepts everything — lean store, smart clients.
 Sutra Studio shows the ontology visually and highlights violations.
 
-- [ ] OWL class hierarchy resolution (rdfs:subClassOf transitive closure) — for SDK validation
-- [ ] OWL property hierarchy (rdfs:subPropertyOf)
+- [x] OWL class hierarchy resolution (rdfs:subClassOf transitive closure) — Python SDK OWLValidator.get_all_types()
+- [ ] OWL property hierarchy (rdfs:subPropertyOf) — same pattern as subClassOf, add to SDK
 - [ ] owl:equivalentClass
 - [ ] owl:sameAs
 - [ ] owl:inverseOf
@@ -225,7 +225,7 @@ drift, tombstone accumulation.
 - [x] SIMD distance functions (AVX2/SSE/NEON) for vector operations ✅
 - [ ] Materialized adjacency lists (Neo4j-style node→edge lists) — currently all traversals use SPO/OSP prefix scans; adjacency lists could close the ~10× gap vs property graph traversal speed
 - [ ] Visited pool pattern (pre-allocated visited lists for HNSW search)
-- [ ] Builder/reader separation for HNSW (immutable index after construction)
+- [x] Builder/reader separation for HNSW (search is &self, insert is &mut; RwLock provides concurrency)
 - [ ] Query result streaming (don't collect all results before returning)
 - [ ] Prefix compression for IRI storage (common prefixes stored once) — low priority, dictionary encoding already compact
 - [x] HNSW compaction: HnswIndex::compact() rebuilds without tombstoned nodes
