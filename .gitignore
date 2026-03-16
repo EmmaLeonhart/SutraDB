@@ -32,3 +32,4 @@ sutra-import-data/
 # Claude artifacts
 mnt/
 sutra_error.log
+*.pyc
