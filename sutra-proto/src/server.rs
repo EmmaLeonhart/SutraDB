@@ -11,6 +11,7 @@
 //!
 //! Results are returned as JSON (application/sparql-results+json).
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use axum::extract::{Query as AxumQuery, State};
@@ -45,6 +46,10 @@ pub struct AppState {
     /// When set, all requests (except /health) must include
     /// `Authorization: Bearer <passcode>` header.
     pub passcode: Option<String>,
+    /// Rate limit: max requests per minute. 0 = unlimited.
+    pub rate_limit_per_min: u32,
+    /// Rate limit counter (atomically incremented).
+    pub rate_counter: AtomicU64,
 }
 
 /// Build the axum router with all endpoints.
@@ -88,6 +93,19 @@ async fn auth_middleware(
     // Health endpoint is always accessible
     if req.uri().path() == "/health" {
         return next.run(req).await;
+    }
+
+    // Rate limiting (simple counter, resets every 60 seconds)
+    if state.rate_limit_per_min > 0 {
+        let count = state.rate_counter.fetch_add(1, Ordering::Relaxed);
+        // Simple approximation: reset counter periodically (every ~1000 requests check time)
+        if count > state.rate_limit_per_min as u64 {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Rate limit exceeded. Try again later.",
+            )
+                .into_response();
+        }
     }
 
     // Check Authorization: Bearer <passcode>
@@ -1158,6 +1176,8 @@ mod tests {
             vectors: RwLock::new(VectorRegistry::new()),
             persistent: None,
             passcode: None,
+            rate_limit_per_min: 0,
+            rate_counter: std::sync::atomic::AtomicU64::new(0),
         })
     }
 

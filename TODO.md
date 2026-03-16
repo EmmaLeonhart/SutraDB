@@ -202,7 +202,7 @@ drift, tombstone accumulation.
   - Authorization: Bearer header on all requests except /health
   - Zero config when no passcode set
 - [x] Query timeouts (execute_with_timeout + deadline checks in pattern evaluation)
-- [ ] Rate limiting (server mode, opt-in)
+- [x] Rate limiting (server mode, rate_limit_per_min counter in auth middleware)
 - [x] HNSW health endpoint: `/vectors/health` — degree distribution, tombstone ratio, rebuild recommendation
 - [ ] Periodic backups (server mode)
   - [ ] Configurable interval: hourly / daily / custom

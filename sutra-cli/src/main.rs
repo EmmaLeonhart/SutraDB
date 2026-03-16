@@ -128,6 +128,8 @@ async fn main() -> anyhow::Result<()> {
                     vectors: RwLock::new(sutra_hnsw::VectorRegistry::new()),
                     persistent: None,
                     passcode: passcode.clone(),
+                    rate_limit_per_min: 0,
+                    rate_counter: std::sync::atomic::AtomicU64::new(0),
                 })
             } else {
                 tracing::info!("Opening persistent store at {}", data_dir);
@@ -194,6 +196,8 @@ async fn main() -> anyhow::Result<()> {
                     vectors: RwLock::new(vectors),
                     persistent: Some(ps),
                     passcode: passcode.clone(),
+                    rate_limit_per_min: 0,
+                    rate_counter: std::sync::atomic::AtomicU64::new(0),
                 })
             };
 
@@ -529,6 +533,8 @@ SutraDB Agent Installer v0.1.0
                     vectors: RwLock::new(sutra_hnsw::VectorRegistry::new()),
                     persistent: Some(ps2),
                     passcode,
+                    rate_limit_per_min: 0,
+                    rate_counter: std::sync::atomic::AtomicU64::new(0),
                 });
 
                 let app = sutra_proto::router(state);
