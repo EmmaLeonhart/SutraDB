@@ -170,7 +170,7 @@ drift, tombstone accumulation.
 - [x] Ontology viewer (Protege-like class hierarchy browser)
 - [x] Authentication settings page (ready for server-side auth)
 - [x] Database health dashboard (connection status, stats)
-- [ ] **HIGH PRIORITY: Bring Flutter graph view to parity with browse.html** — the HTML/JS browser (tools/browse.html) is significantly superior:
+- [ ] **IN PROGRESS: Bring Flutter graph view closer to browse.html** — major items done (labels, filtering, side panel, expand), remaining:
   - [x] Show predicate labels on edges (GraphPainter already renders edge.label)
   - [x] Color-code by type: blue=IRI, green=literal, orange=vector, purple=HNSW (SutraTheme colors)
   - [x] Different node shapes for IRIs vs literals vs vectors (NodeType enum + size/color)
