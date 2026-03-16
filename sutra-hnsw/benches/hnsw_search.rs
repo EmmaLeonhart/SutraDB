@@ -16,6 +16,7 @@ fn build_index(n: usize, dims: usize, metric: DistanceMetric) -> HnswIndex {
     let config = HnswConfig {
         dimensions: dims,
         m: 16,
+        m0: 32,
         ef_construction: 100,
         metric,
     };
@@ -38,6 +39,7 @@ fn bench_insert(c: &mut Criterion) {
                         let config = HnswConfig {
                             dimensions: dims,
                             m: 16,
+                            m0: 32,
                             ef_construction: 100,
                             metric: DistanceMetric::Cosine,
                         };
@@ -148,6 +150,7 @@ fn bench_bulk_insert(c: &mut Criterion) {
                         let config = HnswConfig {
                             dimensions: 128,
                             m: 16,
+                            m0: 32,
                             ef_construction: 100,
                             metric: DistanceMetric::Cosine,
                         };

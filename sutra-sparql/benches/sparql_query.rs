@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use sutra_core::{TermDictionary, Triple, TripleStore};
 use sutra_hnsw::{DistanceMetric, VectorPredicateConfig, VectorRegistry};
 use sutra_sparql::{execute_with_vectors, parse};
