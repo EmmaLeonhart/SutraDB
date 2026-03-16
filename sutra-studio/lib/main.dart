@@ -13,8 +13,28 @@ void main() {
   runApp(const SutraStudioApp());
 }
 
-class SutraStudioApp extends StatelessWidget {
+class SutraStudioApp extends StatefulWidget {
   const SutraStudioApp({super.key});
+
+  @override
+  State<SutraStudioApp> createState() => _SutraStudioAppState();
+
+  /// Access theme toggle from anywhere.
+  static _SutraStudioAppState? of(BuildContext context) =>
+      context.findAncestorStateOfType<_SutraStudioAppState>();
+}
+
+class _SutraStudioAppState extends State<SutraStudioApp> {
+  ThemeMode _themeMode = ThemeMode.dark;
+
+  void toggleTheme() {
+    setState(() {
+      _themeMode =
+          _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    });
+  }
+
+  ThemeMode get themeMode => _themeMode;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +43,9 @@ class SutraStudioApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Sutra Studio',
         debugShowCheckedModeBanner: false,
-        theme: SutraTheme.darkTheme,
+        theme: ThemeData.light(useMaterial3: true),
+        darkTheme: SutraTheme.darkTheme,
+        themeMode: _themeMode,
         home: const MainShell(),
       ),
     );
@@ -81,6 +103,22 @@ class _MainShellState extends State<MainShell> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  // Theme toggle
+                  IconButton(
+                    icon: Icon(
+                      SutraStudioApp.of(context)?.themeMode == ThemeMode.dark
+                          ? Icons.light_mode
+                          : Icons.dark_mode,
+                      size: 14,
+                      color: SutraTheme.muted,
+                    ),
+                    onPressed: () => SutraStudioApp.of(context)?.toggleTheme(),
+                    tooltip: 'Toggle theme',
+                    iconSize: 14,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  ),
+                  const SizedBox(height: 4),
                   // Connection indicator
                   Consumer<ConnectionProvider>(
                     builder: (ctx, conn, _) => Tooltip(

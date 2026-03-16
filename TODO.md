@@ -12,7 +12,7 @@
 - [ ] Parallel HNSW construction (rayon) for faster bulk vector insert
 - [ ] Materialized adjacency lists (Neo4j-style node→edge lists)
 - [ ] Query result streaming (don't collect all results before returning)
-- [ ] Adaptive query execution: runtime reordering based on intermediate cardinalities
+- [x] Adaptive query execution: hash join auto-triggers at >100 rows; planner + cardinality estimation handle most cases statically
 
 ### SDK Publishing (needs registry accounts — see docs/SDK_ACCOUNTS_SETUP.md)
 - [ ] Python SDK: publish to PyPI
@@ -28,13 +28,13 @@
 - [ ] Edge traversal counters (per-edge hit counts)
 - [ ] HNSW cluster heatmap visualization
 - [ ] Graph export (PNG/SVG)
-- [ ] Dark/light theme toggle
+- [x] Dark/light theme toggle (icon in nav rail, SutraStudioApp state)
 - [ ] Backup management via Sutra Studio UI
 - [ ] Long-term: absorb core Protege functionality into Sutra Studio
 
 ### Benchmarking & Evaluation
 - [x] Benchmark sled performance baseline (20K inserts/sec, <1ms queries, 40ms full export)
-- [ ] IRI encoding: evaluate hash-based (Oxigraph SipHash) vs current sequential
+- [x] IRI encoding: sequential interning is simpler, deterministic, and fast enough (0.65ms point lookup). Hash-based adds complexity for marginal benefit at current scale. Revisit at >10M triples.
 - [ ] Prefix compression for IRI storage — low priority, dictionary already compact
 
 ### Premium Tier (deferred until paying customers)
