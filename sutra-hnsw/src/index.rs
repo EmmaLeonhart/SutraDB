@@ -331,6 +331,33 @@ impl HnswIndex {
         deleted as f64 / self.nodes.len() as f64
     }
 
+    /// Compact the index by rebuilding it without deleted nodes.
+    /// Returns the number of nodes removed.
+    pub fn compact(&mut self) -> usize {
+        let active: Vec<(Vec<f32>, TermId)> = self
+            .nodes
+            .iter()
+            .filter(|n| !n.deleted)
+            .map(|n| (n.vector.clone(), n.triple_id))
+            .collect();
+
+        let removed = self.nodes.len() - active.len();
+        if removed == 0 {
+            return 0;
+        }
+
+        // Rebuild from scratch
+        let config = self.config.clone();
+        let seed = self.rng_state;
+        *self = Self::with_seed(config, seed);
+
+        for (vector, triple_id) in active {
+            let _ = self.insert(vector, triple_id);
+        }
+
+        removed
+    }
+
     // --- Internal helpers ---
 
     /// Compute score between a raw vector and a node.
