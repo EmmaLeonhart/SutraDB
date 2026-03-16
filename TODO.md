@@ -109,7 +109,7 @@ SDKs exist but need real integration testing, polish, and client-side OWL valida
 The database accepts all triples unconditionally. OWL validation is the SDK's job.
 
 - [ ] Integration tests for each SDK against a running SutraDB instance
-- [ ] Client-side OWL validation layer in each SDK:
+- [x] Client-side OWL validation layer (Python SDK done, others TODO):
   - [ ] Load OWL ontology triples from the database on connect
   - [ ] Validate inserts against rdfs:subClassOf, rdfs:domain, rdfs:range, owl:Restriction
   - [ ] Throw exception on constraint violation *before* sending to database
@@ -126,7 +126,7 @@ The database accepts all triples unconditionally. OWL validation is the SDK's jo
 ## Priority 6: Distribution & Ecosystem
 
 - [x] Dockerfile added (`docker build -t sutradb . && docker run -p 3030:3030 sutradb`)
-- [ ] Agent-first installer CLI (`sutra install-agent` or similar)
+- [x] Agent-first installer CLI (`sutra install-agent`)
   - [ ] Expose all config options as structured markdown prompts
   - [ ] Agent reasons through options and outputs `<dbname>_sutra_notes.md` with decisions
   - [ ] Serverless: notes stored alongside `.sdb` file
@@ -135,7 +135,7 @@ The database accepts all triples unconditionally. OWL validation is the SDK's jo
 - [x] Protégé plugin — connect OWL ontology editor to SutraDB's SPARQL endpoint
 - [ ] Jupyter integration (%%sparql cell magic, inline result rendering)
 - [ ] LangChain / LlamaIndex integration (SutraDB as vector store + knowledge graph for RAG)
-- [ ] MCP server — standardized agent↔database interface for Claude / other LLMs
+- [x] MCP server (tools/mcp-server/) — 6 tools: sparql, insert, describe, vector_search, info, health
 
 ## Priority 7: OWL Support
 
