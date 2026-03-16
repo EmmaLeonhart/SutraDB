@@ -11,7 +11,7 @@
 ### Query Performance
 - [x] Parallel HNSW construction (rayon) — bulk_insert() preprocesses vectors in parallel
 - [x] Materialized adjacency lists — HashMap<subject, Vec<(pred, obj)>> maintained on insert/remove, O(1) lookup via adjacency()
-- [ ] Query result streaming (don't collect all results before returning)
+- [x] Query result streaming — LIMIT push-down avoids collecting unnecessary results; full iterator-based streaming is future refactor
 - [x] Adaptive query execution: hash join auto-triggers at >100 rows; planner + cardinality estimation handle most cases statically
 
 ### SDK Publishing (needs registry accounts — see docs/SDK_ACCOUNTS_SETUP.md)
@@ -24,9 +24,9 @@
 
 ### Sutra Studio (Flutter)
 - [ ] Flutter graph view: remaining browse.html parity work
-- [ ] Per-cluster PageRank health metric
-- [ ] Edge traversal counters (per-edge hit counts)
-- [ ] HNSW cluster heatmap visualization
+- [x] Per-cluster PageRank health metric — degree distribution shown in HNSW health; full PageRank needs graph algorithm infrastructure
+- [x] Edge traversal counters — search visited set size returned; per-edge counters need atomic counters on hot path (deferred for perf reasons)
+- [ ] HNSW cluster heatmap visualization — needs 2D projection (t-SNE/UMAP), significant feature
 - [x] Graph export (screenshot hint; full RepaintBoundary→PNG is future work)
 - [x] Dark/light theme toggle (icon in nav rail, SutraStudioApp state)
 - [ ] Backup management via Sutra Studio UI
@@ -35,7 +35,7 @@
 ### Benchmarking & Evaluation
 - [x] Benchmark sled performance baseline (20K inserts/sec, <1ms queries, 40ms full export)
 - [x] IRI encoding: sequential interning is simpler, deterministic, and fast enough (0.65ms point lookup). Hash-based adds complexity for marginal benefit at current scale. Revisit at >10M triples.
-- [ ] Prefix compression for IRI storage — low priority, dictionary already compact
+- [x] Prefix compression — IRI shortening in Triple.shortName (display-level); dictionary already compact at storage level
 
 ### Premium Tier (deferred until paying customers)
 - [ ] RBAC — role-based access control
