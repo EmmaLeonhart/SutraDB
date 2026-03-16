@@ -9,6 +9,7 @@
     "test": "jest"
   },
   "keywords": ["sutradb", "rdf", "sparql", "vector", "graph-database"],
+  "files": ["dist/", "README.md", "LICENSE"],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
