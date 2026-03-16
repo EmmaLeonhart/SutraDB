@@ -227,7 +227,7 @@ drift, tombstone accumulation.
 - [ ] Builder/reader separation for HNSW (immutable index after construction)
 - [ ] Query result streaming (don't collect all results before returning)
 - [ ] Prefix compression for IRI storage (common prefixes stored once)
-- [ ] HNSW compaction: background pass to remove deleted nodes when deleted_ratio > threshold
+- [x] HNSW compaction: HnswIndex::compact() rebuilds without tombstoned nodes
 - [ ] Write-ahead log (WAL) for crash recovery
 - [ ] Adaptive query execution: runtime reordering based on intermediate cardinalities
 

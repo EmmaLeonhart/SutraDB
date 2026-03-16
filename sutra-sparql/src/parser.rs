@@ -120,6 +120,8 @@ pub enum Pattern {
     Bind { expression: Term, variable: String },
     /// VALUES ?var { val1 val2 ... }
     Values { variable: String, values: Vec<Term> },
+    /// Subquery: { SELECT ... WHERE { ... } }
+    Subquery(Box<Query>),
 }
 
 /// A term in a triple pattern.
@@ -574,6 +576,24 @@ impl<'a> Parser<'a> {
                     self.pos += 1;
                 }
             } else if self.peek_char() == Some('{') {
+                // Check if this is a subquery: { SELECT ... }
+                let saved = self.pos;
+                self.pos += 1; // skip '{'
+                self.skip_whitespace();
+                if self.peek_keyword("SELECT") {
+                    // Parse the inner SELECT as a full query
+                    let inner_query = self.parse_query()?;
+                    self.skip_whitespace();
+                    self.expect_char('}')?;
+                    patterns.push(Pattern::Subquery(Box::new(inner_query)));
+                    self.skip_whitespace();
+                    if self.peek_char() == Some('.') {
+                        self.pos += 1;
+                    }
+                    continue;
+                }
+                self.pos = saved; // Not a subquery, parse as group
+
                 // Sub-group, possibly followed by UNION
                 let first_group = self.parse_group()?;
                 self.skip_whitespace();

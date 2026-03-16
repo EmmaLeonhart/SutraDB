@@ -76,6 +76,8 @@ fn pattern_weight(pattern: &Pattern, bound: &HashSet<String>) -> u32 {
         Pattern::Bind { .. } => 11,
         // VALUES can come early (they provide bindings)
         Pattern::Values { .. } => 0,
+        // Subqueries should come after regular patterns
+        Pattern::Subquery(_) => 12,
         // UNIONs after regular patterns, before OPTIONAL
         Pattern::Union(_) => 15,
         // OPTIONALs should come last
@@ -130,6 +132,11 @@ fn collect_variables(pattern: &Pattern, vars: &mut HashSet<String>) {
         }
         Pattern::Values { variable, .. } => {
             vars.insert(variable.clone());
+        }
+        Pattern::Subquery(q) => {
+            for v in &q.projection {
+                vars.insert(v.clone());
+            }
         }
     }
 }

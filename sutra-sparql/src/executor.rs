@@ -475,6 +475,34 @@ fn evaluate_pattern(
             }
             Ok((result, result_scores))
         }
+        Pattern::Subquery(inner_query) => {
+            // Execute the subquery independently, then join results
+            let sub_result = execute_query_with_ctx(inner_query, ctx)?;
+            let mut result = Vec::new();
+            let mut result_scores = Vec::new();
+            for (i, outer_row) in current.iter().enumerate() {
+                for sub_row in &sub_result.rows {
+                    // Check if bindings are compatible
+                    let mut compatible = true;
+                    let mut merged = outer_row.clone();
+                    for (var, &val) in sub_row {
+                        if let Some(&existing) = merged.get(var) {
+                            if existing != val {
+                                compatible = false;
+                                break;
+                            }
+                        } else {
+                            merged.insert(var.clone(), val);
+                        }
+                    }
+                    if compatible {
+                        result.push(merged);
+                        result_scores.push(current_scores[i].clone());
+                    }
+                }
+            }
+            Ok((result, result_scores))
+        }
         Pattern::Values { variable, values } => {
             // VALUES ?var { val1 val2 ... }: cross-join current rows with each value
             let mut result = Vec::new();
