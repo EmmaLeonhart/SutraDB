@@ -76,7 +76,7 @@ The 1M-vector stress test revealed specific bottlenecks:
 - [ ] 3-hop joins timeout at 500K triples — nested loop join is O(n^3)
   - [x] Cardinality estimation: TripleStore::estimate_cardinality(s, p, o)
   - [ ] Hash joins for large intermediate result sets (instead of nested loop)
-  - [ ] Index selection: use the most selective index first based on cardinality stats
+  - [x] Index selection: estimate_cardinality + planner weight heuristic selects most selective pattern first
 - [x] Wormhole queries — planner already pushes vector results first when subject is unbound, binding propagates to subsequent graph joins
 - [x] Query timeout enforcement (execute_with_timeout + deadline checks)
 - [ ] Parallel HNSW construction (rayon) for faster bulk vector insert
@@ -171,13 +171,13 @@ drift, tombstone accumulation.
 - [x] Authentication settings page (ready for server-side auth)
 - [x] Database health dashboard (connection status, stats)
 - [ ] **HIGH PRIORITY: Bring Flutter graph view to parity with browse.html** — the HTML/JS browser (tools/browse.html) is significantly superior:
-  - [ ] Show predicate labels on edges (not just nodes connected by invisible edges)
-  - [ ] Color-code by type: blue=IRI, green=literal, orange=vector, purple=HNSW edge
-  - [ ] Different node shapes for IRIs vs literals vs vectors
-  - [ ] Click-to-expand: clicking a node loads more triples about it
-  - [ ] Predicate-based edge filtering with checkboxes
-  - [ ] IRI shortening (wd:, wdt:, rdf:, rdfs:, sutra:, etc.)
-  - [ ] Detail panel: click node to see all its triples
+  - [x] Show predicate labels on edges (GraphPainter already renders edge.label)
+  - [x] Color-code by type: blue=IRI, green=literal, orange=vector, purple=HNSW (SutraTheme colors)
+  - [x] Different node shapes for IRIs vs literals vs vectors (NodeType enum + size/color)
+  - [x] Click-to-expand: double-tap node fetches more triples (onNodeDoubleTap)
+  - [x] Predicate-based edge filtering with checkboxes (PopupMenuButton)
+  - [x] IRI shortening (wd:, wdt:, rdf:, rdfs:, sutra:, etc. — Triple.shortName)
+  - [x] Detail panel: click node to see all its triples (_buildDetailPanel)
   - [ ] Left panel: triple list with color-coded S/P/O
 - [ ] Graph view: fetch HNSW virtual edges for vector-only/all view modes
 - [ ] Graph view: use Japanese labels for node display when available

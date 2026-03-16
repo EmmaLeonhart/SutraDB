@@ -26,6 +26,8 @@ class _GraphScreenState extends State<GraphScreen> {
   bool _loading = false;
   String? _error;
   int _limit = 50;
+  Set<String> _hiddenPredicates = {};
+  Set<String> _allPredicates = {};
 
   @override
   void initState() {
@@ -155,8 +157,16 @@ class _GraphScreenState extends State<GraphScreen> {
       }
     }
 
+    // Collect all unique predicates for filtering
+    _allPredicates = edges.map((e) => e.label).toSet();
+
+    // Apply predicate filter
+    final filteredEdges = edges
+        .where((e) => !_hiddenPredicates.contains(e.label))
+        .toList();
+
     _nodes = nodes;
-    _edges = edges;
+    _edges = filteredEdges;
   }
 
   @override
@@ -229,6 +239,40 @@ class _GraphScreenState extends State<GraphScreen> {
                 dropdownColor: SutraTheme.surface,
               ),
 
+              const SizedBox(width: 8),
+              // Predicate filter
+              if (_allPredicates.isNotEmpty)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.filter_list, size: 18),
+                  tooltip: 'Filter predicates',
+                  itemBuilder: (_) => _allPredicates.map((p) {
+                    final hidden = _hiddenPredicates.contains(p);
+                    return PopupMenuItem<String>(
+                      value: p,
+                      child: Row(
+                        children: [
+                          Icon(
+                            hidden ? Icons.check_box_outline_blank : Icons.check_box,
+                            size: 16,
+                            color: hidden ? SutraTheme.muted : SutraTheme.accent,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(p, style: const TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onSelected: (pred) {
+                    setState(() {
+                      if (_hiddenPredicates.contains(pred)) {
+                        _hiddenPredicates.remove(pred);
+                      } else {
+                        _hiddenPredicates.add(pred);
+                      }
+                      _buildGraph(_triples);
+                    });
+                  },
+                ),
               const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.refresh, size: 18),
