@@ -73,7 +73,7 @@ The server is currently in-memory only. This is the #1 blocker.
 The 1M-vector stress test revealed specific bottlenecks:
 
 - [x] HNSW search took 281s at 1M scale — needs SIMD distance functions (AVX2/SSE/NEON) ✅ Implemented AVX2+FMA, SSE, scalar fallback
-- [ ] 3-hop joins timeout at 500K triples — nested loop join is O(n^3)
+- [x] 3-hop joins — hash join optimization + LIMIT push-down + planner reordering mitigate the O(n^3) case
   - [x] Cardinality estimation: TripleStore::estimate_cardinality(s, p, o)
   - [x] Hash joins for large intermediate result sets (groups by bound subject, batch-lookup)
   - [x] Index selection: estimate_cardinality + planner weight heuristic selects most selective pattern first
