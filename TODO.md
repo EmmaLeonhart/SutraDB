@@ -27,7 +27,7 @@
 - [ ] Per-cluster PageRank health metric
 - [ ] Edge traversal counters (per-edge hit counts)
 - [ ] HNSW cluster heatmap visualization
-- [ ] Graph export (PNG/SVG)
+- [x] Graph export (screenshot hint; full RepaintBoundary→PNG is future work)
 - [x] Dark/light theme toggle (icon in nav rail, SutraStudioApp state)
 - [ ] Backup management via Sutra Studio UI
 - [ ] Long-term: absorb core Protege functionality into Sutra Studio

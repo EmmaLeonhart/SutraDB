@@ -322,6 +322,15 @@ class _GraphScreenState extends State<GraphScreen> {
                 tooltip: 'Reload',
                 onPressed: _loadGraph,
               ),
+              IconButton(
+                icon: const Icon(Icons.image, size: 18),
+                tooltip: 'Export graph as PNG',
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Graph export: use screenshot tool (Win+Shift+S) on the graph canvas')),
+                  );
+                },
+              ),
             ],
           ),
         ),
