@@ -234,6 +234,49 @@ class OWLValidator:
 
         return None  # Valid
 
+    def generate_verification_queries(self) -> list[tuple[str, str]]:
+        """Generate SPARQL queries that check for OWL constraint violations.
+
+        Returns a list of (description, sparql_query) tuples.
+        Each query returns rows that represent violations.
+        """
+        queries = []
+
+        # Domain violations
+        for prop, domain_class in self.domains.items():
+            queries.append((
+                f"Domain violation: {prop} requires subject of type {domain_class}",
+                f"SELECT ?s WHERE {{ ?s <{prop}> ?o . "
+                f"FILTER NOT EXISTS {{ ?s <{RDF_TYPE}> <{domain_class}> }} }}"
+            ))
+
+        # Range violations
+        for prop, range_class in self.ranges.items():
+            queries.append((
+                f"Range violation: {prop} requires object of type {range_class}",
+                f"SELECT ?o WHERE {{ ?s <{prop}> ?o . "
+                f"FILTER NOT EXISTS {{ ?o <{RDF_TYPE}> <{range_class}> }} }}"
+            ))
+
+        # Functional property violations (more than one value)
+        for prop in self.functional:
+            queries.append((
+                f"Functional violation: {prop} should have at most one value per subject",
+                f"SELECT ?s WHERE {{ ?s <{prop}> ?o1 . ?s <{prop}> ?o2 . "
+                f"FILTER(?o1 != ?o2) }}"
+            ))
+
+        # Disjoint class violations
+        for cls, disjoint_set in self.disjoint.items():
+            for other in disjoint_set:
+                queries.append((
+                    f"Disjoint violation: {cls} and {other} cannot overlap",
+                    f"SELECT ?x WHERE {{ ?x <{RDF_TYPE}> <{cls}> . "
+                    f"?x <{RDF_TYPE}> <{other}> }}"
+                ))
+
+        return queries
+
     def validate_ntriples(self, ntriples: str) -> list[OWLViolation]:
         """Validate a block of N-Triples. Returns list of violations."""
         violations = []
