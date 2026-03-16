@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/connection_config.dart';
 import 'sutra_client.dart';
 
 /// Manages the SutraDB connection state and periodic health checks.
+/// Persists connection settings via shared_preferences.
 class ConnectionProvider extends ChangeNotifier {
   SutraClient _client;
   ConnectionConfig _config;
@@ -14,7 +16,41 @@ class ConnectionProvider extends ChangeNotifier {
 
   ConnectionProvider()
       : _config = const ConnectionConfig(),
-        _client = SutraClient();
+        _client = SutraClient() {
+    _loadSavedConfig();
+  }
+
+  /// Load saved connection config from shared_preferences.
+  Future<void> _loadSavedConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final endpoint = prefs.getString('sutra_endpoint');
+      final apiKey = prefs.getString('sutra_api_key');
+      if (endpoint != null && endpoint.isNotEmpty) {
+        final saved = ConnectionConfig(
+          endpoint: endpoint,
+          apiKey: apiKey,
+          authMethod: apiKey != null ? AuthMethod.apiKey : AuthMethod.none,
+        );
+        await connect(saved);
+      }
+    } catch (_) {
+      // Ignore errors loading saved config
+    }
+  }
+
+  /// Save connection config to shared_preferences.
+  Future<void> _saveConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('sutra_endpoint', _config.endpoint);
+      if (_config.apiKey != null) {
+        await prefs.setString('sutra_api_key', _config.apiKey!);
+      } else {
+        await prefs.remove('sutra_api_key');
+      }
+    } catch (_) {}
+  }
 
   SutraClient get client => _client;
   ConnectionConfig get config => _config;
@@ -29,6 +65,7 @@ class ConnectionProvider extends ChangeNotifier {
     _client = SutraClient(config: _config);
     await _checkHealth();
     _startHealthCheck();
+    await _saveConfig();
     notifyListeners();
   }
 

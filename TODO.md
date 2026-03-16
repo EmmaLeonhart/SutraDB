@@ -191,7 +191,7 @@ drift, tombstone accumulation.
 - [x] Automatic rebuild recommendation threshold (needs_compaction in /vectors/health when deleted_ratio > 0.3)
 - [ ] Graph export (PNG/SVG of current visualization)
 - [ ] Dark/light theme toggle
-- [ ] Persistent connection settings (shared_preferences)
+- [x] Persistent connection settings (shared_preferences)
 
 ## Priority 8: HTTP Protocol & Server-Mode Features
 
