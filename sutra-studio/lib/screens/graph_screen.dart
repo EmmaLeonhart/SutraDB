@@ -49,6 +49,29 @@ class _GraphScreenState extends State<GraphScreen> {
 
     try {
       final triples = await conn.client.fetchTriples(limit: _limit);
+
+      // Also fetch HNSW neighbor edges if in vector/all mode
+      if (_viewMode != GraphViewMode.semanticOnly) {
+        try {
+          final hnswResult = await conn.client.query(
+            'SELECT ?s ?o WHERE { ?s <http://sutra.dev/hnswNeighbor> ?o } LIMIT ${_limit ~/ 2}',
+          );
+          for (final row in hnswResult.rows) {
+            final s = (row['s'] as Map?)?['value']?.toString() ?? '';
+            final o = (row['o'] as Map?)?['value']?.toString() ?? '';
+            if (s.isNotEmpty && o.isNotEmpty) {
+              triples.add(Triple(
+                subject: s,
+                predicate: 'http://sutra.dev/hnswNeighbor',
+                object: o,
+              ));
+            }
+          }
+        } catch (_) {
+          // HNSW edges may not be available
+        }
+      }
+
       _triples = triples;
       _buildGraph(triples);
       setState(() => _loading = false);

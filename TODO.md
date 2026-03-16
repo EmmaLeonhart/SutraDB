@@ -179,7 +179,7 @@ drift, tombstone accumulation.
   - [x] IRI shortening (wd:, wdt:, rdf:, rdfs:, sutra:, etc. — Triple.shortName)
   - [x] Detail panel: click node to see all its triples (_buildDetailPanel)
   - [x] Left panel: triple list with color-coded S/P/O
-- [ ] Graph view: fetch HNSW virtual edges for vector-only/all view modes
+- [x] Graph view: fetch HNSW virtual edges for vector-only/all view modes
 - [ ] Graph view: use Japanese labels for node display when available
 - [x] Graph view: reduce default limit to 50 to prevent combinatorial explosion
 - [x] Windows desktop platform support (flutter create --platforms windows)
