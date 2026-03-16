@@ -1416,7 +1416,7 @@ fn evaluate_property_path(
             };
             let step2 = Pattern::Triple {
                 subject: Term::Variable(mid_var),
-                predicate: (&**next_pred).clone(),
+                predicate: (*next_pred).as_ref().clone(),
                 object: object.clone(),
             };
             let (r1, s1) = evaluate_pattern(&step1, current, current_scores, ctx, None)?;
