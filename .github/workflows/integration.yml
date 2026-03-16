@@ -1,0 +1,81 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration:
+    name: SDK Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build SutraDB
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p sutra-cli
+
+      # Start SutraDB in background
+      - name: Start SutraDB
+        run: |
+          ./target/release/sutra serve --memory-only --port 3030 &
+          sleep 2
+          curl -f http://localhost:3030/health
+
+      # Insert test data
+      - name: Load test data
+        run: |
+          curl -X POST http://localhost:3030/triples \
+            -H "Content-Type: text/plain" \
+            -d '<http://example.org/Alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Person> .
+          <http://example.org/Bob> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Person> .
+          <http://example.org/Alice> <http://example.org/knows> <http://example.org/Bob> .
+          <http://example.org/Alice> <http://example.org/name> "Alice" .
+          <http://example.org/Bob> <http://example.org/name> "Bob" .'
+
+      # Verify data loaded
+      - name: Verify SPARQL
+        run: |
+          RESULT=$(curl -s -X POST http://localhost:3030/sparql -d 'SELECT * WHERE { ?s ?p ?o } LIMIT 5')
+          echo "$RESULT"
+          echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d['results']['bindings']) > 0, 'No results'"
+
+      # Python SDK integration test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python SDK test
+        run: |
+          cd sdks/python
+          pip install -e .
+          python -c "
+          from sutradb import SutraClient
+          c = SutraClient()
+          assert c.health(), 'Health check failed'
+          r = c.sparql('SELECT * WHERE { ?s ?p ?o } LIMIT 5')
+          assert len(r['results']['bindings']) > 0, 'No SPARQL results'
+          print(f'Python SDK: OK ({len(r[\"results\"][\"bindings\"])} results)')
+          "
+
+      # Go SDK integration test
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Go SDK test
+        run: |
+          cd sdks/go
+          go test ./... -v
+
+      # TypeScript SDK integration test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: TypeScript SDK test
+        run: |
+          cd sdks/typescript
+          npm install
+          npx tsc --noEmit
+          npx jest --passWithNoTests
