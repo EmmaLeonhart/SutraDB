@@ -913,6 +913,22 @@ fn resolve_term(
             // Path terms are handled at the pattern level, not here
             resolve_term(base, bindings, dict, prefixes)
         }
+        Term::QuotedTriple {
+            subject,
+            predicate,
+            object,
+        } => {
+            // Resolve the inner terms and compute content-addressed ID
+            let s = resolve_term(subject, bindings, dict, prefixes)?;
+            let p = resolve_term(predicate, bindings, dict, prefixes)?;
+            let o = resolve_term(object, bindings, dict, prefixes)?;
+            match (s, p, o) {
+                (Some(s_id), Some(p_id), Some(o_id)) => {
+                    Ok(Some(sutra_core::quoted_triple_id(s_id, p_id, o_id)))
+                }
+                _ => Ok(None),
+            }
+        }
     }
 }
 

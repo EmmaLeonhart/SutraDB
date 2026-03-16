@@ -143,6 +143,12 @@ pub enum Term {
     VectorLiteral(Vec<f32>),
     /// The special token `a` (shorthand for rdf:type)
     A,
+    /// An RDF-star quoted triple: << ?s ?p ?o >>
+    QuotedTriple {
+        subject: Box<Term>,
+        predicate: Box<Term>,
+        object: Box<Term>,
+    },
     /// A property path: predicate+ (one or more), predicate* (zero or more),
     /// or pred1/pred2 (sequence).
     Path {
@@ -882,6 +888,31 @@ impl<'a> Parser<'a> {
                 Ok(Term::Variable(name))
             }
             Some('<') => {
+                // Check for RDF-star quoted triple: << ?s ?p ?o >>
+                if self.pos + 1 < self.input.len() && self.input.as_bytes()[self.pos + 1] == b'<' {
+                    self.pos += 2; // skip '<<'
+                    self.skip_whitespace();
+                    let s = self.parse_term()?;
+                    self.skip_whitespace();
+                    let p = self.parse_term()?;
+                    self.skip_whitespace();
+                    let o = self.parse_term()?;
+                    self.skip_whitespace();
+                    // Expect >>
+                    if self.pos + 1 < self.input.len()
+                        && self.input.as_bytes()[self.pos] == b'>'
+                        && self.input.as_bytes()[self.pos + 1] == b'>'
+                    {
+                        self.pos += 2;
+                    } else {
+                        return Err(self.error("expected >> to close quoted triple"));
+                    }
+                    return Ok(Term::QuotedTriple {
+                        subject: Box::new(s),
+                        predicate: Box::new(p),
+                        object: Box::new(o),
+                    });
+                }
                 let iri = self.parse_iri_ref()?;
                 Ok(Term::Iri(iri))
             }
