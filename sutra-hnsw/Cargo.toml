@@ -13,6 +13,7 @@ tracing.workspace = true
 memmap2.workspace = true
 xxhash-rust.workspace = true
 sutra-core.workspace = true
+rayon.workspace = true
 
 # NOTE: sutra-sparql must NEVER appear here.
 

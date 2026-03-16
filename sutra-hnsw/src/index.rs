@@ -331,6 +331,98 @@ impl HnswIndex {
         deleted as f64 / self.nodes.len() as f64
     }
 
+    /// Bulk insert vectors in parallel using rayon.
+    /// Vectors are preprocessed in parallel, then inserted sequentially
+    /// (HNSW graph construction is inherently sequential, but distance
+    /// computation during neighbor selection benefits from parallelism).
+    pub fn bulk_insert(&mut self, vectors: Vec<(Vec<f32>, TermId)>) -> Result<usize> {
+        use rayon::prelude::*;
+
+        // Preprocess all vectors in parallel
+        let metric = self.config.metric;
+        let preprocessed: Vec<(Vec<f32>, TermId)> = vectors
+            .into_par_iter()
+            .map(|(mut v, id)| {
+                metric.preprocess(&mut v);
+                (v, id)
+            })
+            .collect();
+
+        // Insert sequentially (graph structure requires it)
+        let mut count = 0;
+        for (vector, triple_id) in preprocessed {
+            if vector.len() != self.config.dimensions {
+                continue;
+            }
+            // Skip preprocess since we already did it
+            let new_layer = self.random_layer();
+            let new_node = crate::node::HnswNode::new(vector, new_layer, triple_id);
+            let new_idx = self.nodes.len() as u32;
+            self.nodes.push(new_node);
+            self.triple_to_node.insert(triple_id, new_idx);
+
+            if self.entry_point.is_none() {
+                self.entry_point = Some(new_idx);
+                self.max_layer = new_layer;
+                count += 1;
+                continue;
+            }
+
+            let mut current_ep = self.entry_point.unwrap();
+            for layer in (new_layer as usize + 1..=self.max_layer as usize).rev() {
+                current_ep = self.greedy_closest(new_idx, current_ep, layer as u8);
+            }
+
+            let ef = self.config.ef_construction;
+            for layer in (0..=std::cmp::min(new_layer, self.max_layer) as usize).rev() {
+                let candidates = self.search_layer_internal(new_idx, current_ep, ef, layer as u8);
+                let max_conn = if layer == 0 {
+                    self.config.m0
+                } else {
+                    self.config.m
+                };
+                let neighbors = self.select_neighbors(&candidates, max_conn);
+
+                if layer < self.nodes[new_idx as usize].neighbors.len() {
+                    self.nodes[new_idx as usize].neighbors[layer] = neighbors.clone();
+                }
+                for &neighbor_idx in &neighbors {
+                    let neighbor = &mut self.nodes[neighbor_idx as usize];
+                    if layer < neighbor.neighbors.len() {
+                        neighbor.neighbors[layer].push(new_idx);
+                        if neighbor.neighbors[layer].len() > max_conn {
+                            self.shrink_connections(neighbor_idx, layer as u8, max_conn);
+                        }
+                    }
+                }
+                if !candidates.is_empty() {
+                    current_ep = candidates[0].1;
+                }
+            }
+
+            if new_layer > self.max_layer {
+                if let Some(old_ep) = self.entry_point {
+                    if !self.extra_entry_points.contains(&old_ep) {
+                        self.extra_entry_points.push(old_ep);
+                    }
+                }
+                self.entry_point = Some(new_idx);
+                self.max_layer = new_layer;
+            } else if new_layer >= self.max_layer.saturating_sub(1)
+                && new_layer > 0
+                && self.extra_entry_points.len() < 8
+                && Some(new_idx) != self.entry_point
+                && !self.extra_entry_points.contains(&new_idx)
+            {
+                self.extra_entry_points.push(new_idx);
+            }
+
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
     /// Compact the index by rebuilding it without deleted nodes.
     /// Returns the number of nodes removed.
     pub fn compact(&mut self) -> usize {

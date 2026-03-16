@@ -46,6 +46,9 @@ sled = "0.34"           # embedded key-value store for persistent indexes
 # Hashing
 xxhash-rust = { version = "0.8", features = ["xxh3"] }  # content-addressed triple IDs
 
+# Parallelism
+rayon = "1"
+
 # URL encoding
 urlencoding = "2"
 

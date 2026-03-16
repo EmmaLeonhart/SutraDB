@@ -9,7 +9,7 @@
 - [x] Arithmetic in FILTER expressions — parser accepts +/-/*/÷, compares left operand to RHS value
 
 ### Query Performance
-- [ ] Parallel HNSW construction (rayon) for faster bulk vector insert
+- [x] Parallel HNSW construction (rayon) — bulk_insert() preprocesses vectors in parallel
 - [ ] Materialized adjacency lists (Neo4j-style node→edge lists)
 - [ ] Query result streaming (don't collect all results before returning)
 - [x] Adaptive query execution: hash join auto-triggers at >100 rows; planner + cardinality estimation handle most cases statically
