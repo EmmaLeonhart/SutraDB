@@ -21,12 +21,23 @@ class SutraClient:
     Args:
         endpoint: Base URL of the SutraDB HTTP server.
             Defaults to ``http://localhost:3030``.
+        owl_validation: Enable client-side OWL constraint validation.
+            When True (default), inserts are checked against OWL axioms
+            stored in the database before being sent. Raises OWLViolation
+            on constraint violations. The database itself always accepts
+            all triples regardless of this setting.
     """
 
-    def __init__(self, endpoint: str = "http://localhost:3030") -> None:
+    def __init__(
+        self,
+        endpoint: str = "http://localhost:3030",
+        owl_validation: bool = True,
+    ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": "sutradb-python/0.1.0"})
+        self._owl_validation = owl_validation
+        self._owl_validator = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -64,6 +75,28 @@ class SutraClient:
                 status_code=resp.status_code,
             )
         return resp
+
+    # ------------------------------------------------------------------
+    # OWL validation
+    # ------------------------------------------------------------------
+
+    def _ensure_owl_loaded(self) -> None:
+        """Lazy-load OWL ontology from the database on first validation."""
+        if self._owl_validator is not None:
+            return
+        try:
+            from .owl import OWLValidator
+
+            self._owl_validator = OWLValidator()
+            self._owl_validator.load_from_client(self)
+        except Exception:
+            # If we can't load the ontology, skip validation silently
+            self._owl_validator = None
+
+    def reload_owl(self) -> None:
+        """Force reload of OWL ontology from the database."""
+        self._owl_validator = None
+        self._ensure_owl_loaded()
 
     # ------------------------------------------------------------------
     # Public API
@@ -116,6 +149,16 @@ class SutraClient:
             A dict ``{"inserted": int, "errors": list[str]}`` summarising the
             outcome across all batches.
         """
+        # OWL validation (client-side, before sending to database)
+        if self._owl_validation:
+            self._ensure_owl_loaded()
+            if self._owl_validator and self._owl_validator.has_constraints():
+                from .owl import OWLViolation
+
+                violations = self._owl_validator.validate_ntriples(ntriples)
+                if violations:
+                    raise violations[0]  # Raise first violation
+
         lines = [
             line for line in ntriples.splitlines() if line.strip()
         ]
