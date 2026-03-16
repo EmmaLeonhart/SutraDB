@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Open Graph / Discord / Twitter preview -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="The Creation of SutraDB — Emma Leonhart">
+    <meta property="og:description" content="Why I built a unified graph+vector database from scratch in Rust, inspired by SQLite and the realization that HNSW is already a graph.">
+    <meta property="og:url" content="https://emmaleonhart.github.io/SutraDB/creation/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="The Creation of SutraDB — Emma Leonhart">
+    <meta name="twitter:description" content="Why I built a unified graph+vector database from scratch in Rust, inspired by SQLite and the realization that HNSW is already a graph.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>The Creation of SutraDB &mdash; Emma Leonhart</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .story-section { margin-bottom: 48px; }
+        .story-section p { font-size: 1.05em; line-height: 1.75; }
+        .insight {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--green);
+            border-radius: 6px;
+            padding: 20px 24px;
+            margin: 24px 0;
+            font-size: 1.05em;
+            line-height: 1.7;
+        }
+        .insight strong { color: var(--green); }
+        .frustration {
+            border-left-color: var(--orange);
+        }
+        .frustration strong { color: var(--orange); }
+        .timeline {
+            position: relative;
+            padding-left: 32px;
+            margin: 32px 0;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+        .timeline-item {
+            position: relative;
+            margin-bottom: 24px;
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -28px;
+            top: 8px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+        .timeline-item h4 {
+            color: var(--accent);
+            margin-bottom: 4px;
+        }
+        .author-block {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 12px;
+            color: var(--muted);
+            font-size: 0.95em;
+        }
+        .author-block .initials {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #58a6ff, #bc8cff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.1em;
+            color: #0d1117;
+        }
+    </style>
+</head>
+<body>
+<nav>
+    <a href="../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../protocols/">Protocols</a>
+    <a href="../sparql/">SPARQL</a>
+    <a href="../rdf/">RDF</a>
+    <a href="../owl/">OWL</a>
+    <a href="../serverless/">Serverless</a>
+    <a href="../graph-vector/">Graph+Vector</a>
+    <a href="../sdb-format/">.sdb Format</a>
+    <a href="../libraries/">Libraries</a>
+    <a href="../creation/" class="active">Creation</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>The <span>Creation</span> of SutraDB</h1>
+        <p class="subtitle">How a frustration with two-database architectures led to one that does both.</p>
+        <div class="author-block">
+            <div class="initials">EL</div>
+            <div>
+                <strong style="color: var(--text);">Emma Leonhart</strong><br>
+                Creator of SutraDB
+            </div>
+        </div>
+    </div>
+
+    <div class="story-section">
+        <h2>The Problem</h2>
+
+        <p>I was building knowledge graphs. Not toy ones &mdash; real ones, with millions of triples extracted from structured and unstructured sources. The kind where you need to traverse relationships <em>and</em> search by semantic similarity in the same breath.</p>
+
+        <p>The standard answer in 2024 was: run two databases. A triplestore like Apache Jena Fuseki for your RDF graph, and a vector database like Qdrant or Pinecone for your embeddings. Glue them together in application code. Pray they stay in sync.</p>
+
+        <div class="insight frustration">
+            <strong>The frustration:</strong> Every GraphRAG pipeline I saw had this same two-database architecture. Two services to deploy. Two query languages. Two consistency boundaries. Two things to monitor, backup, and keep alive. And if you wanted an AI agent to set it up? Good luck. That's two install scripts, two config files, two health checks.
+        </div>
+
+        <p>For production teams with DevOps engineers, this is manageable. For a solo developer, a researcher, or an AI agent trying to spin up a knowledge base autonomously? It's a wall.</p>
+
+        <p>I wanted something that felt like SQLite. Open a file, start querying. No daemon. No Docker compose. No "Step 1: install Java."</p>
+    </div>
+
+    <div class="story-section">
+        <h2>The Insight</h2>
+
+        <p>The breakthrough wasn't a clever algorithm. It was noticing something obvious that everyone seemed to overlook.</p>
+
+        <p>HNSW &mdash; Hierarchical Navigable Small World &mdash; is the algorithm behind almost every production vector database. Qdrant uses it. Pinecone uses it. Weaviate uses it. It's the reason approximate nearest neighbor search works at scale.</p>
+
+        <p>And HNSW is, itself, a graph.</p>
+
+        <div class="insight">
+            <strong>The realization:</strong> An HNSW index is a navigable graph where nodes are vectors and edges connect nearby points across hierarchical layers. A triplestore is a graph where nodes are entities and edges are predicates. These aren't two different things. They're two views of the same data structure. Why was everyone running them in separate processes?
+        </div>
+
+        <p>If your knowledge graph already has a graph engine for traversal, and your vector index is already a graph internally, then unifying them isn't a hack &mdash; it's the natural architecture. You just need one system where vectors are stored as triples and HNSW is treated as a fourth index type alongside SPO, POS, and OSP.</p>
+
+        <p>Instead of:</p>
+<pre><code>Application
+  |--- SPARQL query ---> [Fuseki]     (graph)
+  |--- ANN search  ---> [Qdrant]      (vectors)
+  |--- sync logic  ---> [application] (glue)</code></pre>
+
+        <p>You get:</p>
+<pre><code>Application
+  |--- one SPARQL query ---> [SutraDB] (graph + vectors)</code></pre>
+    </div>
+
+    <div class="story-section">
+        <h2>Why Rust, Why SQLite's Philosophy</h2>
+
+        <p>The choice of Rust wasn't about performance cult. It was about two things: correctness guarantees for concurrent HNSW reads (the borrow checker is the best tool for this), and single-binary distribution. No JVM, no Python runtime, no shared libraries to manage.</p>
+
+        <p>The SQLite inspiration went deeper than "just a file." SQLite proved that a database can be both embedded <em>and</em> serious. It's the most deployed database in the world, not because it's simple, but because it made the right tradeoffs: zero-config for the common case, opt-in complexity when you need it.</p>
+
+        <p>I wanted those same tradeoffs for graph+vector:</p>
+
+        <ul>
+            <li><strong>Embedded mode</strong> &mdash; Open a <code>.sdb</code> file, insert triples, search vectors. No config.</li>
+            <li><strong>Server mode</strong> &mdash; Run <code>sutra serve</code> when you need HTTP access. Opt-in, not mandatory.</li>
+            <li><strong>Agent-installable</strong> &mdash; An AI agent can install, configure, and operate everything without ever touching a GUI. Because in 2025, your DBA might be a language model.</li>
+        </ul>
+    </div>
+
+    <div class="story-section">
+        <h2>The Key Decision: Vectors Are Triples</h2>
+
+        <p>The most important design decision in SutraDB is that a vector embedding is just a triple with a typed literal.</p>
+
+<pre><code><span class="cmt"># An embedding on a node &mdash; it's just a triple</span>
+:paper_42 :hasEmbedding <span class="str">"0.23 -0.11 0.87 ..."</span>^^sutra:f32vec .
+
+<span class="cmt"># An embedding on an edge &mdash; RDF-star makes this natural</span>
+&lt;&lt; :paper_42 :discusses :TransformerArchitecture &gt;&gt;
+    :hasEmbedding <span class="str">"0.23 -0.11 ..."</span>^^sutra:f32vec .</code></pre>
+
+        <p>This means there's no separate "vector collection" or "embedding table." Vectors live in the same triple store, participate in the same SPARQL queries, and get backed up in the same file. The HNSW index is built from these triples automatically, just like SPO/POS/OSP indexes are built from regular triples.</p>
+
+        <p>The result: you can write a single query that traverses a citation graph, jumps into vector space to find similar papers, filters by author, and ranks by similarity score &mdash; all without leaving SPARQL.</p>
+    </div>
+
+    <div class="story-section">
+        <h2>The Architecture</h2>
+
+        <div class="timeline">
+            <div class="timeline-item">
+                <h4>sutra-core</h4>
+                <p>The triple storage engine. SPO/POS/OSP indexes on interned u64 IDs. IRI interning, RDF-star quoted triple support, LSM-tree persistence. This is the foundation everything else sits on.</p>
+            </div>
+            <div class="timeline-item">
+                <h4>sutra-hnsw</h4>
+                <p>The HNSW vector index. Completely independent of SPARQL &mdash; it's a pure data structure crate. One index per vector predicate. Cosine, euclidean, dot product. Tombstone deletion with background compaction.</p>
+            </div>
+            <div class="timeline-item">
+                <h4>sutra-sparql</h4>
+                <p>SPARQL 1.1 parser, query planner, and executor with the hybrid extension: <code>VECTOR_SIMILAR</code> and <code>VECTOR_SCORE</code>. The planner decides whether to start from the graph or the vector index based on what's bound.</p>
+            </div>
+            <div class="timeline-item">
+                <h4>sutra-proto</h4>
+                <p>The HTTP layer. SPARQL Protocol, Graph Store Protocol, REST API. Only loaded in server mode.</p>
+            </div>
+            <div class="timeline-item">
+                <h4>sutra-cli</h4>
+                <p>The command-line interface. Import, export, query, serve. Also includes the agent-first installer that outputs config-as-markdown.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="story-section">
+        <h2>What I Learned</h2>
+
+        <p>Building SutraDB taught me that the gap in the ecosystem wasn't a missing algorithm or a missing optimization. It was a missing <em>opinion</em>. Everyone agreed that knowledge graphs need vectors. Nobody was willing to say: "these should be the same database."</p>
+
+        <p>The technical challenges &mdash; content-addressed triple IDs for RDF-star, HNSW tombstone management, the query planner heuristic for choosing vector-first vs. graph-first execution &mdash; were all solvable once the architecture was clear. The hard part was committing to the idea that a vector is just a triple with a funny datatype.</p>
+
+        <div class="insight">
+            <strong>The lesson:</strong> Sometimes the right architecture isn't the one that's technically hardest. It's the one that's conceptually simplest. If HNSW is a graph and your data is a graph, build one engine that does both. Don't run two.
+        </div>
+    </div>
+</div>
+
+<footer>
+    <p>SutraDB is open source under the Apache 2.0 license.</p>
+    <p style="margin-top: 8px;">
+        <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a> &middot;
+        <a href="https://github.com/EmmaLeonhart/SutraDB/blob/main/docs/architecture.md">Architecture</a> &middot;
+        <a href="https://github.com/EmmaLeonhart/SutraDB/blob/main/TODO.md">Roadmap</a>
+    </p>
+</footer>
+
+</body>
+</html>
