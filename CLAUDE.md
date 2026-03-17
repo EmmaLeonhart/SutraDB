@@ -170,8 +170,8 @@ ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^sutra:f32vec))
 ## Query Language Policy
 
 **Supported:** **SPARQL+** — SPARQL 1.1 superset with VECTOR_SIMILAR, VECTOR_SCORE, and predicate-based exit conditions (UNTIL)
-**Planned:** Cypher as a translation layer/wrapper over SPARQL
-**Never:** SQL, MongoDB Query Language — use the appropriate database for those. GraphQL — push to application layer.
+**Planned:** Cypher, SQL, and MongoDB Query Language as translation layers/wrappers over SPARQL. These are syntactic frontends — every query is transpiled to SPARQL+ before execution.
+**Never:** GraphQL — push to application layer.
 
 ---
 
@@ -209,7 +209,7 @@ Do not implement these without explicit instruction:
 
 - RDFS inference
 - Built-in graph algorithms (PageRank, community detection, etc.)
-- SQL or MongoDB query interfaces (see Query Language Policy)
+- Native SQL or MongoDB storage engines (SQL/MQL are planned as SPARQL wrappers, not native interfaces)
 - Distributed execution / sharding (open-source tier)
 - Embedding model metadata enforcement
 - Multi-embedding-space / cross-modal queries
