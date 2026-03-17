@@ -157,13 +157,117 @@ Fine-grained `RwLock` per node: reads are fully concurrent, writes lock only the
 
 Future work: lock-free HNSW variants using atomic CAS on neighbor lists for write-heavy workloads.
 
+### 4.7 Background Maintenance Cycle
+
+During low-usage periods, SutraDB runs a background optimization cycle that rebuilds indexes without any downtime. The old indexes remain fully operational and in-memory while new ones are constructed — queries continue to hit the old indexes until the rebuild completes, then an atomic swap replaces them.
+
+This cycle handles two things:
+1. **HNSW rebuild** — construct a fresh HNSW graph from current vector triples. Eliminates tombstoned nodes, rebalances layer assignments, produces optimal neighbor connections for the current vector distribution.
+2. **Pseudo-table discovery and rebuild** — re-scan the graph for emergent relational structure and materialize columnar indexes (see §4.8).
+
 ---
 
-## 5. Hybrid SPARQL Extension
+## 4.8 Pseudo-Tables (Auto-Discovered Columnar Indexes)
+
+RDF has no tables, but relational structure exists implicitly in the graph. Nodes that share the same predicate-position structure are, in effect, rows of an implicit table. SutraDB auto-discovers these groups and materializes **pseudo-tables** — columnar indexes over groups of structurally similar nodes — to accelerate the SQL-like portions of SPARQL execution (joins, filters, aggregates over uniform data).
+
+### 4.8.1 Property Definition
+
+A "property" is defined by **predicate + position** (subject or object). This matters because being on different ends of the same predicate is semantically distinct:
+
+| Triple | Properties assigned |
+|---|---|
+| `:Cat :eats :Mouse` | `:Cat` gets `SUB→eats`, `:Mouse` gets `OBJ→eats` |
+| `:Mouse :eats :Grain` | `:Mouse` gets `SUB→eats`, `:Grain` gets `OBJ→eats` |
+
+So `:Mouse` has two distinct properties: `SUB→eats` and `OBJ→eats`.
+
+### 4.8.2 Group Discovery
+
+A pseudo-table is formed when a statistically significant cluster of nodes (p < 0.05 vs. random co-occurrence) share enough predicate-position structure:
+
+- **Minimum criteria**: 5 properties each held by ≥50% of the group
+- Discovery runs during the background maintenance cycle, not during query time
+
+### 4.8.3 Table Structure
+
+Once a group qualifies:
+
+| Column type | Inclusion rule |
+|---|---|
+| **Core columns** | Each property held by ≥33% of the group becomes a column |
+| **Null values** | If a node lacks a core-column property, the value is null |
+| **Tail count** | An integer column counting how many non-core properties ("tail properties") each node has |
+
+The pseudo-table is a columnar index — contiguous memory layout per column, suitable for SIMD-accelerated filtering and vectorized execution.
+
+### 4.8.4 Query Planner Integration
+
+Pseudo-tables are an **accelerator**, not a replacement for the general triple store. The planner must decide per-pattern how to route:
+
+| Situation | Strategy |
+|---|---|
+| All queried properties are pseudo-table columns | Full columnar scan — maximum acceleration |
+| Some properties are columns, some are not | Resolve pseudo-table columns first (fast, columnar), then join remaining properties via regular SPO/POS/OSP lookups on the already-bound subjects |
+| No properties match any pseudo-table | Fall back entirely to regular triple store scans |
+
+Properties outside the pseudo-table's columns are resolved as normal SPARQL triple pattern lookups — they get no columnar benefit. This is by design: pseudo-tables accelerate the common case (queries over the shared structure of a group), not the general case. Asking for everything (`SELECT *` in SQL terms) would include tail properties that fall back to regular efficiency. But `SELECT *` is bad practice regardless — you should ask for only what you need.
+
+The mixed case (some columns, some not) is the most common in practice. The planner should resolve the pseudo-table portion first to bind subjects cheaply, then use those bindings to do targeted SPO lookups for the remaining properties — which is fast because the subject is already bound.
+
+### 4.8.5 Data Health Metric
+
+The distribution of properties across a pseudo-table group reveals data quality:
+
+- **Healthy**: sharp "cliff" between core and tail properties. Example: 10 properties held by 100% of the group, every other property held by ≤10%. This indicates well-structured, consistent data.
+- **Unhealthy**: gradual slope from core to tail. Many properties at 30–40% coverage, no clear separation. This indicates inconsistent schema usage.
+
+The cliff steepness is a quantifiable metric exposed through the health endpoint and Sutra Studio. It measures how "table-like" a group of nodes actually is — the sharper the cliff, the more benefit the pseudo-table provides.
+
+Note that pseudo-tables also serve as a **data health indicator** beyond query optimization. Well-structured data naturally forms clean pseudo-tables with steep cliffs — the pseudo-table discovery process doubles as a data quality audit. Incomplete or inconsistent data produces shallow cliffs or fails to form pseudo-tables at all. This makes the pseudo-table health metrics a core component of the database health dashboard (see §4.9).
+
+### 4.8.6 Relationship to Prior Work
+
+The concept of grouping RDF subjects by shared predicate structure is known in the literature as **characteristic sets** (Neumann & Moerkotte, 2011; Pham et al., WWW 2015 — "MonetDB/RDF: Discovering and Exploiting the Emergent Schema"). SutraDB's pseudo-tables extend this with:
+- Statistical significance testing (p < 0.05) rather than pure frequency thresholds
+- Per-column statistics (min/max/null_count/distinct_count) following DuckDB's zonemap pattern
+- Segment-level storage (~2048 rows per segment) with per-segment statistics for skip-scan pruning
+- The data health cliff metric as a first-class diagnostic
+- Background discovery and atomic swap during the maintenance cycle
+
+Implementation references: DataFusion's `ColumnStatistics` and `Precision<T>` pattern for statistics representation, DuckDB's row-group/segment storage hierarchy with zonemaps for skip-scan pruning.
+
+---
+
+## 4.9 Database Health Dashboard
+
+SutraDB exposes comprehensive database health diagnostics through two interfaces:
+
+1. **Sutra Studio** (GUI) — visual health dashboard with charts, heatmaps, and interactive exploration. Aimed at human operators who want visual intuition about database state.
+
+2. **`sutra health`** (CLI) — text-based health report aimed at AI agents. All metrics are output as structured text that an agent can parse and reason about. No GUI required.
+
+Both interfaces expose the same underlying metrics:
+
+| Metric | Source |
+|---|---|
+| HNSW index health | Tombstone ratio, layer distribution, entry point connectivity, recall estimate |
+| Pseudo-table coverage | What percentage of triples fall into pseudo-tables, cliff steepness per group |
+| Data structure quality | Characteristic set distribution, property coverage histograms |
+| Storage statistics | Triple count, term dictionary size, index sizes, per-predicate cardinality |
+| Query performance | Per-pattern latency percentiles, planner decision accuracy (pseudo-table hit rate) |
+
+The health dashboard is a diagnostic tool, not a monitoring system — it reports current state on demand rather than collecting time-series data. For continuous monitoring, export metrics to an external system.
+
+---
+
+## 5. SPARQL+ Extension
+
+SutraDB's query language is called **SPARQL+** — a superset of SPARQL 1.1. Any valid SPARQL 1.1 query works as-is. SPARQL+ adds two categories of extensions that standard SPARQL cannot express: vector search operators and predicate-based exit conditions on property path traversal.
 
 ### 5.1 VECTOR_SIMILAR Operator
 
-SutraDB's query language is a **superset of SPARQL 1.1** — any valid SPARQL 1.1 query works as-is. The extensions below add vector search capabilities that standard SPARQL cannot express:
+The extensions below add vector search capabilities:
 
 ```sparql
 # Basic usage
@@ -197,6 +301,27 @@ The query planner must decide whether to execute `VECTOR_SIMILAR` first or last.
 
 Adaptive execution (runtime reordering based on observed intermediate cardinalities) is the correct long-term solution but is out of scope for v0.1.
 
+### 5.3 Predicate-Based Exit Conditions
+
+Standard SPARQL property paths are declarative — they return all matches. There is no way to express "traverse this ordered sequence and stop when a condition is met." This is a real expressiveness gap.
+
+**Example:** Traverse American presidents in chronological order until you find the first one who died in office. In standard SPARQL you can find presidents who died in office, or traverse the sequence, but the two don't compose — you'd have to pull all results and filter client-side.
+
+SPARQL+ adds **exit conditions** to property path traversal: a predicate evaluated per-step during traversal, not post-traversal. When the exit condition is met on a branch, that branch terminates and returns the matching node.
+
+```sparql
+# Find the first president in succession who died in office
+SELECT ?president WHERE {
+  :GeorgeWashington :succeededBy+ ?president
+  UNTIL { ?president :diedInOffice true }
+}
+```
+
+**Design considerations:**
+- Exit on one branch does not kill other branches (scoping is per-path)
+- Only meaningful when traversal order is defined (directed labeled edges provide this naturally)
+- HNSW-specific exit condition: "no closer neighbor found" — local optimality termination that maps to the HNSW algorithm's natural stopping criterion
+
 ---
 
 ## 6. Crate Architecture
@@ -220,8 +345,7 @@ sutra-cli/       # CLI: import, export, query, benchmark
 ## 7. Query Language Policy
 
 **Supported:**
-- SPARQL 1.1 (and SPARQL 1.2 when finalized) — the primary query interface
-- Hybrid SPARQL extensions (VECTOR_SIMILAR, VECTOR_SCORE) — SutraDB-specific
+- **SPARQL+** — SPARQL 1.1 superset with VECTOR_SIMILAR, VECTOR_SCORE, and predicate-based exit conditions (UNTIL). The primary query interface.
 
 **Planned:**
 - Cypher — as a translation layer/wrapper over SPARQL, not a native execution engine
@@ -245,20 +369,24 @@ These will not be implemented without explicit instruction. They cannot be handl
 
 ---
 
-## 9. Reference Implementation: Oxigraph
+## 9. Reference Architectures
 
-[Oxigraph](https://github.com/oxigraph/oxigraph) is the closest existing Rust triplestore. SutraDB draws on Oxigraph's proven patterns where applicable:
+SutraDB draws from multiple open-source databases across two domains: RDF/vector indexing and SQL query optimization.
 
-- **Storage**: Oxigraph uses RocksDB with hash-based IRI encoding (128-bit SipHash). We should evaluate this vs. our current sequential interning.
-- **Indexing**: Oxigraph uses SPO/POS/OSP (plus named graph variants). Similar to our design.
-- **SPARQL pipeline**: Separate parser (spargebra) → optimizer (sparopt) → evaluator (spareval). Our sutra-sparql combines these but should follow the same logical separation internally.
-- **RDF parsing**: Oxigraph uses dedicated crates (oxttl, oxrdfxml, oxjsonld) rather than writing parsers from scratch. We should consider using or adapting these for data ingestion.
-- **RDF 1.2**: Oxigraph migrated from RDF-star to RDF 1.2 in v0.5. See open questions below.
+### 9.1 RDF & Vector Indexing
 
-**Where SutraDB diverges from Oxigraph:**
-- Native HNSW vector indexing as a first-class index (Oxigraph has no vector support)
-- Hybrid SPARQL extensions (VECTOR_SIMILAR, VECTOR_SCORE)
-- Planned Cypher translation layer
+- **[Oxigraph](https://github.com/oxigraph/oxigraph)** (Rust) — Closest existing Rust triplestore. Reference for storage (RocksDB), indexing (SPO/POS/OSP), SPARQL pipeline (parser → optimizer → evaluator). SutraDB diverges by adding native HNSW vector indexing and SPARQL+ extensions.
+- **[Qdrant](https://github.com/qdrant/qdrant)** (Rust) — Vector database. Reference for HNSW implementation (immutable GraphLayers, thread-local visited pools, per-node RwLock during construction), vector preprocessing (normalize-at-insert for cosine).
+
+### 9.2 SQL-Like Query Optimization
+
+Every operation you can do in SQL you can do in SPARQL — triple pattern matching is fundamentally relational joins over a three-column relation (subject, predicate, object). All SQL execution optimization that operates at the relational join layer is fair game for SPARQL. The part unique to SPARQL/graph (property paths, HNSW traversal) has no SQL analogue.
+
+- **[DataFusion](https://github.com/apache/datafusion)** (Apache, Rust) — Most mature Rust query engine. Primary reference for cost-based planning, join ordering, predicate pushdown, and vectorized execution. Embeddable and extensible, which matches SutraDB's architecture.
+- **[GlueSQL](https://github.com/gluesql/gluesql)** (Rust) — Pure Rust, small and readable. Good for understanding query parsing and planning without excessive complexity.
+- **[Limbo](https://github.com/tursodatabase/limbo)** (Turso, Rust) — Rust SQLite reimplementation. Reference for storage layer ideas.
+- **[DuckDB](https://github.com/duckdb/duckdb)** (C++) — Not Rust, but extremely influential. Columnar, vectorized, analytical. Excellent join ordering and cost model work.
+- **[Materialize](https://github.com/MaterializeInc/materialize)** (Rust) — Streaming SQL on Differential Dataflow. Sophisticated execution architecture for incremental computation.
 
 ---
 

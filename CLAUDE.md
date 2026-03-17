@@ -141,7 +141,9 @@ struct HnswNode {
 
 ---
 
-## Hybrid SPARQL Extension
+## SPARQL+ Extension
+
+SutraDB's query language is **SPARQL+** — a superset of SPARQL 1.1. Extensions include VECTOR_SIMILAR, VECTOR_SCORE, and predicate-based exit conditions (UNTIL) on property path traversal.
 
 ### VECTOR_SIMILAR operator
 ```sparql
@@ -167,7 +169,7 @@ ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^sutra:f32vec))
 
 ## Query Language Policy
 
-**Supported:** SPARQL 1.1 (superset — any standard query works; extensions add VECTOR_SIMILAR, VECTOR_SCORE)
+**Supported:** **SPARQL+** — SPARQL 1.1 superset with VECTOR_SIMILAR, VECTOR_SCORE, and predicate-based exit conditions (UNTIL)
 **Planned:** Cypher as a translation layer/wrapper over SPARQL
 **Never:** SQL, MongoDB Query Language — use the appropriate database for those. GraphQL — push to application layer.
 

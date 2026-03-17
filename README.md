@@ -1,6 +1,6 @@
 # SutraDB
 
-A lean, high-performance RDF-star triplestore written in Rust with native HNSW vector indexing and a hybrid SPARQL extension.
+A lean, high-performance RDF-star triplestore written in Rust with native HNSW vector indexing and SPARQL+ query language.
 
 [![CI](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml/badge.svg)](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml)
 
@@ -50,9 +50,9 @@ All data is **RDF-star** triples. Vectors are stored as `sutra:f32vec` literals:
 << :paper_42 :discusses :TransformerArchitecture >> :hasEmbedding "0.23 -0.11 ..."^^sutra:f32vec .
 ```
 
-## Hybrid SPARQL
+## SPARQL+
 
-SutraDB extends SPARQL with `VECTOR_SIMILAR` for unified graph + vector queries:
+SutraDB's query language is **SPARQL+** — a superset of SPARQL 1.1 with `VECTOR_SIMILAR` for unified graph + vector queries and `UNTIL` for predicate-based exit conditions on property path traversal:
 
 ```sparql
 SELECT ?doc ?entity WHERE {

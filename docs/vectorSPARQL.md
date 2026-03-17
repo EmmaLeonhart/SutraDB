@@ -1,6 +1,6 @@
-# Vector SPARQL — Design Notes and Examples
+# SPARQL+ — Vector SPARQL Design Notes and Examples
 
-> How SutraDB extends SPARQL to unify graph traversal and vector similarity search.
+> How SutraDB's SPARQL+ extends SPARQL 1.1 to unify graph traversal, vector similarity search, and predicate-based exit conditions.
 
 ---
 
@@ -263,14 +263,20 @@ SELECT ?shrine ?label WHERE {
 | `sutra:f32vec` literal type | Implemented |
 | HNSW index per vector predicate | Implemented |
 | Cosine / Euclidean / DotProduct metrics | Implemented |
-| VECTOR_SIMILAR in SPARQL parser | Not yet |
-| VECTOR_SIMILAR in query executor | Not yet |
-| VECTOR_SCORE function | Not yet |
-| Query planner vector integration | Not yet |
-| ef_search hint | Not yet |
-| Top-K mode | Not yet |
+| VECTOR_SIMILAR in SPARQL parser | Implemented |
+| VECTOR_SIMILAR in query executor | Implemented |
+| VECTOR_SCORE in ORDER BY | Implemented |
+| Query planner vector integration | Implemented (static heuristic) |
+| ef_search hint | Implemented |
+| Top-K mode | Implemented |
+| HNSW virtual edge triples (generation) | Implemented |
+| HNSW virtual edges queryable in SPARQL | Not yet |
+| HNSW traversal via property paths | Not yet |
+| Predicate-based exit conditions (UNTIL) | Not yet |
+| Cost-based query planning | Not yet |
+| Pseudo-tables (auto-discovered columnar indexes) | Not yet |
 
-The vector index infrastructure exists in `sutra-hnsw`. The SPARQL parser and executor exist in `sutra-sparql`. The integration — making VECTOR_SIMILAR a first-class SPARQL operator that the query planner can reason about — is the next major piece of work.
+The core SPARQL+ vector operators are fully functional. The next phase focuses on HNSW property path traversal, exit conditions, and pseudo-table columnar acceleration.
 
 ---
 
