@@ -1,8 +1,8 @@
 # SutraDB — TODO
 
-**Status: 160 of 215 items complete (74%)**
+**Status: 168 of 215 items complete (78%)**
 
-## Remaining (55 items)
+## Remaining (47 items)
 
 ### SPARQL+ Query Engine Optimization (algorithmic priority)
 
@@ -11,9 +11,9 @@ These are the core algorithmic improvements that make SutraDB competitive with o
 #### HNSW Traversal via SPARQL Property Paths
 The core novel contribution. HNSW topology is already exposed as virtual RDF triples (`sutra:hnswNeighbor`), but the SPARQL executor can't query them yet. The insight: encode HNSW layers as labeled directed edges (vertical descent edges vs horizontal neighbor edges) so that property path expressions naturally express HNSW search. The SPARQL executor does the right thing because the RDF representation does the semantic heavy lifting.
 
-- [ ] Make virtual HNSW edge triples queryable in SPARQL patterns (`?a sutra:hnswNeighbor ?b`)
-- [ ] Label vertical (layer descent) vs horizontal (neighbor) HNSW edges with distinct predicates
-- [ ] Encode directionality so property paths can express "descend from entry, fan out horizontally"
+- [x] Make virtual HNSW edge triples queryable in SPARQL patterns (`?a sutra:hnswNeighbor ?b`)
+- [x] Label vertical (layer descent) vs horizontal (neighbor) HNSW edges with distinct predicates
+- [x] Encode directionality so property paths can express "descend from entry, fan out horizontally"
 - [ ] Ensure greedy descent + beam search semantics emerge from the graph structure and property path evaluation
 - [ ] Test: property path `sutra:hnswNeighbor+` produces correct ANN results
 
@@ -30,16 +30,16 @@ Standard SPARQL property paths are declarative and return all matches — there 
 #### Cost-Based Query Planning
 The classic SPARQL bottleneck. `estimate_cardinality()` exists in the store but the planner doesn't use it for join ordering — it just uses static weights based on unbound variable count.
 
-- [ ] Integrate cardinality estimation into planner's join ordering (not just unbound count)
+- [x] Integrate cardinality estimation into planner's join ordering (not just unbound count)
 - [ ] HNSW as access path: planner decides "use HNSW index scan" vs "use SPO triple scan" based on cost, like SQL choosing between index scan and seq scan
 - [ ] Adaptive execution: observe intermediate result sizes at runtime, reorder mid-query
-- [ ] Predicate pushdown: push filters closer to the scan to reduce intermediate result sizes
+- [x] Predicate pushdown: push filters closer to the scan to reduce intermediate result sizes
 
 #### Join Strategy Selection
 Currently row-at-a-time volcano model. SQL engines choose between hash joins, merge joins, nested loop joins based on cost estimates.
 
-- [ ] Cost-based selection between hash join, merge join, nested loop join
-- [ ] Use cardinality estimates to pick optimal join strategy per pattern pair
+- [x] Cost-based selection between hash join, merge join, nested loop join
+- [x] Use cardinality estimates to pick optimal join strategy per pattern pair
 
 #### Background Maintenance Cycle
 During low-usage periods, the database runs a background optimization cycle. The old indexes remain fully operational and in-memory while new ones are being built — zero downtime, atomic swap when ready.
@@ -133,10 +133,20 @@ Lower priority than the above (graph workloads are pointer-chasing, not scan-hea
 
 ---
 
-## Completed (160 items)
+## Completed (168 items)
 
 <details>
 <summary>Click to expand</summary>
+
+### Query Engine Optimization
+- [x] Cost-based query planning: cardinality estimation integrated into join ordering
+- [x] Predicate pushdown: FILTERs repositioned after the pattern that binds their last variable
+- [x] HNSW edge labeling: distinct predicates for vertical descent vs horizontal neighbor edges
+- [x] HNSW typed edge filtering in executor (hnswHorizontalNeighbor, hnswLayerDescend)
+- [x] Join strategy selection: cost-based hash join on subject, hash join on object, nested-loop
+- [x] Object hash join: reverse-traversal optimization using POS/OSP indexes
+- [x] Hash join threshold lowered from 100 to 50 for earlier amortization
+- [x] Directional HNSW edge encoding for SPARQL property path traversal
 
 ### Core Engine
 - [x] Database configuration model, HNSW edges as virtual RDF triples

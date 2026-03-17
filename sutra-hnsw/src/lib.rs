@@ -10,7 +10,8 @@ pub mod registry;
 pub mod vector;
 
 pub use edges::{
-    HnswEdgeTriple, HNSW_LAYER_IRI, HNSW_NEIGHBOR_IRI, HNSW_PREDICATE_IRI, HNSW_SIMILARITY_IRI,
+    HnswEdgeTriple, HnswEdgeType, HNSW_HORIZONTAL_NEIGHBOR_IRI, HNSW_LAYER_DESCEND_IRI,
+    HNSW_LAYER_IRI, HNSW_NEIGHBOR_IRI, HNSW_PREDICATE_IRI, HNSW_SIMILARITY_IRI,
 };
 pub use error::{HnswError, Result};
 pub use index::{HnswConfig, HnswIndex, SearchResult};

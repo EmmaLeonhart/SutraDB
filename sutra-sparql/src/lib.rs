@@ -10,4 +10,4 @@ pub use executor::{
     execute, execute_with_config, execute_with_timeout, execute_with_vectors, Bindings, QueryResult,
 };
 pub use parser::{parse, Aggregate, AggregateArg, AggregateFunction, Query, QueryType};
-pub use planner::optimize;
+pub use planner::{optimize, optimize_with_store};
