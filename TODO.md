@@ -51,11 +51,43 @@ Example: if thousands of papers each have an author node, an institution node, a
 
 **The cliff metric still applies:** sharp drop-off between core paths and tail paths = well-structured data.
 
+**Depth threshold — geometric scaling:**
+Deep pseudo-tables are riskier than shallow ones (more joins baked in, wider invalidation surface), so the qualification threshold should scale geometrically with depth:
+- Depth 1 (single-node characteristic set): base threshold (current: 10 nodes minimum)
+- Depth 2: threshold × 4 (e.g. 40 instances)
+- Depth 3: threshold × 9 (e.g. 90 instances)
+- Depth N: threshold × N²
+
+Rationale: deeper materialization is a bigger commitment. It should only happen when the pattern is overwhelmingly common. But paradoxically, very deep and very common patterns tend to be stable — a country→capital→mayor chain rarely changes structure, even if individual mayors change. The geometric threshold ensures we only pay the cost for patterns that justify it.
+
+**Overlap vs. tree-like structures:**
+Not all deep subgraphs are equal for pseudo-table materialization. Two categories:
+
+1. **Tree-like (low overlap):** Each root node's subgraph is mostly disjoint from others. Example: `country → capital city → mayor → date of birth`. Each country traces a unique path — materializing these as rows produces no duplication. These are ideal pseudo-table candidates.
+
+2. **DAG/lattice (high overlap):** Subgraphs share interior nodes heavily. Example: genealogies — every person has a mother and father, but those parents are themselves persons in the table, creating massive overlap. Materializing `person → mother → grandmother` as flat rows duplicates the grandmother's data across every grandchild row.
+
+High-overlap structures risk:
+- Storage blowup from duplicated interior nodes across many rows
+- Update amplification — changing one shared interior node invalidates many rows
+- Diminishing returns — the "join elimination" benefit is smaller when the same node appears in many rows anyway (it's likely hot in cache from regular index lookups)
+
+Detection heuristic: during subgraph pattern mining, measure the **fan-in ratio** of interior nodes. If the average interior node appears in >K root instances (high fan-in), the pattern is DAG-like and should be penalized or skipped. Tree-like patterns have fan-in ≈ 1.
+
+**Invalidation model:**
+- Depth 1: invalidate when a node's direct predicates change (current behavior)
+- Depth N: invalidate when *any node on the materialized path* changes. A country renaming invalidates every person row that traces through it.
+- Mitigation: deep pseudo-tables are rebuilt during the background maintenance cycle, not eagerly. Stale rows are acceptable between cycles — the regular triple store is always authoritative.
+
 All existing pseudo-table work (property extraction, group discovery, columnar storage, zonemaps, vectorized scans) is done. The remaining work is evolving discovery from single-node property sets to multi-hop subgraph shapes:
 
 - [ ] Extend property model from `(predicate, position)` pairs to rooted path shapes (multi-hop)
 - [ ] Subgraph pattern mining: discover repeated structural motifs across the graph
+- [ ] Geometric depth threshold: N² scaling for minimum group size at depth N
+- [ ] Fan-in ratio detection: identify high-overlap (DAG/lattice) vs tree-like subgraph patterns
+- [ ] Overlap penalty: skip or deprioritize high-fan-in patterns to avoid storage blowup and update amplification
 - [ ] Multi-node pseudo-table materialization: columns can reference nodes at any depth
+- [ ] Invalidation tracking: flag stale rows when interior nodes change, rebuild during maintenance cycle
 - [ ] Update query planner to recognize multi-pattern SPARQL queries that match a subgraph pseudo-table
 
 ### Database Health Dashboard (remaining)
@@ -66,10 +98,8 @@ CLI (`sutra health`) and Studio share the same metrics. CLI output needs iterati
 - [ ] Iterate CLI health output format based on real agent usage
 - [ ] Sutra Studio health dashboard as Flutter landing page: overall status, per-index cards, action buttons
 
-### Vectorized Execution (remaining)
-Batch scans and vectorized column filtering are done. One item left:
-
-- [ ] SIMD-accelerated triple ID comparison during index scans
+### Vectorized Execution
+Done. All columnar scan functions now use SIMD-accelerated packed column scanning.
 
 ---
 
@@ -88,6 +118,15 @@ Needs registry accounts — see `docs/SDK_ACCOUNTS_SETUP.md`.
 ### Sutra Studio
 - [ ] Flutter graph view: remaining browse.html parity
 - [ ] Long-term: absorb core Protege functionality
+
+### Query Language Wrappers
+Cypher and GQL as translation layers over SPARQL — the database still speaks SPARQL+ internally, but these graph query language wrappers let users query with familiar syntax. Each incoming query is parsed and transpiled to SPARQL before execution.
+
+SQL and MQL are deliberately excluded: offering them would mislead AI agents into relational/document thinking when graph traversal is the correct approach.
+
+- [ ] Cypher → SPARQL transpiler: MATCH/WHERE/RETURN mapped to SPARQL patterns
+- [ ] GQL (ISO 39075) → SPARQL transpiler: ISO standard graph query language mapped to SPARQL
+- [ ] Query validation: reject constructs that can't map to the RDF data model
 
 ### Premium Tier
 Deferred until paying customers.
@@ -154,6 +193,7 @@ Deferred until paying customers.
 - [x] Zonemap pruning: per-segment min/max skips entire segments
 - [x] Row sorting by most selective column for tighter zonemaps
 - [x] Vectorized column scans: scan_column_eq, scan_column_range, scan_column_not_null
+- [x] SIMD-accelerated TermId comparison: packed columns (dense u64 + sentinel nulls), AVX2 (4 u64/cycle), SSE2 (2 u64/cycle)
 - [x] Batch scan intersection: sorted merge for multi-column predicate evaluation
 - [x] Query planner integration: recognize pseudo-table-matching SPARQL patterns
 - [x] Expose health metrics via health endpoint / Sutra Studio
