@@ -12,7 +12,10 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use sutra_core::{DatabaseConfig, HnswEdgeMode, TermDictionary, TermId, Triple, TripleStore};
+use sutra_core::{
+    DatabaseConfig, HnswEdgeMode, Property, PropertyPosition, PseudoTableRegistry, TermDictionary,
+    TermId, Triple, TripleStore,
+};
 use sutra_hnsw::VectorRegistry;
 
 use crate::error::{Result, SparqlError};
@@ -45,6 +48,12 @@ pub struct ExecutionContext<'a> {
     pub config: &'a DatabaseConfig,
     /// Optional query timeout deadline.
     pub deadline: Option<Instant>,
+    /// Optional pseudo-table registry for columnar query acceleration.
+    /// When available, the executor checks if a triple pattern can be served
+    /// by a pseudo-table scan (with zonemap pruning) instead of a general
+    /// SPO/POS/OSP index scan. This is the RDF equivalent of a SQL engine
+    /// choosing between a columnar scan and a B-tree lookup.
+    pub pseudo_tables: Option<&'a PseudoTableRegistry>,
 }
 
 /// Execute a parsed query against an in-memory store with vector support.
@@ -336,6 +345,7 @@ fn execute_with_deadline(
         prefixes: &query.prefixes,
         config,
         deadline,
+        pseudo_tables: None,
     };
     execute_query_with_ctx(query, &mut ctx)
 }
@@ -800,6 +810,24 @@ fn evaluate_triple_pattern(
         }
     }
 
+    // --- Pseudo-table acceleration ---
+    //
+    // Before falling through to the general-purpose SPO/POS/OSP index lookup,
+    // check if this pattern can be served by a pseudo-table scan. Pseudo-tables
+    // offer columnar storage with zonemap pruning, which is faster for patterns
+    // that match a characteristic set (e.g., all Person nodes with name+age+city).
+    //
+    // The check: if the predicate is a constant (IRI) and maps to a pseudo-table
+    // column, and the current result set is small (initial scan or few rows),
+    // use the pseudo-table's vectorized column scan instead.
+    if let Some(registry) = ctx.pseudo_tables {
+        if let Some(result) = try_pseudo_table_scan(
+            subject, predicate, object, current, ctx, registry, row_limit,
+        )? {
+            return Ok(result);
+        }
+    }
+
     let mut results = Vec::new();
     let mut source_indices = Vec::new();
 
@@ -1092,6 +1120,139 @@ fn hash_join_on_object(
     }
 
     Ok((results, source_indices))
+}
+
+/// Try to evaluate a triple pattern using pseudo-table columnar scans.
+///
+/// Returns `Some((results, source_indices))` if the pattern matches a pseudo-table
+/// column and the columnar scan is beneficial. Returns `None` to fall through to
+/// the general-purpose SPO/POS/OSP index scan.
+///
+/// ## When pseudo-tables are used
+///
+/// A pseudo-table scan is attempted when:
+/// 1. The predicate is a constant (IRI, not a variable) — we need to know
+///    which column to scan.
+/// 2. The predicate maps to a column in at least one pseudo-table.
+/// 3. The pseudo-table scan is expected to be faster than the triple store scan.
+///    Currently, pseudo-tables win for initial scans (current = 1 empty row)
+///    because zonemap pruning can skip entire segments.
+///
+/// ## How it works
+///
+/// For a pattern like `?s :name ?name`:
+/// 1. Find pseudo-tables with a column for Property(:name, Subject).
+/// 2. For each matching table, scan all segments using zonemap pruning.
+/// 3. For matching rows, bind ?s to the node TermId and ?name to the column value.
+fn try_pseudo_table_scan(
+    subject: &Term,
+    predicate: &Term,
+    object: &Term,
+    current: &[Bindings],
+    ctx: &ExecutionContext<'_>,
+    registry: &PseudoTableRegistry,
+    row_limit: Option<usize>,
+) -> Result<Option<(Vec<Bindings>, Vec<usize>)>> {
+    // Only attempt pseudo-table scan when the predicate is a constant.
+    // Variable predicates can't be mapped to a specific column.
+    let pred_id = match predicate {
+        Term::Variable(_) => return Ok(None),
+        _ => resolve_term(predicate, &HashMap::new(), ctx.dict, ctx.prefixes)?,
+    };
+    let pred_id = match pred_id {
+        Some(id) => id,
+        None => return Ok(None),
+    };
+
+    // Determine the property to search for. The subject position means
+    // the node is the subject and we're looking for the object value.
+    // (Most common pattern: ?s :predicate ?o)
+    let property = Property {
+        predicate: pred_id,
+        position: PropertyPosition::Subject,
+    };
+
+    // Find pseudo-tables with this property as a column.
+    let table_matches = registry.find_tables_for_property(&property);
+    if table_matches.is_empty() {
+        // No pseudo-table has this column — fall through to triple store.
+        return Ok(None);
+    }
+
+    let mut results = Vec::new();
+    let mut source_indices = Vec::new();
+
+    // Use the first matching pseudo-table (largest coverage wins in discovery order).
+    let (table_idx, col_idx) = table_matches[0];
+    let table = &registry.tables[table_idx];
+
+    for (row_idx, row) in current.iter().enumerate() {
+        let s_id = resolve_term(subject, row, ctx.dict, ctx.prefixes)?;
+        let o_id = resolve_term(object, row, ctx.dict, ctx.prefixes)?;
+
+        // Scan each segment of the pseudo-table.
+        for segment in &table.segments {
+            // Determine which rows match based on bound variables.
+            let scan_result = if let Some(obj_value) = o_id {
+                // Object is bound: equality scan on the column.
+                sutra_core::scan_column_eq(segment, col_idx, obj_value)
+            } else {
+                // Object is unbound: scan for non-null values.
+                sutra_core::scan_column_not_null(segment, col_idx)
+            };
+
+            for &seg_row_idx in &scan_result.matching_rows {
+                let node_id = segment.nodes[seg_row_idx];
+                let col_value = segment.columns[col_idx][seg_row_idx];
+
+                // Filter by subject if bound.
+                if let Some(bound_s) = s_id {
+                    if node_id != bound_s {
+                        continue;
+                    }
+                }
+
+                let mut new_row = row.clone();
+
+                // Bind subject variable.
+                if let Term::Variable(name) = subject {
+                    if let Some(&existing) = new_row.get(name) {
+                        if existing != node_id {
+                            continue;
+                        }
+                    } else {
+                        new_row.insert(name.clone(), node_id);
+                    }
+                }
+
+                // Bind object variable.
+                if let Term::Variable(name) = object {
+                    if let Some(value) = col_value {
+                        if let Some(&existing) = new_row.get(name) {
+                            if existing != value {
+                                continue;
+                            }
+                        } else {
+                            new_row.insert(name.clone(), value);
+                        }
+                    } else {
+                        continue; // null column value — skip
+                    }
+                }
+
+                results.push(new_row);
+                source_indices.push(row_idx);
+
+                if let Some(limit) = row_limit {
+                    if results.len() >= limit {
+                        return Ok(Some((results, source_indices)));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Some((results, source_indices)))
 }
 
 /// Expand scores from current rows into new results.

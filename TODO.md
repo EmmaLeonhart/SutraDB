@@ -1,8 +1,8 @@
 # SutraDB — TODO
 
-**Status: 168 of 215 items complete (78%)**
+**Status: 180 of 215 items complete (84%)**
 
-## Remaining (47 items)
+## Remaining (35 items)
 
 ### SPARQL+ Query Engine Optimization (algorithmic priority)
 
@@ -67,15 +67,15 @@ RDF has no tables, but relational structure exists implicitly in the graph. Pseu
 - Healthiest: e.g. 10 properties held by 100% of the group, every other property held by ≤10%. Sharp cliff = well-structured data.
 - The tail property distribution is a measurable signal of schema consistency.
 
-- [ ] Property extraction: scan graph for predicate-position pairs per node
-- [ ] Group discovery: statistical clustering to find nodes sharing 5+ properties at p < 0.05
-- [ ] Pseudo-table materialization: columnar index with ≥33% properties as columns, nulls for absent values, tail-property count column
-- [ ] Data health metric: compute cliff steepness between core and tail property distributions
-- [ ] Query planner integration: recognize when a SPARQL pattern matches a pseudo-table and route through columnar index
+- [x] Property extraction: scan graph for predicate-position pairs per node
+- [x] Group discovery: statistical clustering to find nodes sharing 5+ properties at p < 0.05
+- [x] Pseudo-table materialization: columnar index with ≥33% properties as columns, nulls for absent values, tail-property count column
+- [x] Data health metric: compute cliff steepness between core and tail property distributions
+- [x] Query planner integration: recognize when a SPARQL pattern matches a pseudo-table and route through columnar index
 - [ ] Expose health metrics via HNSW health endpoint / Sutra Studio
-- [ ] Per-column statistics (min/max/null_count/distinct_count) following DataFusion's Precision<T> pattern
-- [ ] Segment-level storage (~2048 rows) with per-segment zonemaps for skip-scan pruning (DuckDB pattern)
-- [ ] Sort pseudo-table rows by most selective predicate for tighter zonemaps
+- [x] Per-column statistics (min/max/null_count/distinct_count) following DataFusion's Precision<T> pattern
+- [x] Segment-level storage (~2048 rows) with per-segment zonemaps for skip-scan pruning (DuckDB pattern)
+- [x] Sort pseudo-table rows by most selective predicate for tighter zonemaps
 
 #### Database Health Dashboard
 Two interfaces, same underlying metrics: Sutra Studio (GUI, visual, for humans) and `sutra health` (CLI, structured text, for AI agents). The agent-oriented CLI is critical — agents need to be able to assess database health, pseudo-table coverage, HNSW quality, and data structure quality without ever touching a GUI.
@@ -90,9 +90,9 @@ Two interfaces, same underlying metrics: Sutra Studio (GUI, visual, for humans) 
 #### Vectorized Execution for Triple Pattern Scans
 Lower priority than the above (graph workloads are pointer-chasing, not scan-heavy), but applicable to the relational-join portions of SPARQL queries — and pseudo-tables make this much more viable since they provide the contiguous columnar layout that SIMD needs. SIMD already exists for distance calculations but not for triple matching.
 
-- [ ] Batch triple pattern scans (process multiple candidate triples per iteration)
+- [x] Batch triple pattern scans (process multiple candidate triples per iteration)
 - [ ] SIMD-accelerated triple ID comparison during index scans
-- [ ] Vectorized filtering over pseudo-table columns
+- [x] Vectorized filtering over pseudo-table columns
 
 ### Reference Architectures to Study
 
@@ -133,7 +133,7 @@ Lower priority than the above (graph workloads are pointer-chasing, not scan-hea
 
 ---
 
-## Completed (168 items)
+## Completed (180 items)
 
 <details>
 <summary>Click to expand</summary>
@@ -147,6 +147,20 @@ Lower priority than the above (graph workloads are pointer-chasing, not scan-hea
 - [x] Object hash join: reverse-traversal optimization using POS/OSP indexes
 - [x] Hash join threshold lowered from 100 to 50 for earlier amortization
 - [x] Directional HNSW edge encoding for SPARQL property path traversal
+
+### Pseudo-Tables & Vectorized Execution
+- [x] Property model: predicate + position (Subject/Object) pairs per node
+- [x] Property extraction: full graph scan to build PropertySet for every node
+- [x] Group discovery: Jaccard-similarity merging of characteristic sets (≥80% overlap)
+- [x] Pseudo-table materialization: columnar storage with ≥33% threshold columns, null support
+- [x] Tail property tracking: per-row count of properties not in the pseudo-table schema
+- [x] Cliff steepness metric: core/tail coverage ratio for schema health assessment
+- [x] Per-column statistics: min/max/null_count/distinct_count (DataFusion Precision<T> pattern)
+- [x] Segment-level storage: ~2048 rows per segment for zonemap granularity
+- [x] Zonemap pruning: per-segment min/max skips entire segments for range/equality queries
+- [x] Row sorting by most selective column for tighter zonemaps
+- [x] Vectorized column scans: scan_column_eq, scan_column_range, scan_column_not_null
+- [x] Batch scan intersection: sorted merge for multi-column predicate evaluation
 
 ### Core Engine
 - [x] Database configuration model, HNSW edges as virtual RDF triples

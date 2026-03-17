@@ -6,6 +6,7 @@ pub mod id;
 pub mod jsonld;
 pub mod ntriples;
 pub mod persistent;
+pub mod pseudotable;
 pub mod rdfxml;
 pub mod store;
 pub mod triple;
@@ -20,6 +21,11 @@ pub use id::{
 pub use jsonld::parse_jsonld;
 pub use ntriples::{parse_nquads_line, parse_ntriples_line};
 pub use persistent::PersistentStore;
+pub use pseudotable::{
+    discover_pseudo_tables, extract_node_properties, intersect_scan_results, scan_column_eq,
+    scan_column_not_null, scan_column_range, ColumnStats, Property, PropertyPosition, PropertySet,
+    PseudoTable, PseudoTableRegistry, ScanResult, Segment,
+};
 pub use rdfxml::parse_rdfxml;
 pub use store::TripleStore;
 pub use triple::Triple;
