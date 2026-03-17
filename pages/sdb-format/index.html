@@ -7,7 +7,7 @@
     <meta property="og:type" content="website">
     <meta property="og:title" content="The .sdb File Format — SutraDB">
     <meta property="og:description" content="The .sdb file format: SutraDB's serverless storage format powered by sled.">
-    <meta property="og:url" content="https://emmaleonhart.github.io/SutraDB/sdb-format/">
+    <meta property="og:url" content="https://sutradb.org/sdb-format/">
     <meta property="og:site_name" content="SutraDB">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="The .sdb File Format — SutraDB">
@@ -44,7 +44,7 @@
     <ul>
         <li>Pre-built indexes (SPO, POS, OSP) for fast query execution</li>
         <li>HNSW vector indexes with their graph structure and parameters</li>
-        <li>Interned term dictionaries (IRI &rarr; u64 mappings)</li>
+        <li>IRI lookup table (maps full IRI strings like <code>http://example.org/Tokyo</code> to compact 8-byte IDs for fast indexing)</li>
         <li>Vector predicate declarations and metadata</li>
     </ul>
 
@@ -75,8 +75,8 @@
             <td>Same structure, different key order</td>
         </tr>
         <tr>
-            <td><strong>Term Dictionary</strong></td>
-            <td>Bidirectional IRI/literal &harr; u64 ID mapping</td>
+            <td><strong>IRI Lookup Table</strong></td>
+            <td>Maps full IRI strings to compact 8-byte IDs and back</td>
             <td>Forward map (string &rarr; ID) + reverse map (ID &rarr; string)</td>
         </tr>
         <tr>
@@ -174,7 +174,7 @@
     <p>The extension <code>.sdb</code> stands for <strong>Sutra Database</strong>. We chose a distinct extension rather than reusing <code>.db</code> or <code>.rdf</code> because:</p>
 
     <ul>
-        <li>It contains more than standard RDF &mdash; vector indexes, HNSW graphs, and term dictionaries</li>
+        <li>It contains more than standard RDF &mdash; vector indexes, HNSW graphs, and IRI lookup tables</li>
         <li>It should not be confused with SQLite (<code>.db</code>) or RDF serialization (<code>.rdf</code>)</li>
         <li>File managers and tools can associate <code>.sdb</code> specifically with SutraDB</li>
         <li>It signals to users that this is a superset format &mdash; standard RDF data plus native vector infrastructure</li>
