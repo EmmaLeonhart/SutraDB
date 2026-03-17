@@ -2,137 +2,118 @@
 
 **Status: 185 of 218 items complete (85%)**
 
-## Remaining (33 items)
+---
 
-### SPARQL+ Query Engine Optimization (algorithmic priority)
+## Active Work
 
-These are the core algorithmic improvements that make SutraDB competitive with optimized SQL engines. The goal: every optimization trick that makes SQL fast should apply to triple pattern matching in SPARQL, while property paths and HNSW traversal are our novel territory where no SQL engine operates.
+### HNSW Traversal via SPARQL Property Paths
+HNSW topology is exposed as virtual RDF triples (`sutra:hnswNeighbor`) with labeled edges (vertical descent vs horizontal neighbor). The remaining work: make the SPARQL executor's property path evaluation produce correct ANN results by letting greedy descent + beam search emerge from the graph structure.
 
-#### HNSW Traversal via SPARQL Property Paths
-The core novel contribution. HNSW topology is already exposed as virtual RDF triples (`sutra:hnswNeighbor`), but the SPARQL executor can't query them yet. The insight: encode HNSW layers as labeled directed edges (vertical descent edges vs horizontal neighbor edges) so that property path expressions naturally express HNSW search. The SPARQL executor does the right thing because the RDF representation does the semantic heavy lifting.
+- [ ] Greedy descent + beam search semantics from graph structure and property path evaluation
+- [ ] Test: `sutra:hnswNeighbor+` produces correct ANN results
 
-- [x] Make virtual HNSW edge triples queryable in SPARQL patterns (`?a sutra:hnswNeighbor ?b`)
-- [x] Label vertical (layer descent) vs horizontal (neighbor) HNSW edges with distinct predicates
-- [x] Encode directionality so property paths can express "descend from entry, fan out horizontally"
-- [ ] Ensure greedy descent + beam search semantics emerge from the graph structure and property path evaluation
-- [ ] Test: property path `sutra:hnswNeighbor+` produces correct ANN results
+### Predicate-Based Exit Conditions (UNTIL)
+Standard SPARQL property paths can't express "traverse and stop when a condition is met." Example: traverse American presidents in order until the first who died in office.
 
-#### Predicate-Based Exit Conditions (SPARQL+ extension)
-Standard SPARQL property paths are declarative and return all matches — there is no way to say "traverse this sequence and stop when a condition is met." This is a real expressiveness gap. Example: traverse American presidents in order until you find the first one who died in office — impossible in standard SPARQL.
-
-- [ ] Design syntax for exit conditions on property path traversal (e.g. UNTIL clause)
-- [ ] Implement per-step predicate evaluation during property path execution (not post-traversal filtering)
-- [ ] Handle interaction with backtracking (exit on one branch shouldn't kill other branches)
-- [ ] Handle ordered traversal (exit conditions only make sense when traversal order is defined)
-- [ ] HNSW-specific exit condition: "no closer neighbor found" (local optimality termination)
+- [ ] Design UNTIL syntax for exit conditions on property path traversal
+- [ ] Per-step predicate evaluation during traversal (not post-filter)
+- [ ] Backtracking interaction (exit on one branch doesn't kill others)
+- [ ] Ordered traversal (exit conditions require defined traversal order)
+- [ ] HNSW-specific exit: "no closer neighbor found" (local optimality termination)
 - [ ] Test: ordered traversal with UNTIL produces correct early termination
 
-#### Cost-Based Query Planning
-The classic SPARQL bottleneck. `estimate_cardinality()` exists in the store but the planner doesn't use it for join ordering — it just uses static weights based on unbound variable count.
+### Cost-Based Query Planning (remaining)
+Cardinality estimation and predicate pushdown are done. Remaining:
 
-- [x] Integrate cardinality estimation into planner's join ordering (not just unbound count)
-- [ ] HNSW as access path: planner decides "use HNSW index scan" vs "use SPO triple scan" based on cost, like SQL choosing between index scan and seq scan
+- [ ] HNSW as access path: planner chooses "HNSW index scan" vs "SPO triple scan" based on cost
 - [ ] Adaptive execution: observe intermediate result sizes at runtime, reorder mid-query
-- [x] Predicate pushdown: push filters closer to the scan to reduce intermediate result sizes
 
-#### Join Strategy Selection
-Currently row-at-a-time volcano model. SQL engines choose between hash joins, merge joins, nested loop joins based on cost estimates.
-
-- [x] Cost-based selection between hash join, merge join, nested loop join
-- [x] Use cardinality estimates to pick optimal join strategy per pattern pair
-
-#### Background Maintenance Cycle
-During low-usage periods, the database runs a background optimization cycle. The old indexes remain fully operational and in-memory while new ones are being built — zero downtime, atomic swap when ready.
+### Background Maintenance Cycle
+During low-usage periods, rebuild indexes in the background. Old indexes stay live; atomic swap when ready.
 
 - [ ] Low-usage detection heuristic (query rate below threshold for N seconds)
-- [ ] Background HNSW rebuild: construct fresh HNSW graph from current vector triples while old graph serves queries
-- [ ] Atomic swap: replace old HNSW graph with rebuilt one once construction completes
-- [ ] Background pseudo-table discovery and rebuild (see below)
+- [ ] Background HNSW rebuild: fresh graph from current vectors, old graph serves queries until swap
+- [ ] Atomic swap: replace old HNSW with rebuilt one
+- [ ] Background pseudo-table rediscovery and rebuild
 
-#### Pseudo-Tables (Auto-Discovered Columnar Indexes)
-RDF has no tables, but relational structure exists implicitly in the graph. Pseudo-tables auto-discover groups of nodes that share enough predicate-position structure to benefit from columnar indexing, then materialize table-like indexes over them for SQL-like query acceleration.
+### Pseudo-Tables — Deep Subgraph Columnar Indexes
 
-**Discovery criteria:**
-- A "property" is defined by predicate + position (SUB or OBJ). Example: if cats eat mice, then cat has property `SUB→eats` and mice has both `SUB→eats` and `OBJ→eats`. Being on different ends of the same predicate is a distinct property.
-- A group qualifies for a pseudo-table if a statistically significant cluster of nodes (p < 0.05) share 5+ properties, where each of those 5+ properties is held by ≥50% of the group.
-- Minimum criteria: 5 properties held by ≥50% of the group each.
+**Key insight: pseudo-tables are not limited to single-node property bags.** A pseudo-table can represent an entire deep subgraph — multiple connected nodes forming a repeated structural pattern — as long as the pattern appears frequently enough across the graph and the columns can be scanned in parallel. What matters is strong parallelism: if N instances of the same subgraph shape exist, they form N rows, and each column is a position within that shape (a node, an edge label, a literal at depth 2, etc.).
 
-**Table structure:**
-- Each property held by ≥33% of the group becomes a column in the pseudo-table.
-- If a node doesn't have a property that is a column, the value is null.
-- An additional column: count of "tail properties" (properties not included as columns) per node.
+Example: if thousands of papers each have an author node, an institution node, and a funding source, the entire `paper → author → institution` + `paper → fundedBy → source` subgraph is one pseudo-table row, with columns like `paper_iri`, `author_name`, `institution_name`, `funding_source`. This is far more powerful than just "nodes that share predicates" — it captures relational joins that the graph encodes structurally.
 
-**Data health metric:**
-- The "cliff" between core properties and tail properties indicates database health.
-- Healthiest: e.g. 10 properties held by 100% of the group, every other property held by ≤10%. Sharp cliff = well-structured data.
-- The tail property distribution is a measurable signal of schema consistency.
+**Discovery criteria (revised):**
+- A "pattern" is a rooted subgraph shape: a set of paths from a root node through predicates to leaf positions.
+- A group qualifies if a statistically significant cluster of subgraph instances (p < 0.05) share the same shape, with each path present in ≥50% of instances.
+- Minimum: 5 distinct paths, each held by ≥50% of the group.
+- Paths present in ≥33% become columns; absent values are null.
+- Tail path count column tracks structural irregularity per instance.
 
-- [x] Property extraction: scan graph for predicate-position pairs per node
-- [x] Group discovery: statistical clustering to find nodes sharing 5+ properties at p < 0.05
-- [x] Pseudo-table materialization: columnar index with ≥33% properties as columns, nulls for absent values, tail-property count column
-- [x] Data health metric: compute cliff steepness between core and tail property distributions
-- [x] Query planner integration: recognize when a SPARQL pattern matches a pseudo-table and route through columnar index
-- [x] Expose health metrics via HNSW health endpoint / Sutra Studio
-- [x] Per-column statistics (min/max/null_count/distinct_count) following DataFusion's Precision<T> pattern
-- [x] Segment-level storage (~2048 rows) with per-segment zonemaps for skip-scan pruning (DuckDB pattern)
-- [x] Sort pseudo-table rows by most selective predicate for tighter zonemaps
+**The cliff metric still applies:** sharp drop-off between core paths and tail paths = well-structured data.
 
-#### Database Health Dashboard
-Two interfaces, same underlying metrics: Sutra Studio (GUI, visual, for humans) and `sutra health` (CLI, structured text, for AI agents). The agent-oriented CLI is critical — agents need to be able to assess database health, pseudo-table coverage, HNSW quality, and data structure quality without ever touching a GUI.
+All existing pseudo-table work (property extraction, group discovery, columnar storage, zonemaps, vectorized scans) is done. The remaining work is evolving discovery from single-node property sets to multi-hop subgraph shapes:
 
-- [x] `sutra health` CLI command: structured text output of all health metrics
-- [x] HNSW health metrics: tombstone ratio, layer distribution, entry point connectivity, recall estimate
-- [x] Pseudo-table health metrics: coverage percentage, cliff steepness per group, characteristic set distribution
-- [x] Storage metrics: triple count, term dictionary size, index sizes, per-predicate cardinality
+- [ ] Extend property model from `(predicate, position)` pairs to rooted path shapes (multi-hop)
+- [ ] Subgraph pattern mining: discover repeated structural motifs across the graph
+- [ ] Multi-node pseudo-table materialization: columns can reference nodes at any depth
+- [ ] Update query planner to recognize multi-pattern SPARQL queries that match a subgraph pseudo-table
+
+### Database Health Dashboard (remaining)
+CLI (`sutra health`) and Studio share the same metrics. CLI output needs iteration for agent readability.
+
 - [ ] Query performance metrics: per-pattern latency percentiles, planner decision accuracy
-- [ ] Sutra Studio health dashboard: visual charts/heatmaps for all the above (should be the first thing in the Flutter GUI)
-- [ ] `sutra health --json` mode: structured JSON output for programmatic agent consumption
-- [ ] Iterate on CLI health output format based on real agent usage — current format is a first pass
-- [ ] Health dashboard as the landing page in Sutra Studio (Flutter): show overall status, per-index cards, action buttons
+- [ ] `sutra health --json` mode for programmatic agent consumption
+- [ ] Iterate CLI health output format based on real agent usage
+- [ ] Sutra Studio health dashboard as Flutter landing page: overall status, per-index cards, action buttons
 
-#### Vectorized Execution for Triple Pattern Scans
-Lower priority than the above (graph workloads are pointer-chasing, not scan-heavy), but applicable to the relational-join portions of SPARQL queries — and pseudo-tables make this much more viable since they provide the contiguous columnar layout that SIMD needs. SIMD already exists for distance calculations but not for triple matching.
+### Vectorized Execution (remaining)
+Batch scans and vectorized column filtering are done. One item left:
 
-- [x] Batch triple pattern scans (process multiple candidate triples per iteration)
 - [ ] SIMD-accelerated triple ID comparison during index scans
-- [x] Vectorized filtering over pseudo-table columns
 
-### Reference Architectures to Study
+---
 
-**For HNSW / vector indexing:**
-- [Qdrant](https://github.com/qdrant/qdrant) — Rust vector database. Reference for HNSW (immutable GraphLayers, thread-local visited pools, per-node RwLock during construction), vector preprocessing (normalize-at-insert for cosine).
+## Deferred
 
-**For RDF / SPARQL:**
-- [Oxigraph](https://github.com/oxigraph/oxigraph) — Rust RDF triplestore. Reference for storage (RocksDB), indexing (SPO/POS/OSP), SPARQL pipeline (parser → optimizer → evaluator).
+### SDK Publishing
+Needs registry accounts — see `docs/SDK_ACCOUNTS_SETUP.md`.
 
-**For SQL-like query optimization (joins, planning, execution):**
-- [DataFusion](https://github.com/apache/datafusion) (Apache, Rust) — The most mature Rust query engine. Columnar, vectorized, embeddable and extensible. Primary reference for cost-based planning, join ordering, predicate pushdown, and vectorized execution.
-- [GlueSQL](https://github.com/gluesql/gluesql) (Rust) — Pure Rust, small and readable. Good for understanding query parsing and planning without drowning in complexity.
-- [Limbo](https://github.com/tursodatabase/limbo) (Turso, Rust) — Rust SQLite reimplementation. Interesting for storage layer ideas.
-- [DuckDB](https://github.com/duckdb/duckdb) (C++) — Not Rust, but the ideas are extremely influential. Columnar, vectorized, analytical. Excellent join ordering and cost model work.
-- [Materialize](https://github.com/MaterializeInc/materialize) (Rust) — Streaming SQL on Differential Dataflow. Different problem domain but sophisticated execution architecture.
-
-### SDK Publishing (needs registry accounts — see docs/SDK_ACCOUNTS_SETUP.md)
-- [ ] Python SDK: publish to PyPI
-- [ ] TypeScript SDK: publish to npm
-- [ ] Rust SDK: publish to crates.io
-- [ ] Java SDK: publish to Maven Central
-- [ ] C# SDK: publish to NuGet
-- [ ] Go SDK: tag for Go modules
+- [ ] Python SDK → PyPI
+- [ ] TypeScript SDK → npm
+- [ ] Rust SDK → crates.io
+- [ ] Java SDK → Maven Central
+- [ ] C# SDK → NuGet
+- [ ] Go SDK → tag for Go modules
 
 ### Sutra Studio
-- [ ] Flutter graph view: remaining browse.html parity work
-- [ ] Long-term: absorb core Protege functionality into Sutra Studio
+- [ ] Flutter graph view: remaining browse.html parity
+- [ ] Long-term: absorb core Protege functionality
 
-### Premium Tier (deferred until paying customers)
-- [ ] RBAC — role-based access control
+### Premium Tier
+Deferred until paying customers.
+
+- [ ] RBAC
 - [ ] Encryption at rest
-- [ ] TLS / encryption in transit
+- [ ] TLS
 - [ ] Audit logging
 - [ ] Replication
 - [ ] Clustering / sharding
 - [ ] Multi-tenancy
 - [ ] Connection pooling
+
+---
+
+## Reference Architectures
+
+| System | Why |
+|--------|-----|
+| [Qdrant](https://github.com/qdrant/qdrant) | HNSW impl, visited pools, normalize-at-insert |
+| [Oxigraph](https://github.com/oxigraph/oxigraph) | RDF storage, SPO/POS/OSP, SPARQL pipeline |
+| [DataFusion](https://github.com/apache/datafusion) | Cost-based planning, join ordering, vectorized execution |
+| [DuckDB](https://github.com/duckdb/duckdb) | Columnar analytics, zonemap pruning, join ordering |
+| [GlueSQL](https://github.com/gluesql/gluesql) | Small readable query engine |
+| [Limbo](https://github.com/tursodatabase/limbo) | Rust SQLite reimpl, storage ideas |
+| [Materialize](https://github.com/MaterializeInc/materialize) | Streaming SQL on Differential Dataflow |
 
 ---
 
@@ -150,13 +131,16 @@ Lower priority than the above (graph workloads are pointer-chasing, not scan-hea
 - [x] Object hash join: reverse-traversal optimization using POS/OSP indexes
 - [x] Hash join threshold lowered from 100 to 50 for earlier amortization
 - [x] Directional HNSW edge encoding for SPARQL property path traversal
+- [x] Make virtual HNSW edge triples queryable in SPARQL patterns
+- [x] Label vertical vs horizontal HNSW edges with distinct predicates
+- [x] Encode directionality for property path descent/fan-out
 
 ### Database Health Dashboard
 - [x] `sutra health` CLI command with AI-readable structured output
 - [x] HNSW health: tombstone ratio, layer distribution, avg/min/max connectivity, entry point diversity
 - [x] Pseudo-table health: coverage ratio, cliff steepness, segment count, avg tail properties
 - [x] Storage health: triple count, term dictionary size, unique predicate count
-- [x] HNSW rebuild via `sutra health --rebuild-hnsw` (compacts tombstones, restores connectivity)
+- [x] HNSW rebuild via `sutra health --rebuild-hnsw`
 
 ### Pseudo-Tables & Vectorized Execution
 - [x] Property model: predicate + position (Subject/Object) pairs per node
@@ -167,10 +151,12 @@ Lower priority than the above (graph workloads are pointer-chasing, not scan-hea
 - [x] Cliff steepness metric: core/tail coverage ratio for schema health assessment
 - [x] Per-column statistics: min/max/null_count/distinct_count (DataFusion Precision<T> pattern)
 - [x] Segment-level storage: ~2048 rows per segment for zonemap granularity
-- [x] Zonemap pruning: per-segment min/max skips entire segments for range/equality queries
+- [x] Zonemap pruning: per-segment min/max skips entire segments
 - [x] Row sorting by most selective column for tighter zonemaps
 - [x] Vectorized column scans: scan_column_eq, scan_column_range, scan_column_not_null
 - [x] Batch scan intersection: sorted merge for multi-column predicate evaluation
+- [x] Query planner integration: recognize pseudo-table-matching SPARQL patterns
+- [x] Expose health metrics via health endpoint / Sutra Studio
 
 ### Core Engine
 - [x] Database configuration model, HNSW edges as virtual RDF triples
