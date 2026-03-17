@@ -193,7 +193,13 @@ Lower priority than the above (graph workloads are pointer-chasing, not scan-hea
 
 </details>
 
-## Benchmark Results (16K triples, 435 vectors)
+## Benchmark Results
+
+Benchmark results are tracked automatically by CI. See:
+- **[benchmarks/LATEST.md](benchmarks/LATEST.md)** — most recent Criterion results
+- **[benchmarks/HISTORY.md](benchmarks/HISTORY.md)** — full history over time
+
+### Baseline (manual, 16K triples, 435 vectors)
 
 | Query | Latency |
 |-------|---------|
