@@ -62,7 +62,8 @@
       "Bash(flutter analyze:*)",
       "Bash(for sdk:*)",
       "Read(//c/Users/Immanuelle/Documents/Github/SutraDB/sdks/$sdk/**)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(cargo bench:*)"
     ]
   }
 }
