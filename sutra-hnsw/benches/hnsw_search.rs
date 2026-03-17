@@ -6,7 +6,9 @@ fn random_vector(dims: usize, seed: u64) -> Vec<f32> {
     let mut v = Vec::with_capacity(dims);
     let mut state = seed;
     for _ in 0..dims {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         v.push(((state >> 33) as f32) / (u32::MAX as f32) * 2.0 - 1.0);
     }
     v
@@ -22,7 +24,9 @@ fn build_index(n: usize, dims: usize, metric: DistanceMetric) -> HnswIndex {
     };
     let mut index = HnswIndex::with_seed(config, 42);
     for i in 0..n {
-        index.insert(random_vector(dims, i as u64), i as u64).unwrap();
+        index
+            .insert(random_vector(dims, i as u64), i as u64)
+            .unwrap();
     }
     index
 }
@@ -74,10 +78,7 @@ fn bench_search(c: &mut Criterion) {
         let index = build_index(n, dims, DistanceMetric::Cosine);
         let query = random_vector(dims, 99999);
         group.bench_with_input(
-            criterion::BenchmarkId::new(
-                format!("n{}_{}d_ef{}", n, dims, ef),
-                "k10",
-            ),
+            criterion::BenchmarkId::new(format!("n{}_{}d_ef{}", n, dims, ef), "k10"),
             &(ef,),
             |b, &(ef,)| {
                 b.iter(|| {
@@ -96,16 +97,12 @@ fn bench_search_varying_k(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("hnsw_search_k");
     for k in [1, 5, 10, 25, 50, 100] {
-        group.bench_with_input(
-            criterion::BenchmarkId::new("5k_128d", k),
-            &k,
-            |b, &k| {
-                b.iter(|| {
-                    let results = index.search(black_box(&query), k, 100).unwrap();
-                    black_box(results);
-                });
-            },
-        );
+        group.bench_with_input(criterion::BenchmarkId::new("5k_128d", k), &k, |b, &k| {
+            b.iter(|| {
+                let results = index.search(black_box(&query), k, 100).unwrap();
+                black_box(results);
+            });
+        });
     }
     group.finish();
 }
@@ -141,32 +138,28 @@ fn bench_delete_and_search(c: &mut Criterion) {
 fn bench_bulk_insert(c: &mut Criterion) {
     let mut group = c.benchmark_group("hnsw_bulk_insert");
     for n in [100, 500, 1_000] {
-        group.bench_with_input(
-            criterion::BenchmarkId::new("128d", n),
-            &n,
-            |b, &n| {
-                b.iter_batched(
-                    || {
-                        let config = HnswConfig {
-                            dimensions: 128,
-                            m: 16,
-                            m0: 32,
-                            ef_construction: 100,
-                            metric: DistanceMetric::Cosine,
-                        };
-                        let index = HnswIndex::with_seed(config, 42);
-                        let vectors: Vec<_> = (0..n)
-                            .map(|i| (random_vector(128, i as u64), i as u64))
-                            .collect();
-                        (index, vectors)
-                    },
-                    |(mut index, vectors)| {
-                        index.bulk_insert(black_box(vectors)).unwrap();
-                    },
-                    BatchSize::SmallInput,
-                );
-            },
-        );
+        group.bench_with_input(criterion::BenchmarkId::new("128d", n), &n, |b, &n| {
+            b.iter_batched(
+                || {
+                    let config = HnswConfig {
+                        dimensions: 128,
+                        m: 16,
+                        m0: 32,
+                        ef_construction: 100,
+                        metric: DistanceMetric::Cosine,
+                    };
+                    let index = HnswIndex::with_seed(config, 42);
+                    let vectors: Vec<_> = (0..n)
+                        .map(|i| (random_vector(128, i as u64), i as u64))
+                        .collect();
+                    (index, vectors)
+                },
+                |(mut index, vectors)| {
+                    index.bulk_insert(black_box(vectors)).unwrap();
+                },
+                BatchSize::SmallInput,
+            );
+        });
     }
     group.finish();
 }

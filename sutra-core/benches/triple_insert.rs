@@ -69,10 +69,8 @@ fn bench_lookup_by_subject(c: &mut Criterion) {
                 let subjects: Vec<_> = (0..count)
                     .map(|i| {
                         let s = dict.intern(&format!("http://example.org/person/{}", i));
-                        let o = dict.intern(&format!(
-                            "http://example.org/person/{}",
-                            (i + 1) % count
-                        ));
+                        let o =
+                            dict.intern(&format!("http://example.org/person/{}", (i + 1) % count));
                         store.insert(Triple::new(s, p, o)).unwrap();
                         s
                     })
@@ -137,10 +135,7 @@ fn bench_remove(c: &mut Criterion) {
                 let mut triples = Vec::new();
                 for i in 0..1_000 {
                     let s = dict.intern(&format!("http://example.org/person/{}", i));
-                    let o = dict.intern(&format!(
-                        "http://example.org/person/{}",
-                        (i + 1) % 1_000
-                    ));
+                    let o = dict.intern(&format!("http://example.org/person/{}", (i + 1) % 1_000));
                     let t = Triple::new(s, p, o);
                     store.insert(t.clone()).unwrap();
                     triples.push(t);
