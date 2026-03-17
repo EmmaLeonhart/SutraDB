@@ -33,161 +33,139 @@
 
 <div class="container">
     <div class="page-header">
-        <h1>Serverless vs <span>Server Mode</span></h1>
-        <p class="subtitle">Serverless doesn't mean less. It means you can see where your data lives.</p>
+        <h1>Deployment: <span>Embedded &amp; Server</span></h1>
+        <p class="subtitle">Two ways to run the same database. Pick what fits your use case.</p>
     </div>
 
-    <h2>The Misconception</h2>
+    <h2>Two Modes, One Database</h2>
 
-    <p>When people hear "serverless database," they often think it's a stripped-down version of a "real" database. That's backwards. A serverless database like SQLite or SutraDB does <em>everything</em> a server-based database does &mdash; it just doesn't hide your data behind a daemon process.</p>
+    <p>SutraDB can run as an <strong>embedded database</strong> (open a <code>.sdb</code> file directly, like SQLite) or as a <strong>server</strong> (HTTP SPARQL endpoint). Both use the same storage format, the same query engine, and the same indexes. The difference is how you access the data.</p>
 
     <div class="comparison">
         <div class="card">
-            <h4>Server-based (PostgreSQL, Fuseki)</h4>
+            <h4>Embedded (Serverless)</h4>
             <ul>
-                <li>Data stored in an opaque directory managed by a background service</li>
-                <li>You interact through a network port</li>
-                <li>Must install, configure, start the service before doing anything</li>
-                <li>Data location: somewhere in <code>/var/lib/postgres/</code> or a service directory you never look at</li>
-                <li>Backup: use the server's dump tool</li>
+                <li>Open a <code>.sdb</code> file directly &mdash; no daemon, no config</li>
+                <li>Zero setup: download the binary, point at a file, query</li>
+                <li>Data is a file you can see, copy, and move</li>
+                <li>Single-process access only</li>
+                <li>No network overhead</li>
             </ul>
         </div>
         <div class="card">
-            <h4>Serverless (SQLite, SutraDB)</h4>
+            <h4>Server Mode</h4>
             <ul>
-                <li>Data stored in a file you can see: <code>my_graph.sdb</code></li>
-                <li>You interact by opening the file directly</li>
-                <li>Download the binary, point it at a file, done</li>
-                <li>Data location: wherever you put it</li>
-                <li>Backup: copy the file</li>
+                <li>HTTP SPARQL endpoint at <code>localhost:3030/sparql</code></li>
+                <li>Multiple clients can query concurrently</li>
+                <li>Remote access from other machines</li>
+                <li>Optional auth, rate limiting, query timeouts</li>
+                <li>Periodic backups, health monitoring</li>
             </ul>
         </div>
     </div>
 
-    <div class="callout green">
-        <strong>Same capabilities, different access model</strong>
-        A serverless database is not "less" than a server-based one. It has the same indexes, the same query engine, the same ACID guarantees. The difference is purely about how you access it &mdash; directly (file) or indirectly (network port).
-    </div>
-
-    <h2>Why Serverless by Default?</h2>
-
-    <h3>Instant setup</h3>
-
-    <p>The SQLite experience: download one binary, run one command, you have a working database. No service installation, no configuration files, no port conflicts, no permission issues.</p>
-
-<pre><code><span class="cmt"># That's it. You now have a graph database with vector indexing.</span>
-sutra query "SELECT * WHERE { ?s ?p ?o }" --data my_graph.sdb</code></pre>
-
-    <h3>AI-agent friendly</h3>
-
-    <p>A key motivation: an AI agent (like Claude Code, Cursor, or a custom tool) can install SutraDB and initialize a database in seconds. No "start the service, wait for it to boot, configure authentication, create a database" ceremony. Just:</p>
-
-    <ol>
-        <li>Download the binary</li>
-        <li>Create a <code>.sdb</code> file</li>
-        <li>Start querying</li>
-    </ol>
-
-    <p>This matters because AI agents work best when setup is fast and deterministic. A server-based database requires the agent to manage a background process, handle port allocation, deal with authentication &mdash; all failure modes that have nothing to do with the actual data work.</p>
-
-    <h3>Transparency</h3>
-
-    <p>With a serverless database, you always know exactly where your data is. It's a file in a directory you chose. You can:</p>
-
-    <ul>
-        <li>See it in your file explorer</li>
-        <li>Copy it to another machine</li>
-        <li>Back it up by copying the file</li>
-        <li>Version control it (for small databases)</li>
-        <li>Delete it when you're done</li>
-        <li>Share it by sending the file</li>
-    </ul>
-
-    <p>With a server-based database, your data is in some system directory managed by the service. You need the server's tools to export, backup, or move it. The data is there, but it's hidden from you.</p>
-
-    <h2>The Tradeoff: Visibility Cuts Both Ways</h2>
-
-    <p>The main argument <em>against</em> serverless is exactly the same as the main argument <em>for</em> it: <strong>your data is a visible file.</strong></p>
-
-    <div class="callout orange">
-        <strong>The accidental deletion problem</strong>
-        Because a <code>.sdb</code> file sits in a regular directory, it's easy to accidentally delete it, move it, or overwrite it. A server-based database hides data in a system directory that users rarely touch, which provides accidental-deletion protection by obscurity.
-    </div>
-
-    <p>This is a real tradeoff, and it's the reason server-based databases exist. But we believe the transparency benefits outweigh the risks, especially because:</p>
-
-    <ul>
-        <li><strong>Users who work with databases know what they're doing.</strong> They understand that deleting a data file deletes the data.</li>
-        <li><strong>Explicit is better than implicit.</strong> Knowing where your data is and having the power to manage it directly is better than having it hidden "for your own protection."</li>
-        <li><strong>Server mode exists when you need it.</strong> If you want the protection of a managed service, start SutraDB in server mode. The same <code>.sdb</code> file works either way.</li>
-    </ul>
-
-    <h2>Server Mode: When You Need It</h2>
-
-    <p>Serverless is the default, but SutraDB fully supports server mode for cases where you need it:</p>
-
-    <table>
-        <tr><th>Use Case</th><th>Mode</th></tr>
-        <tr><td>Personal project, scripts, AI agents</td><td>Serverless (direct file access)</td></tr>
-        <tr><td>Web application backend</td><td>Server (HTTP SPARQL endpoint)</td></tr>
-        <tr><td>Multiple processes reading the same data</td><td>Server (shared access via HTTP)</td></tr>
-        <tr><td>Remote access from other machines</td><td>Server (network endpoint)</td></tr>
-        <tr><td>Jupyter notebook exploration</td><td>Either (serverless for local, server for shared)</td></tr>
-        <tr><td>Production deployment</td><td>Server (with Docker)</td></tr>
-    </table>
-
-<pre><code><span class="cmt"># Serverless: query a file directly</span>
+<pre><code><span class="cmt"># Embedded: query a file directly</span>
 sutra query "SELECT ?s WHERE { ?s a :Person }" --data people.sdb
 
-<span class="cmt"># Server: start an HTTP endpoint, same file</span>
+<span class="cmt"># Server: start an HTTP endpoint on the same file</span>
 sutra serve --port 3030 --data people.sdb
 <span class="cmt"># Now accessible at http://localhost:3030/sparql</span></code></pre>
 
-    <p>Same data, same file, same format. The only difference is whether you access it through a file path or a network port.</p>
+    <h2>When to Use Each Mode</h2>
+
+    <table>
+        <tr><th>Use Case</th><th>Recommended Mode</th><th>Why</th></tr>
+        <tr><td>Personal project, scripts, prototyping</td><td>Embedded</td><td>Zero setup, fastest possible path to querying</td></tr>
+        <tr><td>AI agents (Claude Code, Cursor, etc.)</td><td>Embedded</td><td>No process management, no port conflicts, deterministic</td></tr>
+        <tr><td>Jupyter notebook exploration</td><td>Either</td><td>Embedded for local; server if sharing with collaborators</td></tr>
+        <tr><td>Web application backend</td><td>Server</td><td>Multiple clients need concurrent access via HTTP</td></tr>
+        <tr><td>Multiple processes reading the same data</td><td>Server</td><td>Embedded mode is single-process; server handles concurrency</td></tr>
+        <tr><td>Remote access from other machines</td><td>Server</td><td>Embedded mode has no network interface</td></tr>
+        <tr><td>Production deployment</td><td>Server</td><td>Auth, rate limiting, monitoring, backups</td></tr>
+    </table>
+
+    <h2>Benefits of Embedded Mode</h2>
+
+    <p>Embedded mode follows the SQLite philosophy: download one binary, run one command, you have a working database. This is the default because it removes every obstacle between you and your data.</p>
+
+    <ul>
+        <li><strong>Instant setup.</strong> No service installation, configuration files, port conflicts, or permission issues.</li>
+        <li><strong>Transparent data location.</strong> The <code>.sdb</code> file is wherever you put it. Copy it, back it up, share it, version-control it.</li>
+        <li><strong>Agent-friendly.</strong> AI agents can install and initialize a database in seconds without managing background processes.</li>
+        <li><strong>No network overhead.</strong> Queries go directly to the storage engine, no serialization/deserialization over HTTP.</li>
+    </ul>
+
+    <h2>Benefits of Server Mode</h2>
+
+    <p>Server mode adds capabilities that embedded mode cannot provide. For anything beyond single-user local access, server mode is the right choice.</p>
+
+    <ul>
+        <li><strong>Concurrent access.</strong> Multiple clients, multiple processes, multiple machines &mdash; all querying the same database simultaneously.</li>
+        <li><strong>Authentication &amp; access control.</strong> Simple passcode auth in the open-source tier; RBAC in the premium tier.</li>
+        <li><strong>Operational safety.</strong> Rate limiting prevents runaway queries. Query timeouts kill expensive queries. Periodic backups run automatically.</li>
+        <li><strong>Standard protocol.</strong> The SPARQL HTTP Protocol means any SPARQL client (Yasgui, curl, Python's SPARQLWrapper) works out of the box.</li>
+        <li><strong>Health monitoring.</strong> The <code>/health</code> endpoint exposes index health, tombstone ratios, and pseudo-table coverage for observability.</li>
+    </ul>
+
+    <h2>Tradeoffs</h2>
+
+    <table>
+        <tr><th></th><th>Embedded</th><th>Server</th></tr>
+        <tr><td><strong>Setup complexity</strong></td><td>None</td><td>Minimal (one command, but you manage a process)</td></tr>
+        <tr><td><strong>Concurrent access</strong></td><td>Single process only</td><td>Multiple clients</td></tr>
+        <tr><td><strong>Network access</strong></td><td>Local only</td><td>Remote + local</td></tr>
+        <tr><td><strong>Auth &amp; security</strong></td><td>File system permissions</td><td>Passcode auth, rate limiting, query timeouts</td></tr>
+        <tr><td><strong>Backups</strong></td><td>Copy the file yourself</td><td>Automatic periodic backups</td></tr>
+        <tr><td><strong>Data visibility</strong></td><td>Plain file &mdash; easy to find, but also easy to accidentally delete</td><td>Managed by the server process</td></tr>
+        <tr><td><strong>Performance overhead</strong></td><td>None (direct access)</td><td>HTTP serialization/deserialization per query</td></tr>
+    </table>
+
+    <div class="callout green">
+        <strong>Same file, either mode</strong>
+        The <code>.sdb</code> file format is the same regardless of how you access it. You can prototype in embedded mode, then deploy the same file in server mode without any migration or conversion.
+    </div>
 
     <h2>Comparison with Other Databases</h2>
 
     <table>
-        <tr><th>Database</th><th>Model</th><th>Setup Time</th><th>Data Location</th></tr>
-        <tr>
-            <td><strong>SQLite</strong></td>
-            <td>Serverless</td>
-            <td>Seconds</td>
-            <td>Wherever you put the <code>.db</code> file</td>
-        </tr>
+        <tr><th>Database</th><th>Embedded</th><th>Server</th><th>Data Model</th></tr>
         <tr>
             <td><strong>SutraDB</strong></td>
-            <td>Serverless (default) + Server</td>
-            <td>Seconds</td>
-            <td>Wherever you put the <code>.sdb</code> file</td>
+            <td><span class="badge badge-green">Yes (default)</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td>RDF-star + vectors</td>
+        </tr>
+        <tr>
+            <td><strong>SQLite</strong></td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td><span class="badge badge-red">No</span></td>
+            <td>Relational</td>
         </tr>
         <tr>
             <td><strong>PostgreSQL</strong></td>
-            <td>Server only</td>
-            <td>Minutes to hours</td>
-            <td><code>/var/lib/postgresql/</code> (managed)</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td>Relational</td>
         </tr>
         <tr>
             <td><strong>Apache Jena Fuseki</strong></td>
-            <td>Server only</td>
-            <td>Minutes</td>
-            <td><code>run/databases/</code> (managed)</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td>RDF</td>
         </tr>
         <tr>
             <td><strong>Neo4j</strong></td>
-            <td>Server only</td>
-            <td>Minutes</td>
-            <td><code>data/databases/</code> (managed)</td>
+            <td><span class="badge badge-green">Yes (embedded Java)</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td>Property graph</td>
         </tr>
         <tr>
             <td><strong>Qdrant</strong></td>
-            <td>Server only</td>
-            <td>Minutes</td>
-            <td><code>storage/</code> (managed)</td>
+            <td><span class="badge badge-red">No</span></td>
+            <td><span class="badge badge-green">Yes</span></td>
+            <td>Vectors</td>
         </tr>
     </table>
-
-    <p>SutraDB is the only graph+vector database that offers the SQLite experience: download, run, done.</p>
 
 </div>
 
