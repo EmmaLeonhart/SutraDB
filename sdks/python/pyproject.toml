@@ -22,5 +22,5 @@ classifiers = [
 dev = ["pytest>=7.0"]
 
 [project.urls]
-Homepage = "https://emmaleonhart.github.io/SutraDB/"
+Homepage = "https://sutradb.org/"
 Repository = "https://github.com/EmmaLeonhart/SutraDB"
