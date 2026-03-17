@@ -170,7 +170,7 @@ ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^sutra:f32vec))
 ## Query Language Policy
 
 **Supported:** **SPARQL+** — SPARQL 1.1 superset with VECTOR_SIMILAR, VECTOR_SCORE, and predicate-based exit conditions (UNTIL)
-**Planned:** Cypher, SQL, and MongoDB Query Language as translation layers/wrappers over SPARQL. These are syntactic frontends — every query is transpiled to SPARQL+ before execution.
+**Planned:** Cypher, SQL, MongoDB Query Language, and GQL (ISO graph query language) as translation layers/wrappers over SPARQL. These are syntactic frontends — every query is transpiled to SPARQL+ before execution.
 **Never:** GraphQL — push to application layer.
 
 ---
