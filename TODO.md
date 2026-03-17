@@ -1,8 +1,8 @@
 # SutraDB — TODO
 
-**Status: 185 of 215 items complete (86%)**
+**Status: 185 of 218 items complete (85%)**
 
-## Remaining (30 items)
+## Remaining (33 items)
 
 ### SPARQL+ Query Engine Optimization (algorithmic priority)
 
@@ -85,7 +85,10 @@ Two interfaces, same underlying metrics: Sutra Studio (GUI, visual, for humans) 
 - [x] Pseudo-table health metrics: coverage percentage, cliff steepness per group, characteristic set distribution
 - [x] Storage metrics: triple count, term dictionary size, index sizes, per-predicate cardinality
 - [ ] Query performance metrics: per-pattern latency percentiles, planner decision accuracy
-- [ ] Sutra Studio health dashboard: visual charts/heatmaps for all the above
+- [ ] Sutra Studio health dashboard: visual charts/heatmaps for all the above (should be the first thing in the Flutter GUI)
+- [ ] `sutra health --json` mode: structured JSON output for programmatic agent consumption
+- [ ] Iterate on CLI health output format based on real agent usage — current format is a first pass
+- [ ] Health dashboard as the landing page in Sutra Studio (Flutter): show overall status, per-index cards, action buttons
 
 #### Vectorized Execution for Triple Pattern Scans
 Lower priority than the above (graph workloads are pointer-chasing, not scan-heavy), but applicable to the relational-join portions of SPARQL queries — and pseudo-tables make this much more viable since they provide the contiguous columnar layout that SIMD needs. SIMD already exists for distance calculations but not for triple matching.
