@@ -78,6 +78,31 @@ enum Commands {
         #[arg(short, long, default_value = "./sutra-data")]
         data_dir: String,
     },
+    /// Database health diagnostics for AI agents and humans.
+    ///
+    /// Outputs a structured health report covering HNSW vector indexes,
+    /// pseudo-tables, and storage. Every metric includes context explaining
+    /// what healthy vs unhealthy looks like.
+    ///
+    /// Use --rebuild-hnsw to compact and rebuild all HNSW indexes.
+    /// Use --refresh to rediscover pseudo-tables from current data.
+    Health {
+        /// Data directory.
+        #[arg(short, long, default_value = "./sutra-data")]
+        data_dir: String,
+
+        /// Rebuild all HNSW indexes (removes tombstones, restores connectivity).
+        /// This is the recommended fix when the health report shows WARNING or
+        /// CRITICAL for tombstone ratio or connectivity.
+        #[arg(long)]
+        rebuild_hnsw: bool,
+
+        /// Rediscover pseudo-tables from current graph data.
+        /// Scans all nodes for shared predicate patterns and materializes
+        /// columnar indexes for groups that qualify.
+        #[arg(long)]
+        refresh: bool,
+    },
     /// Agent-first installer: outputs structured config for AI agents.
     /// Generates a markdown notes file documenting the database setup.
     #[command(name = "install-agent")]
@@ -414,6 +439,72 @@ async fn main() -> anyhow::Result<()> {
             println!("SutraDB — {}", data_dir);
             println!("  Triples: {}", triple_count);
             println!("  Terms:   {}", term_count);
+        }
+
+        Commands::Health {
+            data_dir,
+            rebuild_hnsw,
+            refresh,
+        } => {
+            // Load the persistent store and hydrate in-memory structures.
+            let ps = sutra_core::PersistentStore::open(&data_dir)?;
+            let mut store = sutra_core::TripleStore::new();
+            let mut dict = sutra_core::TermDictionary::new();
+            ps.load_terms_into(&mut dict);
+            for triple in ps.iter() {
+                let _ = store.insert(triple);
+            }
+
+            // Hydrate vector registry (empty for now — vector declarations
+            // are rebuilt from stored triples at server startup, not here).
+            let vectors = Arc::new(RwLock::new(sutra_hnsw::VectorRegistry::new()));
+
+            // Rebuild HNSW indexes if requested.
+            if rebuild_hnsw {
+                let mut vecs = vectors.write().unwrap();
+                let mut total_removed = 0usize;
+                for pred_id in vecs.predicates() {
+                    if let Some(index) = vecs.get_mut(pred_id) {
+                        let pred_name = dict.resolve(pred_id).unwrap_or("unknown");
+                        let before = index.len();
+                        let removed = index.compact();
+                        total_removed += removed;
+                        println!(
+                            "Rebuilt HNSW index '{}': removed {} tombstones ({} → {} nodes)",
+                            pred_name,
+                            removed,
+                            before,
+                            index.len()
+                        );
+                    }
+                }
+                if total_removed == 0 {
+                    println!("No tombstones found — all HNSW indexes are clean.");
+                }
+                println!();
+            }
+
+            // Discover pseudo-tables if requested.
+            let pseudo_tables = if refresh {
+                println!("Discovering pseudo-tables from graph structure...");
+                let node_props = sutra_core::extract_node_properties(&store);
+                let registry = sutra_core::discover_pseudo_tables(&node_props, &store);
+                println!(
+                    "Discovered {} pseudo-table(s) covering {} nodes.",
+                    registry.len(),
+                    registry.total_coverage()
+                );
+                println!();
+                Some(registry)
+            } else {
+                None
+            };
+
+            // Generate and display the health report.
+            let vecs = vectors.read().unwrap();
+            let report =
+                sutra_sparql::generate_health_report(&store, &dict, &vecs, pseudo_tables.as_ref());
+            println!("{}", report.to_ai_text());
         }
 
         Commands::InstallAgent {

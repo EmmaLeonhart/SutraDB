@@ -141,6 +141,28 @@ impl HnswIndex {
         self.config.metric
     }
 
+    /// Read-only access to all nodes (for health diagnostics and analysis).
+    /// Each node exposes its layer, neighbor lists, deleted flag, and triple_id.
+    pub fn nodes(&self) -> &[HnswNode] {
+        &self.nodes
+    }
+
+    /// Number of extra entry points (for cross-cluster diversity).
+    /// Context: 2-8 is ideal for diverse search coverage.
+    pub fn extra_entry_point_count(&self) -> usize {
+        self.extra_entry_points.len()
+    }
+
+    /// The maximum HNSW layer in the graph.
+    pub fn max_layer(&self) -> u8 {
+        self.max_layer
+    }
+
+    /// The configured M parameter (max neighbors per node per layer).
+    pub fn m_parameter(&self) -> usize {
+        self.config.m
+    }
+
     /// Assign a random layer using geometric distribution.
     /// Uses xorshift64 for fast, reproducible pseudo-randomness.
     fn random_layer(&mut self) -> u8 {

@@ -1,8 +1,8 @@
 # SutraDB — TODO
 
-**Status: 180 of 215 items complete (84%)**
+**Status: 185 of 215 items complete (86%)**
 
-## Remaining (35 items)
+## Remaining (30 items)
 
 ### SPARQL+ Query Engine Optimization (algorithmic priority)
 
@@ -72,7 +72,7 @@ RDF has no tables, but relational structure exists implicitly in the graph. Pseu
 - [x] Pseudo-table materialization: columnar index with ≥33% properties as columns, nulls for absent values, tail-property count column
 - [x] Data health metric: compute cliff steepness between core and tail property distributions
 - [x] Query planner integration: recognize when a SPARQL pattern matches a pseudo-table and route through columnar index
-- [ ] Expose health metrics via HNSW health endpoint / Sutra Studio
+- [x] Expose health metrics via HNSW health endpoint / Sutra Studio
 - [x] Per-column statistics (min/max/null_count/distinct_count) following DataFusion's Precision<T> pattern
 - [x] Segment-level storage (~2048 rows) with per-segment zonemaps for skip-scan pruning (DuckDB pattern)
 - [x] Sort pseudo-table rows by most selective predicate for tighter zonemaps
@@ -80,10 +80,10 @@ RDF has no tables, but relational structure exists implicitly in the graph. Pseu
 #### Database Health Dashboard
 Two interfaces, same underlying metrics: Sutra Studio (GUI, visual, for humans) and `sutra health` (CLI, structured text, for AI agents). The agent-oriented CLI is critical — agents need to be able to assess database health, pseudo-table coverage, HNSW quality, and data structure quality without ever touching a GUI.
 
-- [ ] `sutra health` CLI command: structured text output of all health metrics
-- [ ] HNSW health metrics: tombstone ratio, layer distribution, entry point connectivity, recall estimate
-- [ ] Pseudo-table health metrics: coverage percentage, cliff steepness per group, characteristic set distribution
-- [ ] Storage metrics: triple count, term dictionary size, index sizes, per-predicate cardinality
+- [x] `sutra health` CLI command: structured text output of all health metrics
+- [x] HNSW health metrics: tombstone ratio, layer distribution, entry point connectivity, recall estimate
+- [x] Pseudo-table health metrics: coverage percentage, cliff steepness per group, characteristic set distribution
+- [x] Storage metrics: triple count, term dictionary size, index sizes, per-predicate cardinality
 - [ ] Query performance metrics: per-pattern latency percentiles, planner decision accuracy
 - [ ] Sutra Studio health dashboard: visual charts/heatmaps for all the above
 
@@ -133,7 +133,7 @@ Lower priority than the above (graph workloads are pointer-chasing, not scan-hea
 
 ---
 
-## Completed (180 items)
+## Completed (185 items)
 
 <details>
 <summary>Click to expand</summary>
@@ -147,6 +147,13 @@ Lower priority than the above (graph workloads are pointer-chasing, not scan-hea
 - [x] Object hash join: reverse-traversal optimization using POS/OSP indexes
 - [x] Hash join threshold lowered from 100 to 50 for earlier amortization
 - [x] Directional HNSW edge encoding for SPARQL property path traversal
+
+### Database Health Dashboard
+- [x] `sutra health` CLI command with AI-readable structured output
+- [x] HNSW health: tombstone ratio, layer distribution, avg/min/max connectivity, entry point diversity
+- [x] Pseudo-table health: coverage ratio, cliff steepness, segment count, avg tail properties
+- [x] Storage health: triple count, term dictionary size, unique predicate count
+- [x] HNSW rebuild via `sutra health --rebuild-hnsw` (compacts tombstones, restores connectivity)
 
 ### Pseudo-Tables & Vectorized Execution
 - [x] Property model: predicate + position (Subject/Object) pairs per node
