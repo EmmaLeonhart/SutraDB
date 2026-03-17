@@ -62,6 +62,234 @@ use crate::id::TermId;
 use crate::store::TripleStore;
 
 // ---------------------------------------------------------------------------
+// SIMD implementation for u64 column scanning (x86/x86_64)
+// ---------------------------------------------------------------------------
+
+/// Sentinel value for null entries in packed columns.
+/// Using u64::MAX because TermIds are sequentially assigned starting from small values,
+/// so u64::MAX will never collide with a real TermId.
+const NULL_SENTINEL: u64 = u64::MAX;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+mod simd {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    // -- AVX2 (256-bit, 4 u64s per iteration) --
+
+    /// Scan a packed u64 column for equality matches using AVX2.
+    /// Returns a bitmask of matching positions for each chunk of 4 elements.
+    #[target_feature(enable = "avx2")]
+    pub(crate) unsafe fn scan_eq_avx2(data: &[u64], value: u64, out: &mut Vec<usize>) {
+        let n = data.len();
+        let chunks = n / 4;
+        let ptr = data.as_ptr() as *const __m256i;
+        let needle = _mm256_set1_epi64x(value as i64);
+
+        for i in 0..chunks {
+            let block = _mm256_loadu_si256(ptr.add(i));
+            let cmp = _mm256_cmpeq_epi64(block, needle);
+            let mask = _mm256_movemask_epi8(cmp) as u32;
+            // Each matching u64 produces 8 set bits (0xFF) in the mask
+            let base = i * 4;
+            if mask & 0x000000FF != 0 { out.push(base); }
+            if mask & 0x0000FF00 != 0 { out.push(base + 1); }
+            if mask & 0x00FF0000 != 0 { out.push(base + 2); }
+            if mask & 0xFF000000 != 0 { out.push(base + 3); }
+        }
+
+        // Scalar tail
+        let tail_start = chunks * 4;
+        for (i, &v) in data[tail_start..].iter().enumerate() {
+            if v == value {
+                out.push(tail_start + i);
+            }
+        }
+    }
+
+    /// Scan a packed u64 column for values >= lo AND <= hi using AVX2.
+    /// lo/hi of u64::MAX (NULL_SENTINEL) means unbounded on that side.
+    #[target_feature(enable = "avx2")]
+    pub(crate) unsafe fn scan_range_avx2(
+        data: &[u64], null_sentinel: u64,
+        lo: u64, hi: u64, has_lo: bool, has_hi: bool,
+        out: &mut Vec<usize>,
+    ) {
+        // AVX2 doesn't have unsigned u64 comparison instructions,
+        // so we use scalar with null-skip. The benefit comes from the
+        // packed layout eliminating Option overhead and improving cache
+        // utilization. For range scans, the zonemap prune is the primary
+        // accelerator; this inner loop benefits from the dense layout.
+        for (i, &v) in data.iter().enumerate() {
+            if v == null_sentinel { continue; }
+            let above = !has_lo || v >= lo;
+            let below = !has_hi || v <= hi;
+            if above && below {
+                out.push(i);
+            }
+        }
+    }
+
+    /// Scan a packed u64 column for non-null values using AVX2.
+    #[target_feature(enable = "avx2")]
+    pub(crate) unsafe fn scan_not_null_avx2(data: &[u64], null_sentinel: u64, out: &mut Vec<usize>) {
+        let n = data.len();
+        let chunks = n / 4;
+        let ptr = data.as_ptr() as *const __m256i;
+        let sentinel = _mm256_set1_epi64x(null_sentinel as i64);
+
+        for i in 0..chunks {
+            let block = _mm256_loadu_si256(ptr.add(i));
+            let cmp = _mm256_cmpeq_epi64(block, sentinel);
+            let mask = _mm256_movemask_epi8(cmp) as u32;
+            // Invert: we want NOT null
+            let base = i * 4;
+            if mask & 0x000000FF == 0 { out.push(base); }
+            if mask & 0x0000FF00 == 0 { out.push(base + 1); }
+            if mask & 0x00FF0000 == 0 { out.push(base + 2); }
+            if mask & 0xFF000000 == 0 { out.push(base + 3); }
+        }
+
+        let tail_start = chunks * 4;
+        for (i, &v) in data[tail_start..].iter().enumerate() {
+            if v != null_sentinel {
+                out.push(tail_start + i);
+            }
+        }
+    }
+
+    // -- SSE2 (128-bit, 2 u64s per iteration) --
+
+    /// Scan a packed u64 column for equality matches using SSE2.
+    #[target_feature(enable = "sse2")]
+    pub(crate) unsafe fn scan_eq_sse2(data: &[u64], value: u64, out: &mut Vec<usize>) {
+        let n = data.len();
+        let chunks = n / 2;
+        let ptr = data.as_ptr() as *const __m128i;
+        let needle = _mm_set1_epi64x(value as i64);
+
+        for i in 0..chunks {
+            let block = _mm_loadu_si128(ptr.add(i));
+            let cmp = _mm_cmpeq_epi64(block, needle);
+            let mask = _mm_movemask_epi8(cmp) as u32;
+            let base = i * 2;
+            if mask & 0x00FF != 0 { out.push(base); }
+            if mask & 0xFF00 != 0 { out.push(base + 1); }
+        }
+
+        let tail_start = chunks * 2;
+        for (i, &v) in data[tail_start..].iter().enumerate() {
+            if v == value {
+                out.push(tail_start + i);
+            }
+        }
+    }
+
+    /// Scan a packed u64 column for non-null values using SSE2.
+    #[target_feature(enable = "sse2")]
+    pub(crate) unsafe fn scan_not_null_sse2(data: &[u64], null_sentinel: u64, out: &mut Vec<usize>) {
+        let n = data.len();
+        let chunks = n / 2;
+        let ptr = data.as_ptr() as *const __m128i;
+        let sentinel = _mm_set1_epi64x(null_sentinel as i64);
+
+        for i in 0..chunks {
+            let block = _mm_loadu_si128(ptr.add(i));
+            let cmp = _mm_cmpeq_epi64(block, sentinel);
+            let mask = _mm_movemask_epi8(cmp) as u32;
+            let base = i * 2;
+            if mask & 0x00FF == 0 { out.push(base); }
+            if mask & 0xFF00 == 0 { out.push(base + 1); }
+        }
+
+        let tail_start = chunks * 2;
+        for (i, &v) in data[tail_start..].iter().enumerate() {
+            if v != null_sentinel {
+                out.push(tail_start + i);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public SIMD dispatch — runtime feature detection (same pattern as sutra-hnsw)
+// ---------------------------------------------------------------------------
+
+/// SIMD-accelerated equality scan over a packed u64 column.
+/// Returns indices of elements that equal `value`.
+fn packed_scan_eq(data: &[u64], value: u64) -> Vec<usize> {
+    let mut out = Vec::new();
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { simd::scan_eq_avx2(data, value, &mut out) };
+            return out;
+        }
+        if is_x86_feature_detected!("sse4.1") {
+            unsafe { simd::scan_eq_sse2(data, value, &mut out) };
+            return out;
+        }
+    }
+    // Scalar fallback
+    for (i, &v) in data.iter().enumerate() {
+        if v == value { out.push(i); }
+    }
+    out
+}
+
+/// SIMD-accelerated range scan over a packed u64 column.
+/// Returns indices of non-null elements where lo <= value <= hi.
+fn packed_scan_range(data: &[u64], lo: Option<u64>, hi: Option<u64>) -> Vec<usize> {
+    let mut out = Vec::new();
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe {
+                simd::scan_range_avx2(
+                    data, NULL_SENTINEL,
+                    lo.unwrap_or(0), hi.unwrap_or(u64::MAX),
+                    lo.is_some(), hi.is_some(),
+                    &mut out,
+                );
+            }
+            return out;
+        }
+    }
+    // Scalar fallback
+    for (i, &v) in data.iter().enumerate() {
+        if v == NULL_SENTINEL { continue; }
+        let above = lo.is_none_or(|l| v >= l);
+        let below = hi.is_none_or(|h| v <= h);
+        if above && below { out.push(i); }
+    }
+    out
+}
+
+/// SIMD-accelerated not-null scan over a packed u64 column.
+/// Returns indices of elements that are not the null sentinel.
+fn packed_scan_not_null(data: &[u64]) -> Vec<usize> {
+    let mut out = Vec::new();
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { simd::scan_not_null_avx2(data, NULL_SENTINEL, &mut out) };
+            return out;
+        }
+        if is_x86_feature_detected!("sse4.1") {
+            unsafe { simd::scan_not_null_sse2(data, NULL_SENTINEL, &mut out) };
+            return out;
+        }
+    }
+    // Scalar fallback
+    for (i, &v) in data.iter().enumerate() {
+        if v != NULL_SENTINEL { out.push(i); }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -269,6 +497,12 @@ pub struct Segment {
     /// Per-column statistics for zonemap pruning.
     /// Indexed by column position, parallel to `columns`.
     pub column_stats: Vec<ColumnStats>,
+
+    /// Packed column storage for SIMD-accelerated scanning.
+    /// Each inner Vec is a dense u64 array parallel to `nodes`.
+    /// Null values are represented as `NULL_SENTINEL` (u64::MAX).
+    /// Populated by `compute_stats()`.
+    pub packed_columns: Vec<Vec<u64>>,
 }
 
 impl Segment {
@@ -279,6 +513,7 @@ impl Segment {
             columns: (0..num_columns).map(|_| Vec::new()).collect(),
             tail_counts: Vec::new(),
             column_stats: (0..num_columns).map(|_| ColumnStats::empty()).collect(),
+            packed_columns: Vec::new(),
         }
     }
 
@@ -327,6 +562,18 @@ impl Segment {
                 row_count: col_data.len(),
             };
         }
+
+        // Build packed columns: dense u64 arrays with NULL_SENTINEL for nulls.
+        // This layout enables SIMD-accelerated scanning (AVX2: 4 u64s/cycle).
+        self.packed_columns = self
+            .columns
+            .iter()
+            .map(|col| {
+                col.iter()
+                    .map(|v| v.unwrap_or(NULL_SENTINEL))
+                    .collect()
+            })
+            .collect();
     }
 }
 
@@ -797,16 +1044,13 @@ pub struct ScanResult {
 ///
 /// This is the vectorized equivalent of `find_by_subject_predicate` — but
 /// operates on contiguous columnar data instead of a B-tree index, enabling
-/// better cache utilization and potential SIMD acceleration.
+/// better cache utilization and SIMD acceleration.
 ///
-/// ## Vectorization strategy
+/// ## SIMD acceleration
 ///
-/// The inner loop processes column values sequentially, which enables
-/// auto-vectorization by the compiler (LLVM). For u64 TermId comparison,
-/// the compiler can generate AVX2 code that compares 4 values per cycle.
-///
-/// Future work: explicit SIMD intrinsics for even faster comparison,
-/// especially for range predicates on sorted columns.
+/// Uses packed column storage (dense u64 arrays with sentinel nulls) and
+/// explicit SIMD intrinsics: AVX2 compares 4 u64 TermIDs per cycle,
+/// SSE2 compares 2 per cycle, with scalar fallback on other architectures.
 pub fn scan_column_eq(segment: &Segment, col_idx: usize, value: TermId) -> ScanResult {
     // Zonemap pruning: skip the entire segment if the value can't be present.
     let stats = &segment.column_stats[col_idx];
@@ -816,8 +1060,14 @@ pub fn scan_column_eq(segment: &Segment, col_idx: usize, value: TermId) -> ScanR
         };
     }
 
-    // Vectorized scan: iterate column values and collect matching indices.
-    // This loop is auto-vectorizable by LLVM when compiled with -C target-cpu=native.
+    // SIMD scan on packed column (dense u64 array, nulls = sentinel).
+    if let Some(packed) = segment.packed_columns.get(col_idx) {
+        return ScanResult {
+            matching_rows: packed_scan_eq(packed, value),
+        };
+    }
+
+    // Fallback to Option-based scan if packed columns not yet built.
     let col = &segment.columns[col_idx];
     let matching_rows: Vec<usize> = col
         .iter()
@@ -840,6 +1090,7 @@ pub fn scan_column_eq(segment: &Segment, col_idx: usize, value: TermId) -> ScanR
 ///
 /// Supports open ranges (lo or hi can be None for unbounded).
 /// Uses zonemap pruning to skip segments that can't contain matching values.
+/// Uses packed column storage for cache-friendly scanning.
 pub fn scan_column_range(
     segment: &Segment,
     col_idx: usize,
@@ -854,6 +1105,14 @@ pub fn scan_column_range(
         };
     }
 
+    // Packed scan on dense u64 array (nulls = sentinel, skipped automatically).
+    if let Some(packed) = segment.packed_columns.get(col_idx) {
+        return ScanResult {
+            matching_rows: packed_scan_range(packed, lo, hi),
+        };
+    }
+
+    // Fallback to Option-based scan if packed columns not yet built.
     let col = &segment.columns[col_idx];
     let matching_rows: Vec<usize> = col
         .iter()
@@ -868,7 +1127,7 @@ pub fn scan_column_range(
                     None
                 }
             } else {
-                None // nulls never match range predicates
+                None
             }
         })
         .collect();
@@ -880,7 +1139,16 @@ pub fn scan_column_range(
 ///
 /// Useful for patterns like `?s :name ?name` where we want all nodes
 /// that have the property, regardless of value.
+/// Uses SIMD-accelerated null detection on packed columns.
 pub fn scan_column_not_null(segment: &Segment, col_idx: usize) -> ScanResult {
+    // SIMD scan on packed column: compare against sentinel.
+    if let Some(packed) = segment.packed_columns.get(col_idx) {
+        return ScanResult {
+            matching_rows: packed_scan_not_null(packed),
+        };
+    }
+
+    // Fallback to Option-based scan.
     let col = &segment.columns[col_idx];
     let matching_rows: Vec<usize> = col
         .iter()
@@ -1210,6 +1478,105 @@ mod tests {
         assert!(stats.range_could_match(Some(50), Some(60))); // within range
         assert!(!stats.range_could_match(Some(200), Some(300))); // above max
         assert!(!stats.range_could_match(None, Some(0))); // below min (hi < min)
+    }
+
+    // -----------------------------------------------------------------------
+    // Registry tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // SIMD / packed column tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn packed_columns_built_on_compute_stats() {
+        let mut segment = Segment::new(2);
+        segment.nodes = vec![1, 2, 3, 4];
+        segment.columns = vec![
+            vec![Some(10), Some(20), None, Some(40)],
+            vec![None, Some(200), Some(300), None],
+        ];
+        segment.tail_counts = vec![0; 4];
+        segment.compute_stats();
+
+        assert_eq!(segment.packed_columns.len(), 2);
+        assert_eq!(segment.packed_columns[0], vec![10, 20, NULL_SENTINEL, 40]);
+        assert_eq!(
+            segment.packed_columns[1],
+            vec![NULL_SENTINEL, 200, 300, NULL_SENTINEL]
+        );
+    }
+
+    #[test]
+    fn simd_scan_eq_matches_scalar() {
+        let mut segment = Segment::new(1);
+        segment.nodes = (0..100).collect();
+        segment.columns = vec![(0..100u64)
+            .map(|i| if i % 7 == 0 { None } else { Some(i * 3) })
+            .collect()];
+        segment.tail_counts = vec![0; 100];
+        segment.compute_stats();
+
+        // Scan for value 15 (= 5 * 3, should be at index 5)
+        let result = scan_column_eq(&segment, 0, 15);
+        assert_eq!(result.matching_rows, vec![5]);
+
+        // Scan for value 42 (= 14 * 3, but 14 % 7 == 0 so it's null)
+        let result = scan_column_eq(&segment, 0, 42);
+        assert!(result.matching_rows.is_empty());
+
+        // Scan for sentinel should find nothing (sentinel != any real value)
+        let result = scan_column_eq(&segment, 0, NULL_SENTINEL);
+        assert!(result.matching_rows.is_empty(),
+            "Searching for NULL_SENTINEL should not match null entries");
+    }
+
+    #[test]
+    fn simd_scan_range_matches_scalar() {
+        let mut segment = Segment::new(1);
+        segment.nodes = (0..20).collect();
+        segment.columns = vec![(0..20u64)
+            .map(|i| if i == 5 || i == 15 { None } else { Some(i * 10) })
+            .collect()];
+        segment.tail_counts = vec![0; 20];
+        segment.compute_stats();
+
+        // Range [30, 70]: should match 30, 40, 60, 70 (skip null at 50)
+        let result = scan_column_range(&segment, 0, Some(30), Some(70));
+        assert_eq!(result.matching_rows, vec![3, 4, 6, 7]);
+    }
+
+    #[test]
+    fn simd_scan_not_null_matches_scalar() {
+        let mut segment = Segment::new(1);
+        segment.nodes = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        segment.columns = vec![vec![
+            Some(10), None, Some(30), None, Some(50), None, Some(70), Some(80),
+        ]];
+        segment.tail_counts = vec![0; 8];
+        segment.compute_stats();
+
+        let result = scan_column_not_null(&segment, 0);
+        assert_eq!(result.matching_rows, vec![0, 2, 4, 6, 7]);
+    }
+
+    #[test]
+    fn simd_scan_eq_large_segment() {
+        // Test with a segment larger than AVX2 chunk size (4 u64s)
+        let n = 2048;
+        let mut segment = Segment::new(1);
+        segment.nodes = (0..n as u64).collect();
+        segment.columns = vec![(0..n as u64)
+            .map(|i| if i == 999 { Some(42) } else { Some(i) })
+            .collect()];
+        segment.tail_counts = vec![0; n];
+        segment.compute_stats();
+
+        let result = scan_column_eq(&segment, 0, 42);
+        assert!(result.matching_rows.contains(&999));
+        // Also index 42 has value 42
+        assert!(result.matching_rows.contains(&42));
+        assert_eq!(result.matching_rows.len(), 2);
     }
 
     // -----------------------------------------------------------------------
