@@ -156,6 +156,62 @@
         <span class="card-tag innovation">Novel</span><span class="card-tag">SPARQL+</span>
       </a>
     </div>
+
+    <hr class="divider">
+
+    <div class="section">
+      <h2>Architecture Deep Dives</h2>
+      <a class="card" href="/theory/four-index-architecture/">
+        <div class="card-title">Four-Index Architecture</div>
+        <div class="card-desc">HNSW as a first-class index type alongside SPO/POS/OSP. The query planner sees all four and picks the best access path.</div>
+        <span class="card-tag">SPO</span><span class="card-tag">POS</span><span class="card-tag">OSP</span><span class="card-tag">HNSW</span>
+      </a>
+      <a class="card" href="/theory/iri-interning/">
+        <div class="card-title">IRI Interning & Content-Addressed RDF-star</div>
+        <div class="card-desc">Every IRI becomes 8 bytes. Quoted triples get deterministic hash IDs. Single-instruction comparison, SIMD-friendly index keys.</div>
+        <span class="card-tag">u64 TermIds</span><span class="card-tag">RDF-star</span>
+      </a>
+      <a class="card" href="/theory/simd-acceleration/">
+        <div class="card-title">SIMD Acceleration</div>
+        <div class="card-desc">AVX2 and SSE intrinsics for vector distance functions (8 f32/cycle) and columnar TermId scanning (4 u64/cycle). And where SIMD doesn't help.</div>
+        <span class="card-tag">AVX2</span><span class="card-tag">SSE</span><span class="card-tag">Distance Functions</span>
+      </a>
+      <a class="card" href="/theory/hnsw-implementation/">
+        <div class="card-title">HNSW Implementation Details</div>
+        <div class="card-desc">Tombstone deletion, multiple entry points, ephemeral rebuild with optional snapshots, and concurrent search design.</div>
+        <span class="card-tag">Tombstones</span><span class="card-tag">Concurrency</span>
+      </a>
+      <a class="card" href="/theory/cost-based-planning/">
+        <div class="card-title">Cost-Based Query Planning</div>
+        <div class="card-desc">Structural heuristic weights, cardinality estimation, predicate pushdown, and how VECTOR_SIMILAR integrates with pattern reordering.</div>
+        <span class="card-tag">Query Planner</span><span class="card-tag">Cardinality</span>
+      </a>
+      <a class="card" href="/theory/pseudo-table-discovery/">
+        <div class="card-title">Pseudo-Table Discovery</div>
+        <div class="card-desc">Statistical significance testing for characteristic sets, segment-level zonemaps, cliff steepness as a data health metric.</div>
+        <span class="card-tag">Zonemaps</span><span class="card-tag">Data Quality</span>
+      </a>
+      <a class="card" href="/theory/vector-sparql-operators/">
+        <div class="card-title">VECTOR_SIMILAR & VECTOR_SCORE</div>
+        <div class="card-desc">Vector similarity search as SPARQL operators that participate in query planning, not a separate API with JSON handoffs.</div>
+        <span class="card-tag">SPARQL+</span><span class="card-tag">HNSW</span>
+      </a>
+      <a class="card" href="/theory/rdf-star-edges/">
+        <div class="card-title">RDF-star Edge Annotation</div>
+        <div class="card-desc">Metadata on edges without reification. Vector embeddings on relationships. Content-addressed quoted triple IDs.</div>
+        <span class="card-tag">RDF-star</span><span class="card-tag">Edge Embeddings</span>
+      </a>
+      <a class="card" href="/theory/client-side-owl/">
+        <div class="card-title">Client-Side OWL Validation</div>
+        <div class="card-desc">Store first, reason second. The database accepts all triples. SDKs validate OWL constraints before insertion.</div>
+        <span class="card-tag">OWL</span><span class="card-tag">SDK</span>
+      </a>
+      <a class="card" href="/theory/health-diagnostics/">
+        <div class="card-title">Health Diagnostics</div>
+        <div class="card-desc">AI-readable health reports with HNSW metrics, pseudo-table coverage, and actionable maintenance recommendations.</div>
+        <span class="card-tag">Agent-First</span><span class="card-tag">Observability</span>
+      </a>
+    </div>
   </div>
 </body>
 </html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Client-Side OWL Validation — SutraDB">
+    <meta property="og:description" content="SutraDB accepts all triples. OWL constraints are validated by the SDK before insertion, not by the database. Store first, reason second.">
+    <meta property="og:url" content="https://sutradb.org/theory/client-side-owl/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Client-Side OWL Validation — SutraDB">
+    <meta name="twitter:description" content="Store first, reason second. OWL validation in the SDK, not the database.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>Client-Side OWL Validation &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>Client-Side <span>OWL Validation</span></h1>
+        <p class="subtitle">Store first, reason second.</p>
+    </div>
+
+    <h2>The Design Decision</h2>
+
+    <p>SutraDB will never reject a triple for violating an OWL constraint. The database accepts everything. It is a <strong>store</strong>, not a <strong>reasoner</strong>.</p>
+
+    <p>OWL validation happens in the <strong>SDKs</strong> (Python, TypeScript, Rust, etc.), not in the database engine. When you insert a triple through an SDK:</p>
+
+    <ol>
+        <li>The SDK loads the OWL ontology from the database</li>
+        <li>The SDK checks the triple against OWL constraints (domain, range, cardinality, disjoint classes, etc.)</li>
+        <li>If the triple violates a constraint, the SDK throws an exception <em>before the triple reaches the database</em></li>
+        <li>If the triple passes, the SDK sends it to the database, which stores it unconditionally</li>
+    </ol>
+
+    <h2>Why Not Validate in the Database?</h2>
+
+    <ul>
+        <li><strong>Performance:</strong> OWL reasoning can be computationally expensive (OWL DL is decidable but worst-case exponential). Putting this in the write path would make inserts unpredictably slow.</li>
+        <li><strong>Flexibility:</strong> Sometimes you <em>want</em> to store data that violates the ontology &mdash; during migration, bulk import, or when the ontology itself is being revised.</li>
+        <li><strong>Simplicity:</strong> The database engine stays lean. It does one thing (store and query triples) and does it well. Reasoning is a separate concern.</li>
+    </ul>
+
+    <h2>SDK Behavior</h2>
+
+    <table>
+        <tr><th>Setting</th><th>Behavior</th></tr>
+        <tr><td>OWL validation <strong>enabled</strong> (default)</td><td>SDK throws on constraint violation before sending to database</td></tr>
+        <tr><td>OWL validation <strong>disabled</strong></td><td>SDK sends all triples directly, no checking</td></tr>
+        <tr><td>Direct HTTP/SPARQL access</td><td>No validation &mdash; database accepts everything</td></tr>
+    </table>
+
+    <p>OWL validation is <strong>enabled by default</strong> in all SDKs. This means most users get constraint checking out of the box, but can disable it when they need raw performance or flexibility.</p>
+
+    <h2>OWL as Data</h2>
+
+    <p>The OWL ontology is stored in the database as regular RDF triples. The SDKs read it from the database and use it for validation. This means:</p>
+
+    <ul>
+        <li>The ontology is queryable via SPARQL like any other data</li>
+        <li>The ontology can be updated by inserting/deleting triples</li>
+        <li>Sutra Studio can browse and visualize the ontology (Protege-like functionality)</li>
+    </ul>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

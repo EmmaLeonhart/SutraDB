@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="HNSW Implementation Details — SutraDB">
+    <meta property="og:description" content="Tombstone deletion, multi-entry points, ephemeral rebuild, and concurrency design in SutraDB's HNSW index.">
+    <meta property="og:url" content="https://sutradb.org/theory/hnsw-implementation/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="HNSW Implementation — SutraDB">
+    <meta name="twitter:description" content="Tombstone deletion, multi-entry points, and ephemeral rebuild design.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>HNSW Implementation &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>HNSW <span>Implementation</span></h1>
+        <p class="subtitle">Design decisions for deletion, entry points, persistence, and concurrency.</p>
+    </div>
+
+    <h2>Tombstone-Based Lazy Deletion</h2>
+
+    <p>When a vector is deleted from the HNSW index, the node is <strong>not removed</strong>. It is flagged as deleted (tombstoned) but remains in the graph structure. Searches can still traverse through deleted nodes to reach their live neighbors.</p>
+
+    <p>Why: removing a node from an HNSW graph requires rewiring all its neighbors' connections, which is expensive and can fragment the graph. Tombstoning preserves graph connectivity at the cost of wasted traversal steps.</p>
+
+    <p>When the tombstone ratio exceeds a threshold (configurable, default 30%), the background maintenance cycle rebuilds the entire HNSW graph from scratch, producing a fresh graph with no tombstones.</p>
+
+    <h2>Multiple Entry Points</h2>
+
+    <p>Standard HNSW uses a single entry point at the top layer. This can cause searches to get stuck in local optima on large, clustered vector spaces &mdash; if the entry point is far from the query region, greedy descent may converge to a suboptimal cluster.</p>
+
+    <p>SutraDB maintains multiple entry points with geometric probability. Searches begin from the entry point closest to the query vector, reducing the number of hops needed to reach the target region.</p>
+
+    <h2>Ephemeral HNSW with Optional Snapshots</h2>
+
+    <p>The HNSW graph is <strong>not persisted</strong> to the <code>.sdb</code> file. On startup, it is rebuilt from the stored vector triples (which <em>are</em> persisted in SPO/POS/OSP). This guarantees the HNSW graph is always consistent with the stored data.</p>
+
+    <p>For faster cold start on large indexes, optional snapshots can be saved and loaded. If the snapshot is stale (doesn't match stored triples), it is discarded and the graph is rebuilt from scratch.</p>
+
+    <h2>Concurrency: Search is &amp;self</h2>
+
+    <p>HNSW search takes <code>&amp;self</code> (shared reference), meaning any number of searches can execute concurrently without blocking each other. Each search maintains its own visited set (thread-local allocation), following the Qdrant pattern.</p>
+
+    <p>Insert and delete take <code>&amp;mut self</code> (exclusive reference). In practice, writes are batched and applied between search rounds, or the maintenance cycle handles bulk rebuilds during low-usage periods.</p>
+
+    <h2>Parameters</h2>
+
+    <table>
+        <tr><th>Parameter</th><th>Default</th><th>Range</th><th>Effect</th></tr>
+        <tr><td><code>M</code></td><td>16</td><td>8&ndash;64</td><td>Max connections per node per layer. Higher = better recall, more memory.</td></tr>
+        <tr><td><code>ef_construction</code></td><td>200</td><td>50&ndash;500</td><td>Beam width during build. Higher = better graph quality, slower construction.</td></tr>
+        <tr><td><code>ef_search</code></td><td>Tunable per query</td><td>10&ndash;1000</td><td>Beam width during search. Higher = better recall, slower search.</td></tr>
+        <tr><td><code>dimensions</code></td><td>Declared per predicate</td><td>Any</td><td>Fixed at schema time, enforced on insert. Mismatch = hard error.</td></tr>
+    </table>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

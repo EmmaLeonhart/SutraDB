@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Pseudo-Table Discovery — SutraDB">
+    <meta property="og:description" content="How SutraDB auto-discovers relational structure in RDF graphs using statistical significance testing, zonemaps, and the cliff steepness metric.">
+    <meta property="og:url" content="https://sutradb.org/theory/pseudo-table-discovery/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Pseudo-Table Discovery — SutraDB">
+    <meta name="twitter:description" content="Auto-discovering relational structure in RDF using statistical significance and zonemaps.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>Pseudo-Table Discovery &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>Pseudo-Table <span>Discovery</span></h1>
+        <p class="subtitle">RDF has no tables, but relational structure exists. SutraDB finds it automatically.</p>
+    </div>
+
+    <h2>Characteristic Sets</h2>
+
+    <p>When many nodes share the same set of predicates &mdash; like all <code>Person</code> nodes having <code>name</code>, <code>age</code>, <code>email</code> &mdash; they form a "characteristic set." This group behaves like rows in a relational table, even though no table was declared.</p>
+
+    <p>SutraDB discovers these groups automatically during the background maintenance cycle and materializes <strong>pseudo-tables</strong>: columnar indexes that accelerate the SQL-like portions of SPARQL execution.</p>
+
+    <h2>Discovery Criteria</h2>
+
+    <p>A group qualifies when:</p>
+
+    <ol>
+        <li>A statistically significant cluster of nodes (p &lt; 0.05 vs. random co-occurrence) shares 5+ properties</li>
+        <li>Each of those properties is held by &ge;50% of the group</li>
+        <li>The group has enough members to justify the overhead (minimum 10 nodes)</li>
+    </ol>
+
+    <p>Statistical significance testing filters out spurious clusters that appear by chance. Frequency-only thresholds would produce false positives on noisy data.</p>
+
+    <h2>Segment-Level Zonemaps</h2>
+
+    <p>Rows are stored in segments of ~2048 rows. Each segment maintains per-column statistics (min, max, null count, distinct count). When a query filter doesn't overlap a segment's min/max range, the entire segment is skipped without examining any rows.</p>
+
+    <p>Example: if a segment's maximum <code>age</code> is 30 and the query asks for <code>?age &gt; 50</code>, the segment is pruned. This is the DuckDB pattern applied to RDF.</p>
+
+    <h2>Cliff Steepness: Data Health Metric</h2>
+
+    <p>The distribution of property coverage across a pseudo-table reveals data quality:</p>
+
+    <ul>
+        <li><strong>Sharp cliff (steepness &gt; 10):</strong> 10 properties at 100%, everything else at &lt;10%. Clean, consistent schema.</li>
+        <li><strong>Gradual slope (steepness 1&ndash;3):</strong> Properties spread across 20&ndash;80% coverage. Messy, inconsistent schema.</li>
+        <li><strong>No cliff (steepness &lt; 1):</strong> No clear core/tail separation. The pseudo-table may not be useful.</li>
+    </ul>
+
+    <p>This metric is exposed through the health endpoint and Sutra Studio, making pseudo-table discovery double as a data quality audit.</p>
+
+    <h2>Mixed Resolution</h2>
+
+    <p>When a query mixes pseudo-table columns with properties not in the pseudo-table, the planner uses a two-phase strategy:</p>
+
+    <ol>
+        <li><strong>Columnar phase:</strong> Resolve pseudo-table columns first (vectorized scan, fast)</li>
+        <li><strong>Join phase:</strong> Use the bound subjects from step 1 to do targeted SPO lookups for remaining properties</li>
+    </ol>
+
+    <p>The columnar phase produces bound subjects cheaply. The join phase is fast because the subject is already bound (point lookup). Neither phase requires a full table scan.</p>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

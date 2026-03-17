@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="VECTOR_SIMILAR & VECTOR_SCORE — SutraDB">
+    <meta property="og:description" content="SutraDB's SPARQL+ extensions for vector similarity search integrated directly into graph queries.">
+    <meta property="og:url" content="https://sutradb.org/theory/vector-sparql-operators/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="VECTOR_SIMILAR & VECTOR_SCORE — SutraDB">
+    <meta name="twitter:description" content="Vector similarity search as SPARQL operators, not a separate API.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>VECTOR_SIMILAR &amp; VECTOR_SCORE &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>VECTOR_SIMILAR &amp; <span>VECTOR_SCORE</span></h1>
+        <p class="subtitle">Vector search as SPARQL operators, not a separate API.</p>
+    </div>
+
+    <h2>The Operators</h2>
+
+    <p>SutraDB extends SPARQL 1.1 with two operators that integrate vector similarity search directly into graph query patterns:</p>
+
+    <h3>VECTOR_SIMILAR</h3>
+
+    <p>Filters results to those with similarity above a threshold:</p>
+
+    <pre><code><span class="cmt"># Find documents similar to a query vector that discuss AI entities</span>
+SELECT ?doc ?entity WHERE {
+  ?entity rdf:type :Person .
+  ?doc :mentions ?entity .
+  VECTOR_SIMILAR(?doc :hasEmbedding "0.23 -0.11 ..."^^sutra:f32vec, 0.85)
+}</code></pre>
+
+    <p>The key: <code>VECTOR_SIMILAR</code> participates in the same query plan as regular triple patterns. The planner decides whether to run the vector search first or the graph pattern first based on cost.</p>
+
+    <h3>VECTOR_SCORE</h3>
+
+    <p>Returns the similarity score for use in ORDER BY and projections:</p>
+
+    <pre><code>SELECT ?doc ?score WHERE {
+  ?doc :hasEmbedding ?emb .
+  BIND(VECTOR_SCORE(?doc :hasEmbedding "0.23 -0.11 ..."^^sutra:f32vec) AS ?score)
+}
+ORDER BY DESC(?score)
+LIMIT 10</code></pre>
+
+    <h2>Query Hints</h2>
+
+    <p>Both operators accept optional hints for fine-tuning HNSW search behavior:</p>
+
+    <pre><code><span class="cmt"># Explicit ef_search for higher recall</span>
+VECTOR_SIMILAR(?doc :hasEmbedding "..."^^sutra:f32vec, 0.85, ef:=200)
+
+<span class="cmt"># Explicit k limit</span>
+VECTOR_SIMILAR(?doc :hasEmbedding "..."^^sutra:f32vec, 0.80, k:=50)</code></pre>
+
+    <h2>How It Integrates with Graph Patterns</h2>
+
+    <p>The query planner treats VECTOR_SIMILAR as another pattern with a cost estimate. The planning rules:</p>
+
+    <table>
+        <tr><th>Situation</th><th>Strategy</th></tr>
+        <tr><td>Subject <strong>unbound</strong> before VECTOR_SIMILAR</td><td>Run vector search first (returns top-k candidates), then evaluate graph patterns over candidates</td></tr>
+        <tr><td>Subject <strong>bound</strong> before VECTOR_SIMILAR</td><td>Run graph pattern first (binds subjects), then filter by vector similarity</td></tr>
+    </table>
+
+    <p>This means a query like "find papers similar to X that are written by authors from Tokyo" will automatically choose the most efficient execution order based on the data distribution.</p>
+
+    <h2>Why Not a Separate API?</h2>
+
+    <p>A separate vector search API (like Qdrant's REST API) requires the application to:</p>
+
+    <ol>
+        <li>Call the vector API to get candidate IDs</li>
+        <li>Parse the JSON response</li>
+        <li>Feed those IDs into a SPARQL query</li>
+        <li>Execute the SPARQL query</li>
+    </ol>
+
+    <p>With VECTOR_SIMILAR in SPARQL, it is one query, one round trip, one result set. The planner handles the interleaving internally.</p>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

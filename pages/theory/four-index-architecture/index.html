@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Four-Index Architecture — SutraDB">
+    <meta property="og:description" content="How SutraDB treats HNSW as a fourth index type alongside SPO/POS/OSP, eliminating the need for a separate vector database.">
+    <meta property="og:url" content="https://sutradb.org/theory/four-index-architecture/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Four-Index Architecture — SutraDB">
+    <meta name="twitter:description" content="How SutraDB treats HNSW as a fourth index type alongside SPO/POS/OSP.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>Four-Index Architecture &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>Four-Index <span>Architecture</span></h1>
+        <p class="subtitle">HNSW is not a separate system. It is the fourth index.</p>
+    </div>
+
+    <h2>The Standard Approach: Three Indexes</h2>
+
+    <p>Every RDF triplestore maintains three permutation indexes over its triples. Each index sorts the same data in a different key order, enabling efficient lookups regardless of which positions are bound in a query pattern:</p>
+
+    <table>
+        <tr><th>Index</th><th>Key Order</th><th>Answers</th></tr>
+        <tr><td><strong>SPO</strong></td><td>Subject &rarr; Predicate &rarr; Object</td><td>"What does Alice know?" (star-shaped queries, prefix scan on subject)</td></tr>
+        <tr><td><strong>POS</strong></td><td>Predicate &rarr; Object &rarr; Subject</td><td>"Who is a Person?" (type lookups, reverse resolution)</td></tr>
+        <tr><td><strong>OSP</strong></td><td>Object &rarr; Subject &rarr; Predicate</td><td>"What links to Tokyo?" (reverse traversal, incoming edges)</td></tr>
+    </table>
+
+    <p>All three indexes store the same triples &mdash; they are redundant by design. The cost is 3&times; storage; the benefit is that any triple pattern can be resolved by a prefix scan on the appropriate index, never requiring a full table scan.</p>
+
+    <h2>The Problem: Vectors Don't Fit</h2>
+
+    <p>When you add vector search to a triplestore, the traditional approach is to bolt on a separate vector database. This creates two systems with different APIs, different storage, and a JSON handoff between them. The query planner has no visibility into the vector index &mdash; it can't reason about whether to use the HNSW index or the SPO index for a given pattern.</p>
+
+    <h2>SutraDB's Approach: HNSW as a Fourth Index</h2>
+
+    <p>SutraDB treats the HNSW index as a <strong>fourth index type</strong> that sits alongside SPO/POS/OSP. The query planner sees all four indexes and chooses the best access path for each pattern:</p>
+
+    <table>
+        <tr><th>Index</th><th>Key Order</th><th>Data Structure</th><th>When Used</th></tr>
+        <tr><td><strong>SPO</strong></td><td>Subject &rarr; Predicate &rarr; Object</td><td>B-tree / LSM</td><td>Star-shaped queries, entity lookups</td></tr>
+        <tr><td><strong>POS</strong></td><td>Predicate &rarr; Object &rarr; Subject</td><td>B-tree / LSM</td><td>Type lookups, reverse resolution</td></tr>
+        <tr><td><strong>OSP</strong></td><td>Object &rarr; Subject &rarr; Predicate</td><td>B-tree / LSM</td><td>Reverse traversal, incoming edges</td></tr>
+        <tr><td><strong>VECTOR(p)</strong></td><td>One per vector predicate</td><td>HNSW graph</td><td>Approximate nearest neighbor search</td></tr>
+    </table>
+
+    <h2>How It Works</h2>
+
+    <p>When a vector predicate (e.g., <code>:hasEmbedding</code>) is declared, SutraDB creates an HNSW index for that predicate. The vector literal is stored as a regular triple in SPO/POS/OSP, and the HNSW index maintains a parallel proximity graph keyed by the vector object's TermId.</p>
+
+    <p>The query planner's decision is straightforward:</p>
+
+    <ul>
+        <li><strong>Subject bound before VECTOR_SIMILAR:</strong> Execute the graph pattern first (SPO/POS/OSP), then filter candidates through the HNSW index.</li>
+        <li><strong>Subject unbound:</strong> Execute the HNSW search first (returns top-k candidates), then evaluate graph patterns over those candidates.</li>
+    </ul>
+
+    <p>This is the same cost-based reasoning the planner already does for SPO vs. POS vs. OSP &mdash; it just has a fourth option now.</p>
+
+    <h2>Why This Matters</h2>
+
+    <ul>
+        <li><strong>No separate vector database.</strong> One system, one storage format, one query language.</li>
+        <li><strong>Unified query planning.</strong> The planner can interleave vector and graph operations based on cost, not API boundaries.</li>
+        <li><strong>No JSON handoff.</strong> Results from the HNSW index are TermIds, the same type used by SPO/POS/OSP. No serialization/deserialization between systems.</li>
+    </ul>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

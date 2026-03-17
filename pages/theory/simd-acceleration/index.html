@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="SIMD Acceleration — SutraDB">
+    <meta property="og:description" content="How SutraDB uses AVX2 and SSE SIMD intrinsics for both vector distance computation and columnar TermId scanning.">
+    <meta property="og:url" content="https://sutradb.org/theory/simd-acceleration/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="SIMD Acceleration — SutraDB">
+    <meta name="twitter:description" content="AVX2 and SSE intrinsics for vector distance and columnar TermId scanning.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>SIMD Acceleration &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>SIMD <span>Acceleration</span></h1>
+        <p class="subtitle">Two places where SIMD matters in a graph+vector database, and one place where it doesn't.</p>
+    </div>
+
+    <h2>What SIMD Does</h2>
+
+    <p>SIMD (Single Instruction, Multiple Data) applies the same operation to multiple values simultaneously. On modern x86 CPUs:</p>
+
+    <ul>
+        <li><strong>AVX2 (256-bit):</strong> processes 8 floats or 4 u64 integers per instruction</li>
+        <li><strong>SSE (128-bit):</strong> processes 4 floats or 2 u64 integers per instruction</li>
+    </ul>
+
+    <p>The key requirement: data must be <strong>contiguous in memory</strong>. SIMD cannot help with pointer-chasing through B-trees or linked lists &mdash; the CPU stalls waiting on cache misses, not arithmetic.</p>
+
+    <h2>Where SutraDB Uses SIMD</h2>
+
+    <h3>1. Vector Distance Functions (HNSW hot path)</h3>
+
+    <p>During HNSW search, every candidate node requires a distance computation against the query vector. For a 1536-dimensional embedding, that is 1536 multiply-add operations per comparison. This is the single hottest loop in vector search.</p>
+
+    <p>SutraDB uses explicit SIMD intrinsics for three distance functions:</p>
+
+    <table>
+        <tr><th>Function</th><th>AVX2</th><th>SSE</th><th>Use</th></tr>
+        <tr><td>Dot product</td><td>8 f32/cycle (FMA)</td><td>4 f32/cycle</td><td>Cosine similarity (pre-normalized vectors)</td></tr>
+        <tr><td>Squared Euclidean</td><td>8 f32/cycle (FMA)</td><td>4 f32/cycle</td><td>Euclidean distance (avoids sqrt)</td></tr>
+        <tr><td>L2 norm</td><td>8 f32/cycle (FMA)</td><td>4 f32/cycle</td><td>Vector normalization at insert time</td></tr>
+    </table>
+
+    <p>Runtime feature detection dispatches to the best available path. Scalar fallback on non-x86 architectures.</p>
+
+    <h3>2. Pseudo-Table Column Scanning (columnar hot path)</h3>
+
+    <p>When a SPARQL query hits a pseudo-table, the executor scans columnar arrays of u64 TermIds. SutraDB stores these as packed dense arrays (null values use a sentinel) and scans them with SIMD:</p>
+
+    <table>
+        <tr><th>Operation</th><th>AVX2</th><th>SSE2</th><th>Use</th></tr>
+        <tr><td>Equality scan</td><td>4 u64/cycle</td><td>2 u64/cycle</td><td><code>?x :city :Tokyo</code></td></tr>
+        <tr><td>Not-null scan</td><td>4 u64/cycle</td><td>2 u64/cycle</td><td><code>?x :email ?e</code> (has property?)</td></tr>
+        <tr><td>Range scan</td><td>Cache-friendly scalar</td><td>Cache-friendly scalar</td><td><code>FILTER(?age > 25)</code></td></tr>
+    </table>
+
+    <p>The packed layout (dense u64 array instead of <code>Option&lt;u64&gt;</code>) eliminates 8 bytes of overhead per element and ensures data is contiguous for SIMD loads.</p>
+
+    <h2>Where SIMD Does NOT Help</h2>
+
+    <h3>Triple index scans (SPO/POS/OSP)</h3>
+
+    <p>Regular triple pattern lookups traverse a B-tree or LSM tree. The bottleneck is <strong>pointer-chasing</strong> through tree nodes, not arithmetic comparison. The CPU is waiting on cache misses, not running out of comparison bandwidth. SIMD cannot help here &mdash; the data is not contiguous.</p>
+
+    <p>This is why pseudo-tables exist: they transform the pointer-chasing problem into a columnar scan problem, which <em>is</em> SIMD-friendly.</p>
+
+    <h2>Cosine via Normalized Dot Product</h2>
+
+    <p>Computing cosine similarity directly requires two norms and a dot product per comparison (3 passes over the data). SutraDB follows Qdrant's pattern: <strong>normalize vectors at insert time</strong>, then use dot product for all similarity computations at search time. This is mathematically equivalent but requires only 1 pass instead of 3.</p>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

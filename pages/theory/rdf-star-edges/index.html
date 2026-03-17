@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="RDF-star Edge Annotation — SutraDB">
+    <meta property="og:description" content="How SutraDB uses RDF-star quoted triples for zero-overhead metadata on edges, including vector embeddings on relationships.">
+    <meta property="og:url" content="https://sutradb.org/theory/rdf-star-edges/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="RDF-star Edge Annotation — SutraDB">
+    <meta name="twitter:description" content="Zero-overhead metadata on edges via RDF-star quoted triples.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>RDF-star Edge Annotation &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>RDF-star <span>Edge Annotation</span></h1>
+        <p class="subtitle">Metadata on edges without reification overhead.</p>
+    </div>
+
+    <h2>The Problem with Standard RDF</h2>
+
+    <p>In standard RDF, you can attach metadata to nodes easily:</p>
+
+    <pre><code>:paper_42 :confidence 0.91 .
+:paper_42 :hasEmbedding "0.23 -0.11 0.87 ..."^^sutra:f32vec .</code></pre>
+
+    <p>But attaching metadata to an <em>edge</em> (a relationship) requires <strong>reification</strong> &mdash; creating an intermediate node to represent the statement itself:</p>
+
+    <pre><code><span class="cmt"># Standard RDF reification: verbose and ugly</span>
+:stmt1 rdf:type rdf:Statement .
+:stmt1 rdf:subject :paper_42 .
+:stmt1 rdf:predicate :discusses .
+:stmt1 rdf:object :TransformerArchitecture .
+:stmt1 :confidence 0.91 .</code></pre>
+
+    <p>That is 5 triples to say "paper_42 discusses TransformerArchitecture with confidence 0.91." The intermediate node <code>:stmt1</code> has no meaning &mdash; it exists only to hold the metadata.</p>
+
+    <h2>RDF-star: Quoted Triples</h2>
+
+    <p>RDF-star lets you use a triple directly as the subject or object of another triple:</p>
+
+    <pre><code><span class="cmt"># RDF-star: clean and direct</span>
+&lt;&lt; :paper_42 :discusses :TransformerArchitecture &gt;&gt; :confidence 0.91 .</code></pre>
+
+    <p>One triple. No intermediate node. The quoted triple <code>&lt;&lt; :paper_42 :discusses :TransformerArchitecture &gt;&gt;</code> is the subject, and <code>:confidence 0.91</code> is the predicate-object pair.</p>
+
+    <h2>Vector Embeddings on Edges</h2>
+
+    <p>This is where RDF-star becomes critical for SutraDB. You can attach a vector embedding to a <em>relationship</em>, not just a node:</p>
+
+    <pre><code><span class="cmt"># Embedding on an edge</span>
+&lt;&lt; :paper_42 :discusses :TransformerArchitecture &gt;&gt;
+    :hasEmbedding "0.23 -0.11 0.87 ..."^^sutra:f32vec .
+
+<span class="cmt"># Now you can do vector search over relationships:</span>
+<span class="cmt"># "Find edges semantically similar to this one"</span></code></pre>
+
+    <p>Without RDF-star, this would require reification (5 triples per annotated edge) and the vector index would have to point at artificial intermediate nodes instead of real relationships.</p>
+
+    <h2>Implementation: Content-Addressed IDs</h2>
+
+    <p>SutraDB assigns each quoted triple a deterministic u64 ID by hashing its three component IDs. This means:</p>
+
+    <ul>
+        <li>Quoted triples are just another TermId &mdash; they participate in SPO/POS/OSP indexes like any other term</li>
+        <li>The same quoted triple always gets the same ID (content-addressed, no duplicates)</li>
+        <li>HNSW can index edge embeddings by the quoted triple's TermId, just like it indexes node embeddings</li>
+    </ul>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

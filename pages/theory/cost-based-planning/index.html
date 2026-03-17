@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Cost-Based Query Planning — SutraDB">
+    <meta property="og:description" content="How SutraDB reorders SPARQL patterns using structural heuristics and cardinality estimation to minimize intermediate result sizes.">
+    <meta property="og:url" content="https://sutradb.org/theory/cost-based-planning/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Cost-Based Query Planning — SutraDB">
+    <meta name="twitter:description" content="Structural heuristics and cardinality estimation for SPARQL pattern reordering.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>Cost-Based Query Planning &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>Cost-Based <span>Query Planning</span></h1>
+        <p class="subtitle">The order you evaluate patterns matters more than how fast you evaluate each one.</p>
+    </div>
+
+    <h2>The Problem</h2>
+
+    <p>A SPARQL query with three triple patterns can be evaluated in six different orders. The wrong order might produce millions of intermediate results that the next pattern filters down to ten. The right order might produce ten results immediately.</p>
+
+    <h2>Structural Heuristic Weights</h2>
+
+    <p>Before looking at any data statistics, the planner assigns each pattern a structural weight based on which positions are bound or unbound:</p>
+
+    <ul>
+        <li><strong>All positions bound:</strong> weight 0 (point lookup, cheapest possible)</li>
+        <li><strong>Each unbound position</strong> adds weight proportional to index fanout</li>
+        <li><strong>VECTOR_SIMILAR with unbound subject:</strong> weight 1 (HNSW is highly selective &mdash; it returns top-k, not all matches)</li>
+        <li><strong>VECTOR_SIMILAR with bound subject:</strong> weight 5 (must filter already-bound candidates, less selective)</li>
+    </ul>
+
+    <p>This heuristic captures a key insight: run HNSW first when the subject is unbound (it returns few results), run it last when the subject is already bound (the graph pattern was more selective).</p>
+
+    <h2>Cardinality Estimation</h2>
+
+    <p>When data statistics are available (per-predicate cardinality from the store), the planner refines structural weights with actual selectivity estimates. The combined score is:</p>
+
+    <pre><code>cost = structural_weight &times; cardinality_estimate</code></pre>
+
+    <p>Patterns are evaluated in ascending cost order (cheapest first). This minimizes the number of rows flowing through downstream patterns.</p>
+
+    <h2>Predicate Pushdown</h2>
+
+    <p>FILTER expressions are repositioned to execute immediately after the pattern that binds their last required variable. A filter like <code>FILTER(?age &gt; 25)</code> is pushed down to run right after the <code>?person :age ?age</code> pattern, not at the end of the query.</p>
+
+    <p>This reduces the number of rows that flow through subsequent join patterns, sometimes by orders of magnitude.</p>
+
+    <h2>Pattern Ordering Rules</h2>
+
+    <table>
+        <tr><th>Pattern Type</th><th>Placement</th><th>Reason</th></tr>
+        <tr><td>Bound subject pattern</td><td>First</td><td>Point lookup, O(1)</td></tr>
+        <tr><td>VECTOR_SIMILAR (unbound)</td><td>Early</td><td>Returns top-k, very selective</td></tr>
+        <tr><td>Regular pattern (unbound)</td><td>Middle</td><td>Ordered by cardinality estimate</td></tr>
+        <tr><td>VECTOR_SIMILAR (bound)</td><td>Late</td><td>Subject already bound, acts as filter</td></tr>
+        <tr><td>OPTIONAL</td><td>Last</td><td>Cannot reduce result count, only add columns</td></tr>
+        <tr><td>UNION</td><td>After regular patterns</td><td>Branches evaluated independently, results concatenated</td></tr>
+    </table>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

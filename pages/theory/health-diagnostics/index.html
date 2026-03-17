@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Health Diagnostics — SutraDB">
+    <meta property="og:description" content="AI-readable health reports with HNSW metrics, pseudo-table coverage, and actionable maintenance recommendations.">
+    <meta property="og:url" content="https://sutradb.org/theory/health-diagnostics/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Health Diagnostics — SutraDB">
+    <meta name="twitter:description" content="AI-readable health reports with actionable maintenance recommendations.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>Health Diagnostics &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>Health <span>Diagnostics</span></h1>
+        <p class="subtitle">Designed for AI agents to read, not just humans to glance at.</p>
+    </div>
+
+    <h2>Agent-First Health Reports</h2>
+
+    <p>SutraDB's health endpoint produces structured text designed for AI agent consumption. Instead of dashboards with charts, it outputs context-rich text that an agent can read, reason about, and act on:</p>
+
+    <pre><code>$ sutra health --data my_graph.sdb
+
+Overall: HEALTHY
+
+HNSW Index: :hasEmbedding
+  Status: HEALTHY
+  Vectors: 435 (0 deleted, 0.0% tombstone ratio)
+  Layers: 3 (L0: 435, L1: 28, L2: 3)
+  Connectivity: avg 12.4, min 4, max 16
+  Entry points: 3
+
+Pseudo-Tables: 2 discovered
+  Coverage: 78% of triples in pseudo-tables
+  Cliff steepness: 8.2 (good schema consistency)
+
+Storage:
+  Triples: 16,234
+  Terms: 4,891
+  Predicates: 47</code></pre>
+
+    <h2>What Gets Measured</h2>
+
+    <table>
+        <tr><th>Category</th><th>Metrics</th><th>Why It Matters</th></tr>
+        <tr><td><strong>HNSW Health</strong></td><td>Tombstone ratio, layer distribution, avg/min/max connectivity, entry point diversity</td><td>High tombstone ratio degrades search quality. Low connectivity indicates graph fragmentation.</td></tr>
+        <tr><td><strong>Pseudo-Table Coverage</strong></td><td>Coverage ratio, cliff steepness, segment count, tail properties</td><td>Low coverage means most queries can't use columnar acceleration. Shallow cliff means messy data.</td></tr>
+        <tr><td><strong>Storage</strong></td><td>Triple count, term dictionary size, unique predicates</td><td>Baseline metrics for capacity planning and anomaly detection.</td></tr>
+    </table>
+
+    <h2>Actionable Recommendations</h2>
+
+    <p>The health report suggests specific actions based on thresholds:</p>
+
+    <ul>
+        <li><strong>Tombstone ratio &gt; 30%:</strong> "HNSW rebuild recommended" &mdash; too many deleted nodes degrading search paths</li>
+        <li><strong>Cliff steepness &lt; 3:</strong> "Data schema is inconsistent" &mdash; pseudo-tables provide diminished benefit</li>
+        <li><strong>Entry point diversity low:</strong> "Consider adding more entry points" &mdash; searches may get stuck in local optima</li>
+    </ul>
+
+    <p>An AI agent can read these recommendations and execute <code>sutra health --rebuild-hnsw</code> without human intervention.</p>
+
+    <h2>Three Severity Levels</h2>
+
+    <table>
+        <tr><th>Level</th><th>Meaning</th><th>Action</th></tr>
+        <tr><td><span class="badge badge-green">HEALTHY</span></td><td>All metrics within normal range</td><td>No action needed</td></tr>
+        <tr><td><span class="badge badge-orange">WARNING</span></td><td>Some metrics approaching thresholds</td><td>Schedule maintenance during next low-usage period</td></tr>
+        <tr><td><span class="badge badge-red">CRITICAL</span></td><td>Metrics exceed thresholds, performance impacted</td><td>Immediate maintenance recommended</td></tr>
+    </table>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="IRI Interning & Content-Addressed RDF-star — SutraDB">
+    <meta property="og:description" content="How SutraDB compresses IRIs to 8-byte integers and assigns deterministic IDs to quoted triples for zero-overhead edge annotation.">
+    <meta property="og:url" content="https://sutradb.org/theory/iri-interning/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="IRI Interning — SutraDB">
+    <meta name="twitter:description" content="How SutraDB compresses IRIs to 8-byte integers and assigns deterministic IDs to quoted triples.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>IRI Interning &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../protocols/">Protocols</a>
+    <a href="../../sparql/">SPARQL</a>
+    <a href="../../rdf/">RDF</a>
+    <a href="../../owl/">OWL</a>
+    <a href="../../serverless/">Serverless</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">.sdb Format</a>
+    <a href="../../libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>IRI Interning &amp; <span>Content-Addressed RDF-star</span></h1>
+        <p class="subtitle">Every IRI becomes 8 bytes. Every quoted triple gets a deterministic ID.</p>
+    </div>
+
+    <h2>The Problem with Strings</h2>
+
+    <p>An IRI like <code>http://www.wikidata.org/entity/Q11064932</code> is 46 bytes. A triple has three of them. Every index entry stores all three. With three indexes (SPO/POS/OSP), that is 46 &times; 3 &times; 3 = 414 bytes per triple just for the keys &mdash; before any data structure overhead.</p>
+
+    <p>String comparison is also expensive: comparing two 46-byte strings requires up to 46 byte-by-byte comparisons. B-tree traversal does this at every node.</p>
+
+    <h2>IRI Interning</h2>
+
+    <p>SutraDB interns every IRI, blank node, and literal to a <code>u64</code> (8-byte integer) at write time. A bidirectional lookup table maps strings to IDs and back:</p>
+
+    <ul>
+        <li><strong>Forward map:</strong> <code>"http://example.org/Tokyo"</code> &rarr; <code>42</code></li>
+        <li><strong>Reverse map:</strong> <code>42</code> &rarr; <code>"http://example.org/Tokyo"</code></li>
+    </ul>
+
+    <p>Now a triple index entry is 8 &times; 3 = 24 bytes (fixed), and comparison is a single 64-bit integer comparison &mdash; one CPU instruction.</p>
+
+    <h2>Inline Literals</h2>
+
+    <p>Small values are encoded directly into the TermId without a dictionary lookup:</p>
+
+    <ul>
+        <li><strong>Integers</strong> that fit in 56 bits are packed inline (high bits tag the type)</li>
+        <li><strong>Booleans</strong> are packed inline (true = 1, false = 0, with type tag)</li>
+    </ul>
+
+    <p>This means a triple like <code>:person :age 42</code> never touches the dictionary for the literal <code>42</code> &mdash; it is encoded directly in the index key.</p>
+
+    <h2>Content-Addressed RDF-star IDs</h2>
+
+    <p>RDF-star allows any triple to be used as a subject or object of another triple (a "quoted triple"). SutraDB assigns a deterministic <code>u64</code> ID to each quoted triple by hashing its three components:</p>
+
+    <pre><code>quoted_id = hash(subject_id, predicate_id, object_id)</code></pre>
+
+    <p>This means:</p>
+
+    <ul>
+        <li>The same quoted triple always gets the same ID (content-addressed)</li>
+        <li>No separate reification table needed &mdash; the quoted triple ID is just another TermId</li>
+        <li>Edge annotation (<code>&lt;&lt; :paper :discusses :AI &gt;&gt; :confidence 0.91</code>) is zero-overhead &mdash; it's a regular triple where the subject happens to be a quoted triple ID</li>
+    </ul>
+
+    <h2>Why This Matters</h2>
+
+    <ul>
+        <li><strong>3&times; smaller index entries</strong> compared to string-based keys</li>
+        <li><strong>Single-instruction comparison</strong> instead of byte-by-byte string comparison</li>
+        <li><strong>SIMD-friendly:</strong> packed u64 arrays enable AVX2 to compare 4 TermIds per CPU cycle</li>
+        <li><strong>Zero-overhead RDF-star:</strong> quoted triples are just another integer ID in the index</li>
+    </ul>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>
