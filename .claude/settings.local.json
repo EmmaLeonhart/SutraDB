@@ -63,7 +63,15 @@
       "Bash(for sdk:*)",
       "Read(//c/Users/Immanuelle/Documents/Github/SutraDB/sdks/$sdk/**)",
       "Bash(sed:*)",
-      "Bash(cargo bench:*)"
+      "Bash(cargo bench:*)",
+      "Bash(mkdir -p pages/theory/subgraph-indexing pages/theory/traversal-indexing pages/theory/sparql-exit-conditions pages/theory/hnsw-in-rdf)",
+      "Bash(mkdir -p src/theory/subgraph-indexing src/theory/traversal-indexing src/theory/sparql-exit-conditions src/theory/hnsw-in-rdf)",
+      "Bash(npx tsc:*)",
+      "Bash(npx typescript:*)",
+      "Bash(npx -p typescript tsc)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(cp:*)"
     ]
   }
 }
