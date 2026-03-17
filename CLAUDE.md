@@ -170,8 +170,10 @@ ORDER BY DESC(VECTOR_SCORE(?doc :hasEmbedding "..."^^sutra:f32vec))
 ## Query Language Policy
 
 **Supported:** **SPARQL+** — SPARQL 1.1 superset with VECTOR_SIMILAR, VECTOR_SCORE, and predicate-based exit conditions (UNTIL)
-**Planned:** Cypher, SQL, MongoDB Query Language, and GQL (ISO graph query language) as translation layers/wrappers over SPARQL. These are syntactic frontends — every query is transpiled to SPARQL+ before execution.
-**Never:** GraphQL — push to application layer.
+**Planned:** Cypher and GQL (ISO graph query language) as translation layers/wrappers over SPARQL. These are graph query languages that map naturally to the RDF data model.
+**Never:** SQL, MongoDB Query Language, GraphQL.
+
+SQL and MQL are deliberately excluded — not because they can't be mapped to SPARQL, but because offering them would mislead AI agents and users into choosing a relational/document query pattern over the graph pattern that SutraDB is designed for. An agent seeing SQL support might default to `SELECT * FROM table` thinking when the correct approach is SPARQL graph traversal. SPARQL is the right query language for a graph database. Offering SQL as an alternative would be a disservice to users by implying that relational thinking applies here.
 
 ---
 
@@ -209,7 +211,7 @@ Do not implement these without explicit instruction:
 
 - RDFS inference
 - Built-in graph algorithms (PageRank, community detection, etc.)
-- Native SQL or MongoDB storage engines (SQL/MQL are planned as SPARQL wrappers, not native interfaces)
+- SQL or MongoDB query interfaces (offering them would mislead agents into relational/document thinking)
 - Distributed execution / sharding (open-source tier)
 - Embedding model metadata enforcement
 - Multi-embedding-space / cross-modal queries
