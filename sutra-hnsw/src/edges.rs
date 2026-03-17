@@ -291,7 +291,7 @@ impl HnswIndex {
             }
 
             for (layer, neighbors) in node.neighbors.iter().enumerate() {
-                if neighbors.contains(&(target_node_idx as u32)) {
+                if neighbors.contains(&{ target_node_idx }) {
                     let similarity = self.config.metric.score(&node.vector, &target_node.vector);
 
                     edges.push(HnswEdgeTriple {

@@ -801,9 +801,9 @@ fn count_unique_predicates(store: &TripleStore) -> usize {
 
 /// Return the worst (most severe) health status from a list.
 fn worst_status(statuses: &[HealthStatus]) -> HealthStatus {
-    if statuses.iter().any(|s| *s == HealthStatus::Critical) {
+    if statuses.contains(&HealthStatus::Critical) {
         HealthStatus::Critical
-    } else if statuses.iter().any(|s| *s == HealthStatus::Warning) {
+    } else if statuses.contains(&HealthStatus::Warning) {
         HealthStatus::Warning
     } else {
         HealthStatus::Healthy

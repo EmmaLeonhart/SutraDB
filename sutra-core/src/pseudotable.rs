@@ -633,7 +633,7 @@ pub fn discover_pseudo_tables(
                 .filter(|&&node_id| {
                     node_properties
                         .get(&node_id)
-                        .map_or(false, |ps| ps.contains(prop))
+                        .is_some_and(|ps| ps.contains(prop))
                 })
                 .count();
             let coverage = count as f64 / nodes.len() as f64;
@@ -860,8 +860,8 @@ pub fn scan_column_range(
         .enumerate()
         .filter_map(|(idx, val)| {
             if let Some(v) = val {
-                let above_lo = lo.map_or(true, |lo| *v >= lo);
-                let below_hi = hi.map_or(true, |hi| *v <= hi);
+                let above_lo = lo.is_none_or(|lo| *v >= lo);
+                let below_hi = hi.is_none_or(|hi| *v <= hi);
                 if above_lo && below_hi {
                     Some(idx)
                 } else {
