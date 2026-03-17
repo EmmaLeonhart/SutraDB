@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="404 — SutraDB">
+    <meta property="og:description" content="This triple was not found in any index.">
+    <meta property="og:url" content="https://sutradb.org/404">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="theme-color" content="#58a6ff">
+    <title>404 &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav>
+    <a href="/" class="logo"><span>Sutra</span>DB</a>
+    <a href="/protocols/">Protocols</a>
+    <a href="/sparql/">SPARQL</a>
+    <a href="/rdf/">RDF</a>
+    <a href="/owl/">OWL</a>
+    <a href="/serverless/">Serverless</a>
+    <a href="/graph-vector/">Graph+Vector</a>
+    <a href="/sdb-format/">.sdb Format</a>
+    <a href="/libraries/">Libraries</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1><span>404</span></h1>
+        <p class="subtitle">This triple was not found in any index.</p>
+    </div>
+
+<pre><code>SELECT ?page WHERE {
+  &lt;you&gt; :requested ?page .
+}
+
+<span class="cmt"># 0 results. The SPO, POS, and OSP indexes
+# have been consulted. None of them know
+# what you are looking for.</span></code></pre>
+
+    <p><a href="/">Return to the entry point</a></p>
+
+</div>
+
+<footer>
+    <a href="/">Home</a> &middot;
+    <a href="/protocols/">Protocols</a> &middot;
+    <a href="/sparql/">SPARQL</a> &middot;
+    <a href="/rdf/">RDF</a> &middot;
+    <a href="/owl/">OWL</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>
