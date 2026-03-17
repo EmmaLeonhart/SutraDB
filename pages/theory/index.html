@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="sutraDB Theory">
+  <meta property="og:description" content="Interactive visualizations of the theoretical innovations behind sutraDB: subgraph indexing, HNSW in RDF, SPARQL exit conditions, and traversal optimization.">
+  <meta property="og:url" content="https://sutradb.org/theory/">
+  <meta name="description" content="Explore the database theory behind sutraDB through interactive visualizations. From SIMD-accelerated subgraph indexes to SPARQL exit conditions.">
+  <title>sutraDB Theory</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #d0d0dc;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 80px 24px;
+    }
+    .container {
+      max-width: 720px;
+      width: 100%;
+    }
+    .back { display: inline-block; color: #7c8cf8; text-decoration: none; font-size: 0.9rem; margin-bottom: 24px; }
+    .back:hover { text-decoration: underline; }
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #e8e8f0;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .tagline {
+      font-size: 1.05rem;
+      color: #8888a0;
+      margin-bottom: 48px;
+      line-height: 1.5;
+    }
+    h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #666880;
+      margin-bottom: 16px;
+    }
+    .section {
+      margin-bottom: 48px;
+    }
+    .card {
+      display: block;
+      padding: 20px 24px;
+      background: #12121a;
+      border: 1px solid #1e1e2a;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .card:hover {
+      border-color: #3a3a50;
+      background: #16161f;
+    }
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #b0b0cc;
+      margin-bottom: 6px;
+    }
+    .card-desc {
+      font-size: 0.875rem;
+      color: #707088;
+      line-height: 1.6;
+    }
+    .card-tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      color: #7c8cf8;
+      background: rgba(124, 140, 248, 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-top: 8px;
+      margin-right: 4px;
+    }
+    .card-tag.innovation {
+      color: #34d399;
+      background: rgba(52, 211, 153, 0.1);
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid #1e1e2a;
+      margin: 32px 0;
+    }
+    @media (max-width: 480px) {
+      body { padding: 48px 16px; }
+      h1 { font-size: 1.6rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/">&larr; Home</a>
+    <h1>sutraDB Theory</h1>
+    <p class="tagline">Interactive visualizations of database theory &mdash; from how graph and vector databases work individually, to the innovations that make sutraDB different.</p>
+
+    <div class="section">
+      <h2>Background: How Databases Work</h2>
+      <a class="card" href="/theory/graph-databases/">
+        <div class="card-title">How Graph Databases Work</div>
+        <div class="card-desc">SPARQL traverses RDF triples to answer multi-hop relationship queries. Watch a query find great-grandfathers step by step.</div>
+        <span class="card-tag">RDF</span><span class="card-tag">SPARQL</span>
+      </a>
+      <a class="card" href="/theory/vector-databases/">
+        <div class="card-title">How Vector Databases Work</div>
+        <div class="card-desc">HNSW graph traversal finds nearest neighbors by hopping through hierarchical layers. See greedy search in action.</div>
+        <span class="card-tag">HNSW</span><span class="card-tag">Embeddings</span>
+      </a>
+      <a class="card" href="/theory/hybrid-databases/">
+        <div class="card-title">Traditional Hybrid Databases</div>
+        <div class="card-desc">The clunky handoff when a vector database and graph database are bolted together through JSON documents.</div>
+        <span class="card-tag">System Boundaries</span><span class="card-tag">JSON Handoff</span>
+      </a>
+      <a class="card" href="/theory/sutradb/">
+        <div class="card-title">sutraDB: Unified Vector-Graph</div>
+        <div class="card-desc">Interleaved traversal &mdash; graph hops happen during the vector search, not after it. One graph, zero context switches.</div>
+        <span class="card-tag innovation">sutraDB</span><span class="card-tag">Interleaved Traversal</span>
+      </a>
+    </div>
+
+    <hr class="divider">
+
+    <div class="section">
+      <h2>Innovations</h2>
+      <a class="card" href="/theory/hnsw-in-rdf/">
+        <div class="card-title">Implementing HNSW in RDF</div>
+        <div class="card-desc">Vectors as typed RDF literals, HNSW neighbors as virtual triples. The vector index becomes the 4th index alongside SPO/POS/OSP, queryable by SPARQL.</div>
+        <span class="card-tag innovation">Novel</span><span class="card-tag">sutra:f32vec</span><span class="card-tag">sutra:hnswNeighbor</span>
+      </a>
+      <a class="card" href="/theory/subgraph-indexing/">
+        <div class="card-title">Subgraph Indexing for SIMD</div>
+        <div class="card-desc">Auto-discover repeated subgraph patterns and flatten them into columnar pseudo-tables. Turns multi-hop joins into SIMD-accelerated column scans.</div>
+        <span class="card-tag innovation">Novel</span><span class="card-tag">Pseudo-Tables</span><span class="card-tag">AVX2</span>
+      </a>
+      <a class="card" href="/theory/traversal-indexing/">
+        <div class="card-title">PageRank Entry Points & Traversal Counters</div>
+        <div class="card-desc">Use PageRank to pick structurally important starting nodes, and runtime traversal counters to materialize adjacency lists for hot areas.</div>
+        <span class="card-tag innovation">Novel</span><span class="card-tag">Adaptive Indexing</span>
+      </a>
+      <a class="card" href="/theory/sparql-exit-conditions/">
+        <div class="card-title">SPARQL Exit Conditions (UNTIL)</div>
+        <div class="card-desc">Extend SPARQL property paths with per-step exit predicates. Terminate traversal early instead of exhaustively scanning the graph.</div>
+        <span class="card-tag innovation">Novel</span><span class="card-tag">SPARQL+</span>
+      </a>
+    </div>
+  </div>
+</body>
+</html>

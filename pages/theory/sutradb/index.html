@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="sutraDB: Integrated Vector-Graph Database">
+  <meta property="og:description" content="Interactive visualization of sutraDB's unified traversal — vector similarity and graph relationships interleaved in a single walk, no system boundaries.">
+  <meta property="og:url" content="https://sutradb.org/theory/sutradb/">
+  <meta name="description" content="See how sutraDB unifies HNSW vector search with graph traversal into a single interleaved operation. One graph, one walk, no JSON handoffs.">
+  <title>sutraDB: Integrated Vector-Graph Database</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #d0d0dc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 24px;
+    }
+    .container { max-width: 1060px; width: 100%; }
+    .back { display: inline-block; color: #7c8cf8; text-decoration: none; font-size: 0.9rem; margin-bottom: 24px; }
+    .back:hover { text-decoration: underline; }
+    h1 { font-size: 1.6rem; font-weight: 700; color: #e8e8f0; margin-bottom: 8px; letter-spacing: -0.3px; }
+    .subtitle { color: #8888a0; font-size: 0.95rem; margin-bottom: 24px; line-height: 1.5; }
+    .main-layout { display: flex; gap: 20px; align-items: flex-start; }
+    .canvas-wrap {
+      flex: 0 0 auto; width: 520px;
+      border: 1px solid #1e1e2a; border-radius: 8px;
+      overflow: hidden; background: #0a0a0f;
+    }
+    canvas { display: block; width: 100%; touch-action: none; }
+    #info {
+      flex: 1; min-width: 0;
+      background: #12121a; border: 1px solid #1e1e2a;
+      border-radius: 8px; padding: 16px;
+    }
+    .section-label {
+      font-size: 0.6rem; color: #666880;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 6px; margin-top: 12px;
+    }
+    .section-label:first-child { margin-top: 0; }
+    .explanation {
+      font-size: 0.85rem; color: #9898ac;
+      line-height: 1.6; margin-bottom: 12px;
+    }
+    .step-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 8px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.82rem; line-height: 1.5;
+      border-left: 3px solid #1e1e2a;
+      transition: border-color 0.3s, opacity 0.3s;
+    }
+    .step-card.active { border-left-color: #34d399; }
+    .step-card.done { border-left-color: #34d399; opacity: 0.7; }
+    .step-card .label { color: #666880; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .step-card .value { color: #d0d0dc; margin-top: 2px; }
+    .highlight { color: #7c8cf8; font-weight: 600; }
+    .highlight-green { color: #34d399; font-weight: 600; }
+    .highlight-yellow { color: #facc15; font-weight: 600; }
+    .highlight-red { color: #f87c7c; font-weight: 600; }
+    .unified-badge {
+      display: inline-block; font-size: 0.7rem;
+      background: rgba(52, 211, 153, 0.12); color: #34d399;
+      padding: 2px 8px; border-radius: 4px; margin-left: 6px;
+    }
+    .controls {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    button {
+      background: #1a1a28; border: 1px solid #2a2a3a;
+      color: #b0b0cc; padding: 6px 14px; border-radius: 6px;
+      font-size: 0.82rem; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #22222f; border-color: #3a3a50; }
+    .comparison-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 8px; margin-bottom: 12px;
+    }
+    .compare-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; border: 1px solid #1e1e2a;
+      font-size: 0.78rem;
+    }
+    .compare-card .compare-title {
+      font-size: 0.68rem; text-transform: uppercase;
+      letter-spacing: 0.05em; margin-bottom: 4px; font-weight: 600;
+    }
+    .compare-card .compare-value {
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 1rem; font-weight: 700;
+    }
+    .result-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 6px;
+      border: 1px solid rgba(52, 211, 153, 0.2);
+    }
+    .result-card .name { font-weight: 600; color: #e8e8f0; margin-bottom: 2px; }
+    .result-card .chain {
+      font-size: 0.75rem; color: #9898ac;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    }
+    @media (max-width: 900px) {
+      .main-layout { flex-direction: column; }
+      .canvas-wrap { width: 100%; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 24px 12px; }
+      h1 { font-size: 1.3rem; }
+      .comparison-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/theory/">&larr; Theory</a>
+    <h1>sutraDB: Integrated Vector-Graph</h1>
+    <p class="subtitle">sutraDB synthesizes the HNSW vector index directly with the relationship graph. As the vector traversal lands on each similar node, it <em>immediately</em> follows :hasFather edges &mdash; it doesn't wait for all vector results first. Graph hops happen during the vector search, not after it. One graph, interleaved traversal.</p>
+    <div class="main-layout">
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div id="info">
+        <div class="controls">
+          <button id="btn-run">Run Unified Query</button>
+          <button id="btn-reset">Reset</button>
+          <button id="btn-step">Step</button>
+        </div>
+        <div class="section-label">The Key Insight</div>
+        <div class="explanation">
+          Instead of two separate graphs glued by JSON, sutraDB <span class="highlight-green">reverses the HNSW graph</span> and weaves relationship edges directly into the vector index. When the vector traversal lands on a node similar to "John," it doesn't just record it and move on &mdash; it <em>immediately</em> follows :hasFather edges right then and there, while the vector search continues finding more similar names. The graph hops and vector hops are <span class="highlight-green">interleaved</span>, not sequential.
+        </div>
+        <div class="section-label">Traversal Steps</div>
+        <div id="steps-container"></div>
+        <div class="section-label">Comparison</div>
+        <div class="comparison-grid">
+          <div class="compare-card">
+            <div class="compare-title" style="color: #f87c7c;">Traditional Hybrid</div>
+            <div class="compare-value" style="color: #f87c7c;" id="trad-ops">&mdash;</div>
+            <div style="color: #707088; margin-top: 2px;">operations</div>
+          </div>
+          <div class="compare-card">
+            <div class="compare-title" style="color: #34d399;">sutraDB</div>
+            <div class="compare-value" style="color: #34d399;" id="sutra-ops">&mdash;</div>
+            <div style="color: #707088; margin-top: 2px;">operations</div>
+          </div>
+          <div class="compare-card">
+            <div class="compare-title" style="color: #f87c7c;">System Boundaries</div>
+            <div class="compare-value" style="color: #f87c7c;" id="trad-boundaries">&mdash;</div>
+            <div style="color: #707088; margin-top: 2px;">context switches</div>
+          </div>
+          <div class="compare-card">
+            <div class="compare-title" style="color: #34d399;">System Boundaries</div>
+            <div class="compare-value" style="color: #34d399;" id="sutra-boundaries">0</div>
+            <div style="color: #707088; margin-top: 2px;">context switches</div>
+          </div>
+        </div>
+        <div class="section-label">Results</div>
+        <div id="results-container">
+          <div class="explanation">Click "Run Unified Query" to find great-grandfathers of people named like "John"</div>
+        </div>
+        <div class="section-label">Why This Matters</div>
+        <div class="explanation">
+          By unifying the two graphs, sutraDB can answer queries that <em>neither</em> database can answer alone: "find the great-grandfathers of people whose names are <span class="highlight">semantically similar</span> to John" &mdash; combining fuzzy vector similarity with precise multi-hop graph traversal in a single, interleaved operation. Results stream in as they're found, not all at once at the end.
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

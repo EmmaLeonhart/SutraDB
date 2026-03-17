@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Subgraph Indexing for SIMD in Graph Databases">
+  <meta property="og:description" content="How sutraDB discovers repeated subgraph patterns and flattens them into columnar pseudo-tables for SIMD-accelerated scanning instead of pointer-chasing.">
+  <meta property="og:url" content="https://sutradb.org/theory/subgraph-indexing/">
+  <meta name="description" content="Interactive visualization of subgraph pseudo-tables: auto-discovered deep columnar indexes that enable SIMD scanning over graph database queries.">
+  <title>Subgraph Indexing for SIMD in Graph Databases</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #d0d0dc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 24px;
+    }
+    .container { max-width: 1060px; width: 100%; }
+    .back { display: inline-block; color: #7c8cf8; text-decoration: none; font-size: 0.9rem; margin-bottom: 24px; }
+    .back:hover { text-decoration: underline; }
+    h1 { font-size: 1.6rem; font-weight: 700; color: #e8e8f0; margin-bottom: 8px; letter-spacing: -0.3px; }
+    .subtitle { color: #8888a0; font-size: 0.95rem; margin-bottom: 24px; line-height: 1.5; }
+    .main-layout { display: flex; gap: 20px; align-items: flex-start; }
+    .canvas-wrap {
+      flex: 0 0 auto; width: 520px;
+      border: 1px solid #1e1e2a; border-radius: 8px;
+      overflow: hidden; background: #0a0a0f;
+    }
+    canvas { display: block; width: 100%; touch-action: none; }
+    #info {
+      flex: 1; min-width: 0;
+      background: #12121a; border: 1px solid #1e1e2a;
+      border-radius: 8px; padding: 16px;
+    }
+    .section-label {
+      font-size: 0.6rem; color: #666880;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 6px; margin-top: 12px;
+    }
+    .section-label:first-child { margin-top: 0; }
+    .explanation {
+      font-size: 0.85rem; color: #9898ac;
+      line-height: 1.6; margin-bottom: 12px;
+    }
+    .step-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 8px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.82rem; line-height: 1.5;
+      border-left: 3px solid #1e1e2a;
+      transition: border-color 0.3s, opacity 0.3s;
+    }
+    .step-card.active { border-left-color: #34d399; }
+    .step-card.done { border-left-color: #34d399; opacity: 0.7; }
+    .step-card .label { color: #666880; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .step-card .value { color: #d0d0dc; margin-top: 2px; }
+    .highlight { color: #7c8cf8; font-weight: 600; }
+    .highlight-green { color: #34d399; font-weight: 600; }
+    .highlight-yellow { color: #facc15; font-weight: 600; }
+    .highlight-red { color: #f87c7c; font-weight: 600; }
+    .sparql-box {
+      background: #0e0e16; border-radius: 6px;
+      padding: 12px 14px; margin-bottom: 12px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.78rem; line-height: 1.7;
+      border: 1px solid #1e1e2a;
+      overflow-x: auto;
+    }
+    .sparql-keyword { color: #7c8cf8; font-weight: 600; }
+    .sparql-var { color: #facc15; }
+    .sparql-literal { color: #34d399; }
+    .sparql-pred { color: #f87c7c; }
+    .controls {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    button {
+      background: #1a1a28; border: 1px solid #2a2a3a;
+      color: #b0b0cc; padding: 6px 14px; border-radius: 6px;
+      font-size: 0.82rem; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #22222f; border-color: #3a3a50; }
+    @media (max-width: 900px) {
+      .main-layout { flex-direction: column; }
+      .canvas-wrap { width: 100%; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 24px 12px; }
+      h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/theory/">&larr; Theory</a>
+    <h1>Subgraph Indexing for SIMD</h1>
+    <p class="subtitle">Graph databases normally answer multi-hop queries by pointer-chasing through indexes &mdash; one hop at a time. sutraDB auto-discovers repeated subgraph shapes and flattens them into columnar pseudo-tables, turning 3-hop joins into SIMD-accelerated column scans. Click "Run Demo" to watch the transformation.</p>
+    <div class="main-layout">
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div id="info">
+        <div class="controls">
+          <button id="btn-run">Run Demo</button>
+          <button id="btn-reset">Reset</button>
+          <button id="btn-step">Step</button>
+        </div>
+        <div class="section-label">Query</div>
+        <div class="sparql-box">
+          <span class="sparql-keyword">SELECT</span> <span class="sparql-var">?country</span> <span class="sparql-var">?mayor</span><br>
+          <span class="sparql-keyword">WHERE</span> {<br>
+          &nbsp;&nbsp;<span class="sparql-var">?country</span> <span class="sparql-pred">:hasCapital</span> <span class="sparql-var">?city</span> .<br>
+          &nbsp;&nbsp;<span class="sparql-var">?city</span> <span class="sparql-pred">:hasMayor</span> <span class="sparql-var">?mayor</span> .<br>
+          &nbsp;&nbsp;<span class="sparql-var">?mayor</span> <span class="sparql-pred">:birthDate</span> <span class="sparql-var">?bd</span> .<br>
+          &nbsp;&nbsp;<span class="sparql-keyword">FILTER</span>(<span class="sparql-var">?bd</span> &lt; <span class="sparql-literal">"1960-01-01"</span>)<br>
+          }
+        </div>
+        <div class="section-label">The Problem</div>
+        <div class="explanation">
+          This 3-hop query normally requires <span class="highlight-red">3 separate index lookups</span> per candidate, each chasing pointers through a B-tree/LSM index. The CPU stalls waiting on cache misses &mdash; SIMD can't help because the data isn't contiguous.
+        </div>
+        <div class="section-label">The Innovation</div>
+        <div class="explanation">
+          sutraDB discovers that many nodes share the same <span class="highlight">subgraph shape</span> (country &rarr; capital &rarr; mayor &rarr; birthDate) and materializes a <span class="highlight-green">columnar pseudo-table</span> where each column is packed contiguously in memory. Now <span class="highlight-yellow">AVX2 can compare 4 TermIDs per cycle</span> &mdash; what was 3 joins becomes a single vectorized scan.
+        </div>
+        <div class="section-label">Depth Threshold</div>
+        <div class="explanation">
+          Deeper pseudo-tables are riskier (wider invalidation surface), so the qualification threshold scales <span class="highlight">geometrically</span>: depth 1 = base, depth 2 = base &times; 4, depth 3 = base &times; 9. Only overwhelmingly common patterns get materialized.
+        </div>
+        <div class="section-label">Steps</div>
+        <div id="steps-container"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

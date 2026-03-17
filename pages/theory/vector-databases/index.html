@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="How Vector Databases Work">
+  <meta property="og:description" content="Interactive visualization of HNSW graph traversal — how vector databases find nearest neighbors by hopping through a hierarchical navigable small world graph.">
+  <meta property="og:url" content="https://sutradb.org/theory/vector-databases/">
+  <meta name="description" content="Interactive HNSW visualization showing how vector databases traverse a hierarchical graph to find similar items. Click to query and watch greedy search hop between nodes.">
+  <title>How Vector Databases Work</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #d0d0dc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 24px;
+    }
+    .container { max-width: 1060px; width: 100%; }
+    .back { display: inline-block; color: #7c8cf8; text-decoration: none; font-size: 0.9rem; margin-bottom: 24px; }
+    .back:hover { text-decoration: underline; }
+    h1 { font-size: 1.6rem; font-weight: 700; color: #e8e8f0; margin-bottom: 8px; letter-spacing: -0.3px; }
+    .subtitle { color: #8888a0; font-size: 0.95rem; margin-bottom: 24px; line-height: 1.5; }
+    .main-layout { display: flex; gap: 20px; align-items: flex-start; }
+    .canvas-wrap {
+      flex: 0 0 auto; width: 520px;
+      border: 1px solid #1e1e2a; border-radius: 8px;
+      overflow: hidden; background: #0a0a0f;
+    }
+    canvas { display: block; width: 100%; touch-action: none; }
+    #info {
+      flex: 1; min-width: 0;
+      background: #12121a; border: 1px solid #1e1e2a;
+      border-radius: 8px; padding: 16px;
+    }
+    .section-label {
+      font-size: 0.6rem; color: #666880;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 6px; margin-top: 12px;
+    }
+    .section-label:first-child { margin-top: 0; }
+    .explanation {
+      font-size: 0.85rem; color: #9898ac;
+      line-height: 1.6; margin-bottom: 12px;
+    }
+    .step-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 8px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.82rem; line-height: 1.5;
+      border-left: 3px solid #1e1e2a;
+      transition: border-color 0.3s, opacity 0.3s;
+    }
+    .step-card.active { border-left-color: #7c8cf8; }
+    .step-card.done { border-left-color: #34d399; opacity: 0.7; }
+    .step-card .label { color: #666880; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .step-card .value { color: #d0d0dc; margin-top: 2px; }
+    .highlight { color: #7c8cf8; font-weight: 600; }
+    .highlight-green { color: #34d399; font-weight: 600; }
+    .highlight-yellow { color: #facc15; font-weight: 600; }
+    .result-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 12px 14px; margin-bottom: 8px;
+      border: 1px solid #1e1e2a;
+    }
+    .result-card .name { font-weight: 600; color: #e8e8f0; margin-bottom: 4px; }
+    .result-card .meta { font-size: 0.78rem; color: #707088; }
+    .result-card .json-badge {
+      display: inline-block; font-size: 0.68rem;
+      background: rgba(250, 204, 21, 0.12); color: #facc15;
+      padding: 2px 6px; border-radius: 3px; margin-top: 4px;
+    }
+    .controls {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    button {
+      background: #1a1a28; border: 1px solid #2a2a3a;
+      color: #b0b0cc; padding: 6px 14px; border-radius: 6px;
+      font-size: 0.82rem; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #22222f; border-color: #3a3a50; }
+    button.active { background: #7c8cf822; border-color: #7c8cf8; color: #7c8cf8; }
+    .layer-legend {
+      display: flex; gap: 12px; font-size: 0.75rem; margin-bottom: 8px;
+    }
+    .layer-legend span { display: flex; align-items: center; gap: 4px; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+    @media (max-width: 900px) {
+      .main-layout { flex-direction: column; }
+      .canvas-wrap { width: 100%; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 24px 12px; }
+      h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/theory/">&larr; Theory</a>
+    <h1>How Vector Databases Work</h1>
+    <p class="subtitle">Vector databases store items as high-dimensional vectors and find similar ones using HNSW &mdash; a hierarchical navigable small world graph. Instead of scanning everything, they hop through layers of a graph, getting closer with each jump. Click "Search" to watch it find people named like "John."</p>
+    <div class="main-layout">
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div id="info">
+        <div class="controls">
+          <button id="btn-search">Search for "John"</button>
+          <button id="btn-reset">Reset</button>
+          <button id="btn-step">Step</button>
+        </div>
+        <div class="layer-legend">
+          <span><span class="legend-dot" style="background:#f87c7c"></span> Layer 2 (sparse)</span>
+          <span><span class="legend-dot" style="background:#facc15"></span> Layer 1 (medium)</span>
+          <span><span class="legend-dot" style="background:#7c8cf8"></span> Layer 0 (dense)</span>
+        </div>
+        <div class="section-label">How HNSW Works</div>
+        <div class="explanation">
+          HNSW builds multiple layers of a graph. The top layer has few nodes with long-range connections. Each lower layer adds more nodes with shorter-range links. To search, the algorithm starts at the top and greedily hops to whichever neighbor is closest to the query, then drops down a layer and repeats.
+        </div>
+        <div class="section-label">Search Progress</div>
+        <div id="steps-container"></div>
+        <div class="section-label">Results</div>
+        <div id="results-container">
+          <div class="explanation">Click "Search" to find vectors similar to the name "John"</div>
+        </div>
+        <div class="section-label">The Limitation</div>
+        <div class="explanation">
+          A vector search finds <span class="highlight">similar names</span>: John, Jean, Johan, Juan. But each result is just a vector with an attached JSON document. To find John's <em>father</em>, you'd need to read the JSON, extract the father's ID, then do <em>another</em> query. For great-grandfathers? That's three sequential lookups through JSON documents &mdash; the vector graph has no concept of relationships.
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

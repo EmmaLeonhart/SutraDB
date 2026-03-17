@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Traditional Hybrid Databases">
+  <meta property="og:description" content="Interactive visualization of how traditional systems bolt a vector database onto a graph database — two separate graphs connected through JSON documents.">
+  <meta property="og:url" content="https://sutradb.org/theory/hybrid-databases/">
+  <meta name="description" content="See the awkward handoff between vector search and graph traversal in traditional hybrid database architectures. Two separate graphs, glued together through JSON.">
+  <title>Traditional Hybrid Databases</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #d0d0dc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 24px;
+    }
+    .container { max-width: 1060px; width: 100%; }
+    .back { display: inline-block; color: #7c8cf8; text-decoration: none; font-size: 0.9rem; margin-bottom: 24px; }
+    .back:hover { text-decoration: underline; }
+    h1 { font-size: 1.6rem; font-weight: 700; color: #e8e8f0; margin-bottom: 8px; letter-spacing: -0.3px; }
+    .subtitle { color: #8888a0; font-size: 0.95rem; margin-bottom: 24px; line-height: 1.5; }
+    .main-layout { display: flex; gap: 20px; align-items: flex-start; }
+    .canvas-wrap {
+      flex: 0 0 auto; width: 520px;
+      border: 1px solid #1e1e2a; border-radius: 8px;
+      overflow: hidden; background: #0a0a0f;
+    }
+    canvas { display: block; width: 100%; touch-action: none; }
+    #info {
+      flex: 1; min-width: 0;
+      background: #12121a; border: 1px solid #1e1e2a;
+      border-radius: 8px; padding: 16px;
+    }
+    .section-label {
+      font-size: 0.6rem; color: #666880;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 6px; margin-top: 12px;
+    }
+    .section-label:first-child { margin-top: 0; }
+    .explanation {
+      font-size: 0.85rem; color: #9898ac;
+      line-height: 1.6; margin-bottom: 12px;
+    }
+    .phase-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 8px;
+      border-left: 3px solid #1e1e2a;
+      transition: border-color 0.3s, opacity 0.3s, background 0.3s;
+    }
+    .phase-card.active { border-left-color: #7c8cf8; background: #10101a; }
+    .phase-card.done { border-left-color: #34d399; opacity: 0.7; }
+    .phase-card.error { border-left-color: #f87c7c; }
+    .phase-card .phase-title {
+      font-size: 0.75rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .phase-card .phase-detail {
+      font-size: 0.82rem; color: #9898ac; line-height: 1.5;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    }
+    .highlight { color: #7c8cf8; font-weight: 600; }
+    .highlight-green { color: #34d399; font-weight: 600; }
+    .highlight-yellow { color: #facc15; font-weight: 600; }
+    .highlight-red { color: #f87c7c; font-weight: 600; }
+    .json-block {
+      background: #0a0a12; border-radius: 4px;
+      padding: 8px 10px; margin: 6px 0;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.75rem; line-height: 1.5;
+      border: 1px solid #1a1a28;
+      overflow-x: auto;
+    }
+    .json-key { color: #7c8cf8; }
+    .json-str { color: #34d399; }
+    .json-comment { color: #666880; font-style: italic; }
+    .controls {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    button {
+      background: #1a1a28; border: 1px solid #2a2a3a;
+      color: #b0b0cc; padding: 6px 14px; border-radius: 6px;
+      font-size: 0.82rem; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #22222f; border-color: #3a3a50; }
+    .cost-bar {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.78rem; margin-bottom: 6px;
+    }
+    .cost-bar .bar-track {
+      flex: 1; height: 6px; background: #1e1e2a; border-radius: 3px; overflow: hidden;
+    }
+    .cost-bar .bar-fill {
+      height: 100%; border-radius: 3px; transition: width 0.5s;
+    }
+    .divider {
+      border: none; border-top: 1px solid #1e1e2a; margin: 12px 0;
+    }
+    @media (max-width: 900px) {
+      .main-layout { flex-direction: column; }
+      .canvas-wrap { width: 100%; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 24px 12px; }
+      h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/theory/">&larr; Theory</a>
+    <h1>Traditional Hybrid Databases</h1>
+    <p class="subtitle">Most "hybrid" vector-graph systems bolt two separate databases together. A vector search finds similar names, then you jump to a completely different graph database by reading JSON metadata. Watch the clunky handoff as we try to find great-grandfathers of people named "John."</p>
+    <div class="main-layout">
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div id="info">
+        <div class="controls">
+          <button id="btn-run">Run Hybrid Query</button>
+          <button id="btn-reset">Reset</button>
+          <button id="btn-step">Step</button>
+        </div>
+        <div class="section-label">The Two-Graph Problem</div>
+        <div class="explanation">
+          Traditional hybrids maintain <span class="highlight">two entirely separate graph structures</span>: an HNSW graph for vector similarity and an RDF/property graph for relationships. They're connected only through JSON documents attached to vector entries. Each hop between systems requires serialization, deserialization, and a separate query.
+        </div>
+        <div class="section-label">Query Pipeline</div>
+        <div id="phases-container"></div>
+        <div class="section-label">Cost Breakdown</div>
+        <div id="cost-container"></div>
+        <div class="section-label">Why This Hurts</div>
+        <div class="explanation">
+          For our great-grandfather query, the hybrid approach requires: <span class="highlight-yellow">1 vector search</span> + <span class="highlight-yellow">JSON parse per result</span> + <span class="highlight-yellow">3 graph hops per result</span> + <span class="highlight-yellow">context switches between engines</span>. Each "hop" crosses a system boundary. The vector database knows nothing about the graph, and the graph knows nothing about similarity. Every connection is manual glue code.
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

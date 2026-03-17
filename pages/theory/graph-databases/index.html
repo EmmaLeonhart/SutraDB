@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="How Graph Databases Work">
+  <meta property="og:description" content="Interactive visualization of SPARQL traversal over RDF triples — how graph databases follow explicit relationships to answer structured queries.">
+  <meta property="og:url" content="https://sutradb.org/theory/graph-databases/">
+  <meta name="description" content="Interactive RDF/SPARQL visualization showing how graph databases traverse explicit relationships. Watch a SPARQL query find great-grandfathers step by step.">
+  <title>How Graph Databases Work</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #d0d0dc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 24px;
+    }
+    .container { max-width: 1060px; width: 100%; }
+    .back { display: inline-block; color: #7c8cf8; text-decoration: none; font-size: 0.9rem; margin-bottom: 24px; }
+    .back:hover { text-decoration: underline; }
+    h1 { font-size: 1.6rem; font-weight: 700; color: #e8e8f0; margin-bottom: 8px; letter-spacing: -0.3px; }
+    .subtitle { color: #8888a0; font-size: 0.95rem; margin-bottom: 24px; line-height: 1.5; }
+    .main-layout { display: flex; gap: 20px; align-items: flex-start; }
+    .canvas-wrap {
+      flex: 0 0 auto; width: 520px;
+      border: 1px solid #1e1e2a; border-radius: 8px;
+      overflow: hidden; background: #0a0a0f;
+    }
+    canvas { display: block; width: 100%; touch-action: none; }
+    #info {
+      flex: 1; min-width: 0;
+      background: #12121a; border: 1px solid #1e1e2a;
+      border-radius: 8px; padding: 16px;
+    }
+    .section-label {
+      font-size: 0.6rem; color: #666880;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 6px; margin-top: 12px;
+    }
+    .section-label:first-child { margin-top: 0; }
+    .explanation {
+      font-size: 0.85rem; color: #9898ac;
+      line-height: 1.6; margin-bottom: 12px;
+    }
+    .sparql-box {
+      background: #0e0e16; border-radius: 6px;
+      padding: 12px 14px; margin-bottom: 12px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.78rem; line-height: 1.7;
+      border: 1px solid #1e1e2a;
+      overflow-x: auto;
+    }
+    .sparql-keyword { color: #7c8cf8; font-weight: 600; }
+    .sparql-var { color: #facc15; }
+    .sparql-literal { color: #34d399; }
+    .sparql-pred { color: #f87c7c; }
+    .step-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 8px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.82rem; line-height: 1.5;
+      border-left: 3px solid #1e1e2a;
+      transition: border-color 0.3s, opacity 0.3s;
+    }
+    .step-card.active { border-left-color: #7c8cf8; }
+    .step-card.done { border-left-color: #34d399; opacity: 0.7; }
+    .step-card .label { color: #666880; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .step-card .value { color: #d0d0dc; margin-top: 2px; }
+    .highlight { color: #7c8cf8; font-weight: 600; }
+    .highlight-green { color: #34d399; font-weight: 600; }
+    .highlight-yellow { color: #facc15; font-weight: 600; }
+    .highlight-red { color: #f87c7c; font-weight: 600; }
+    .triple-row {
+      display: flex; gap: 6px; align-items: center;
+      padding: 4px 0; font-size: 0.8rem;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    }
+    .triple-row.matched { background: rgba(124, 140, 248, 0.08); border-radius: 4px; padding: 4px 6px; }
+    .controls {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    button {
+      background: #1a1a28; border: 1px solid #2a2a3a;
+      color: #b0b0cc; padding: 6px 14px; border-radius: 6px;
+      font-size: 0.82rem; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #22222f; border-color: #3a3a50; }
+    button.active { background: #7c8cf822; border-color: #7c8cf8; color: #7c8cf8; }
+    .result-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 6px;
+      border: 1px solid #1e1e2a;
+      font-size: 0.82rem;
+    }
+    .result-card .chain { color: #9898ac; font-size: 0.75rem; margin-top: 2px; }
+    @media (max-width: 900px) {
+      .main-layout { flex-direction: column; }
+      .canvas-wrap { width: 100%; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 24px 12px; }
+      h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/theory/">&larr; Theory</a>
+    <h1>How Graph Databases Work</h1>
+    <p class="subtitle">Graph databases store data as RDF triples &mdash; subject, predicate, object. SPARQL queries traverse these relationships systematically. Click "Run Query" to watch SPARQL find the great-grandfathers of people named "John" by following :hasFather edges three hops deep.</p>
+    <div class="main-layout">
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div id="info">
+        <div class="controls">
+          <button id="btn-query">Run Query</button>
+          <button id="btn-reset">Reset</button>
+          <button id="btn-step">Step</button>
+        </div>
+        <div class="section-label">SPARQL Query</div>
+        <div class="sparql-box">
+          <span class="sparql-keyword">SELECT</span> <span class="sparql-var">?person</span> <span class="sparql-var">?greatgrandfather</span><br>
+          <span class="sparql-keyword">WHERE</span> {<br>
+          &nbsp;&nbsp;<span class="sparql-var">?person</span> <span class="sparql-pred">:hasName</span> <span class="sparql-literal">"John"</span> .<br>
+          &nbsp;&nbsp;<span class="sparql-var">?person</span> <span class="sparql-pred">:hasFather</span> <span class="sparql-var">?father</span> .<br>
+          &nbsp;&nbsp;<span class="sparql-var">?father</span> <span class="sparql-pred">:hasFather</span> <span class="sparql-var">?grandfather</span> .<br>
+          &nbsp;&nbsp;<span class="sparql-var">?grandfather</span> <span class="sparql-pred">:hasFather</span> <span class="sparql-var">?greatgrandfather</span> .<br>
+          }
+        </div>
+        <div class="section-label">How It Works</div>
+        <div class="explanation">
+          The query engine scans all triples for <span class="highlight-green">:hasName "John"</span>, binding each match to <span class="highlight-yellow">?person</span>. Then it follows <span class="highlight-red">:hasFather</span> edges three times, binding each hop to a new variable. The traversal is <em>deterministic</em> and <em>exact</em> &mdash; it requires a literal match on "John", not approximate similarity.
+        </div>
+        <div class="section-label">Traversal Steps</div>
+        <div id="steps-container"></div>
+        <div class="section-label">Results</div>
+        <div id="results-container">
+          <div class="explanation">Click "Run Query" to execute the SPARQL query</div>
+        </div>
+        <div class="section-label">The Limitation</div>
+        <div class="explanation">
+          SPARQL finds great-grandfathers perfectly &mdash; but only for people named <em>exactly</em> "John". It won't match "Jean", "Johan", "Juan", or "Jon" unless you write separate queries for each. Graph databases have no concept of <span class="highlight">semantic similarity</span>. If the data uses "Jonathan" instead of "John", the query returns nothing.
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

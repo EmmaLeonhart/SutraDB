@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="PageRank Entry Points & Traversal Counters">
+  <meta property="og:description" content="How sutraDB uses PageRank to choose optimal traversal starting points and runtime traversal counters to materialize adjacency lists for hot areas.">
+  <meta property="og:url" content="https://sutradb.org/theory/traversal-indexing/">
+  <meta name="description" content="Interactive visualization of PageRank-based entry point selection and traversal counter indexing for graph database optimization.">
+  <title>PageRank Entry Points & Traversal Counters</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #d0d0dc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 24px;
+    }
+    .container { max-width: 1060px; width: 100%; }
+    .back { display: inline-block; color: #7c8cf8; text-decoration: none; font-size: 0.9rem; margin-bottom: 24px; }
+    .back:hover { text-decoration: underline; }
+    h1 { font-size: 1.6rem; font-weight: 700; color: #e8e8f0; margin-bottom: 8px; letter-spacing: -0.3px; }
+    .subtitle { color: #8888a0; font-size: 0.95rem; margin-bottom: 24px; line-height: 1.5; }
+    .main-layout { display: flex; gap: 20px; align-items: flex-start; }
+    .canvas-wrap {
+      flex: 0 0 auto; width: 520px;
+      border: 1px solid #1e1e2a; border-radius: 8px;
+      overflow: hidden; background: #0a0a0f;
+    }
+    canvas { display: block; width: 100%; touch-action: none; }
+    #info {
+      flex: 1; min-width: 0;
+      background: #12121a; border: 1px solid #1e1e2a;
+      border-radius: 8px; padding: 16px;
+    }
+    .section-label {
+      font-size: 0.6rem; color: #666880;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 6px; margin-top: 12px;
+    }
+    .section-label:first-child { margin-top: 0; }
+    .explanation {
+      font-size: 0.85rem; color: #9898ac;
+      line-height: 1.6; margin-bottom: 12px;
+    }
+    .step-card {
+      background: #0e0e16; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 8px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.82rem; line-height: 1.5;
+      border-left: 3px solid #1e1e2a;
+      transition: border-color 0.3s, opacity 0.3s;
+    }
+    .step-card.active { border-left-color: #34d399; }
+    .step-card.done { border-left-color: #34d399; opacity: 0.7; }
+    .step-card .label { color: #666880; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .step-card .value { color: #d0d0dc; margin-top: 2px; }
+    .highlight { color: #7c8cf8; font-weight: 600; }
+    .highlight-green { color: #34d399; font-weight: 600; }
+    .highlight-yellow { color: #facc15; font-weight: 600; }
+    .highlight-red { color: #f87c7c; font-weight: 600; }
+    .controls {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    button {
+      background: #1a1a28; border: 1px solid #2a2a3a;
+      color: #b0b0cc; padding: 6px 14px; border-radius: 6px;
+      font-size: 0.82rem; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #22222f; border-color: #3a3a50; }
+    @media (max-width: 900px) {
+      .main-layout { flex-direction: column; }
+      .canvas-wrap { width: 100%; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 24px 12px; }
+      h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/theory/">&larr; Theory</a>
+    <h1>PageRank Entry Points & Traversal Counters</h1>
+    <p class="subtitle">Graph traversals have to start somewhere. sutraDB uses PageRank to pick structurally important starting nodes, and runtime traversal counters to identify hot areas that deserve materialized adjacency lists. Two complementary optimizations: one structural, one adaptive.</p>
+    <div class="main-layout">
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div id="info">
+        <div class="controls">
+          <button id="btn-run">Run Demo</button>
+          <button id="btn-reset">Reset</button>
+          <button id="btn-step">Step</button>
+        </div>
+        <div class="section-label">The Problem</div>
+        <div class="explanation">
+          HNSW picks a random entry point and greedily descends. For graph traversals, a <span class="highlight-red">random start</span> means more hops to reach the target. And B-tree index lookups for every neighbor of a hot node waste cycles on cache misses.
+        </div>
+        <div class="section-label">PageRank Entry Points</div>
+        <div class="explanation">
+          <span class="highlight-green">PageRank</span> identifies nodes that many paths flow through. Starting traversals at high-PageRank nodes means fewer hops to reach any destination &mdash; the same principle that makes Google's web search start from authoritative pages.
+        </div>
+        <div class="section-label">Traversal Counters</div>
+        <div class="explanation">
+          As queries run, sutraDB increments a counter each time a node's neighbors are looked up. When a node crosses a <span class="highlight-yellow">hotness threshold</span>, its adjacency list is materialized &mdash; all neighbors pre-loaded into contiguous memory. This is adaptive: cold nodes stay in the B-tree, hot nodes get fast flat arrays.
+        </div>
+        <div class="section-label">Steps</div>
+        <div id="steps-container"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
