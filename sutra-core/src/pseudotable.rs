@@ -94,10 +94,18 @@ mod simd {
             let mask = _mm256_movemask_epi8(cmp) as u32;
             // Each matching u64 produces 8 set bits (0xFF) in the mask
             let base = i * 4;
-            if mask & 0x000000FF != 0 { out.push(base); }
-            if mask & 0x0000FF00 != 0 { out.push(base + 1); }
-            if mask & 0x00FF0000 != 0 { out.push(base + 2); }
-            if mask & 0xFF000000 != 0 { out.push(base + 3); }
+            if mask & 0x000000FF != 0 {
+                out.push(base);
+            }
+            if mask & 0x0000FF00 != 0 {
+                out.push(base + 1);
+            }
+            if mask & 0x00FF0000 != 0 {
+                out.push(base + 2);
+            }
+            if mask & 0xFF000000 != 0 {
+                out.push(base + 3);
+            }
         }
 
         // Scalar tail
@@ -113,8 +121,12 @@ mod simd {
     /// lo/hi of u64::MAX (NULL_SENTINEL) means unbounded on that side.
     #[target_feature(enable = "avx2")]
     pub(crate) unsafe fn scan_range_avx2(
-        data: &[u64], null_sentinel: u64,
-        lo: u64, hi: u64, has_lo: bool, has_hi: bool,
+        data: &[u64],
+        null_sentinel: u64,
+        lo: u64,
+        hi: u64,
+        has_lo: bool,
+        has_hi: bool,
         out: &mut Vec<usize>,
     ) {
         // AVX2 doesn't have unsigned u64 comparison instructions,
@@ -123,7 +135,9 @@ mod simd {
         // utilization. For range scans, the zonemap prune is the primary
         // accelerator; this inner loop benefits from the dense layout.
         for (i, &v) in data.iter().enumerate() {
-            if v == null_sentinel { continue; }
+            if v == null_sentinel {
+                continue;
+            }
             let above = !has_lo || v >= lo;
             let below = !has_hi || v <= hi;
             if above && below {
@@ -134,7 +148,11 @@ mod simd {
 
     /// Scan a packed u64 column for non-null values using AVX2.
     #[target_feature(enable = "avx2")]
-    pub(crate) unsafe fn scan_not_null_avx2(data: &[u64], null_sentinel: u64, out: &mut Vec<usize>) {
+    pub(crate) unsafe fn scan_not_null_avx2(
+        data: &[u64],
+        null_sentinel: u64,
+        out: &mut Vec<usize>,
+    ) {
         let n = data.len();
         let chunks = n / 4;
         let ptr = data.as_ptr() as *const __m256i;
@@ -146,10 +164,18 @@ mod simd {
             let mask = _mm256_movemask_epi8(cmp) as u32;
             // Invert: we want NOT null
             let base = i * 4;
-            if mask & 0x000000FF == 0 { out.push(base); }
-            if mask & 0x0000FF00 == 0 { out.push(base + 1); }
-            if mask & 0x00FF0000 == 0 { out.push(base + 2); }
-            if mask & 0xFF000000 == 0 { out.push(base + 3); }
+            if mask & 0x000000FF == 0 {
+                out.push(base);
+            }
+            if mask & 0x0000FF00 == 0 {
+                out.push(base + 1);
+            }
+            if mask & 0x00FF0000 == 0 {
+                out.push(base + 2);
+            }
+            if mask & 0xFF000000 == 0 {
+                out.push(base + 3);
+            }
         }
 
         let tail_start = chunks * 4;
@@ -175,8 +201,12 @@ mod simd {
             let cmp = _mm_cmpeq_epi64(block, needle);
             let mask = _mm_movemask_epi8(cmp) as u32;
             let base = i * 2;
-            if mask & 0x00FF != 0 { out.push(base); }
-            if mask & 0xFF00 != 0 { out.push(base + 1); }
+            if mask & 0x00FF != 0 {
+                out.push(base);
+            }
+            if mask & 0xFF00 != 0 {
+                out.push(base + 1);
+            }
         }
 
         let tail_start = chunks * 2;
@@ -189,7 +219,11 @@ mod simd {
 
     /// Scan a packed u64 column for non-null values using SSE2.
     #[target_feature(enable = "sse2")]
-    pub(crate) unsafe fn scan_not_null_sse2(data: &[u64], null_sentinel: u64, out: &mut Vec<usize>) {
+    pub(crate) unsafe fn scan_not_null_sse2(
+        data: &[u64],
+        null_sentinel: u64,
+        out: &mut Vec<usize>,
+    ) {
         let n = data.len();
         let chunks = n / 2;
         let ptr = data.as_ptr() as *const __m128i;
@@ -200,8 +234,12 @@ mod simd {
             let cmp = _mm_cmpeq_epi64(block, sentinel);
             let mask = _mm_movemask_epi8(cmp) as u32;
             let base = i * 2;
-            if mask & 0x00FF == 0 { out.push(base); }
-            if mask & 0xFF00 == 0 { out.push(base + 1); }
+            if mask & 0x00FF == 0 {
+                out.push(base);
+            }
+            if mask & 0xFF00 == 0 {
+                out.push(base + 1);
+            }
         }
 
         let tail_start = chunks * 2;
@@ -234,7 +272,9 @@ fn packed_scan_eq(data: &[u64], value: u64) -> Vec<usize> {
     }
     // Scalar fallback
     for (i, &v) in data.iter().enumerate() {
-        if v == value { out.push(i); }
+        if v == value {
+            out.push(i);
+        }
     }
     out
 }
@@ -248,9 +288,12 @@ fn packed_scan_range(data: &[u64], lo: Option<u64>, hi: Option<u64>) -> Vec<usiz
         if is_x86_feature_detected!("avx2") {
             unsafe {
                 simd::scan_range_avx2(
-                    data, NULL_SENTINEL,
-                    lo.unwrap_or(0), hi.unwrap_or(u64::MAX),
-                    lo.is_some(), hi.is_some(),
+                    data,
+                    NULL_SENTINEL,
+                    lo.unwrap_or(0),
+                    hi.unwrap_or(u64::MAX),
+                    lo.is_some(),
+                    hi.is_some(),
                     &mut out,
                 );
             }
@@ -259,10 +302,14 @@ fn packed_scan_range(data: &[u64], lo: Option<u64>, hi: Option<u64>) -> Vec<usiz
     }
     // Scalar fallback
     for (i, &v) in data.iter().enumerate() {
-        if v == NULL_SENTINEL { continue; }
+        if v == NULL_SENTINEL {
+            continue;
+        }
         let above = lo.is_none_or(|l| v >= l);
         let below = hi.is_none_or(|h| v <= h);
-        if above && below { out.push(i); }
+        if above && below {
+            out.push(i);
+        }
     }
     out
 }
@@ -284,7 +331,9 @@ fn packed_scan_not_null(data: &[u64]) -> Vec<usize> {
     }
     // Scalar fallback
     for (i, &v) in data.iter().enumerate() {
-        if v != NULL_SENTINEL { out.push(i); }
+        if v != NULL_SENTINEL {
+            out.push(i);
+        }
     }
     out
 }
@@ -568,11 +617,7 @@ impl Segment {
         self.packed_columns = self
             .columns
             .iter()
-            .map(|col| {
-                col.iter()
-                    .map(|v| v.unwrap_or(NULL_SENTINEL))
-                    .collect()
-            })
+            .map(|col| col.iter().map(|v| v.unwrap_or(NULL_SENTINEL)).collect())
             .collect();
     }
 }
@@ -1527,8 +1572,10 @@ mod tests {
 
         // Scan for sentinel should find nothing (sentinel != any real value)
         let result = scan_column_eq(&segment, 0, NULL_SENTINEL);
-        assert!(result.matching_rows.is_empty(),
-            "Searching for NULL_SENTINEL should not match null entries");
+        assert!(
+            result.matching_rows.is_empty(),
+            "Searching for NULL_SENTINEL should not match null entries"
+        );
     }
 
     #[test]
@@ -1536,7 +1583,13 @@ mod tests {
         let mut segment = Segment::new(1);
         segment.nodes = (0..20).collect();
         segment.columns = vec![(0..20u64)
-            .map(|i| if i == 5 || i == 15 { None } else { Some(i * 10) })
+            .map(|i| {
+                if i == 5 || i == 15 {
+                    None
+                } else {
+                    Some(i * 10)
+                }
+            })
             .collect()];
         segment.tail_counts = vec![0; 20];
         segment.compute_stats();
@@ -1551,7 +1604,14 @@ mod tests {
         let mut segment = Segment::new(1);
         segment.nodes = vec![1, 2, 3, 4, 5, 6, 7, 8];
         segment.columns = vec![vec![
-            Some(10), None, Some(30), None, Some(50), None, Some(70), Some(80),
+            Some(10),
+            None,
+            Some(30),
+            None,
+            Some(50),
+            None,
+            Some(70),
+            Some(80),
         ]];
         segment.tail_counts = vec![0; 8];
         segment.compute_stats();
