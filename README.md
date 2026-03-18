@@ -4,7 +4,7 @@ A lean, high-performance RDF-star triplestore written in Rust with native HNSW v
 
 [![CI](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml/badge.svg)](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml)
 
-> **Status: Developer Preview.** Core engine, SPARQL+, vector indexing, and HTTP server are fully functional. APIs may evolve before 1.0. See the [Roadmap](https://sutradb.org/roadmap/) for what's done and what's next.
+> **Status: Developer Preview.** Core engine, SPARQL+, vector indexing, HTTP server, ACID compliance, self-update, and MCP server are fully functional. APIs may evolve before 1.0. See the [Roadmap](https://sutradb.org/roadmap/) for what's done and what's next.
 
 > **AI Agents:** If you are an AI agent setting up a database, see **[Agent Setup Guide](docs/AGENT_SETUP.md)** for complete CLI reference, API endpoints, and step-by-step instructions. SutraDB is designed to be fully operable by AI agents without ever touching a GUI.
 
@@ -39,6 +39,14 @@ curl -X POST http://localhost:3030/triples \
 curl -X POST http://localhost:3030/sparql \
   -d 'SELECT * WHERE { ?s ?p ?o } LIMIT 10'
 ```
+
+## What's New in v0.2
+
+- **ACID compliance** — atomic sled transactions, startup consistency verification, durable flushes
+- **Self-update** — `sutra update`, `sutra --version`, startup version check
+- **MCP server for AI agents** — dual-mode (serverless + server), 8 maintenance tools
+- **HNSW rebuild HTTP endpoint** — `POST /vectors/rebuild` for compacting and rebuilding all HNSW indexes
+- **COSINE_SEARCH, EUCLID_SEARCH, DOTPRODUCT_SEARCH** — new SPARQL operators for explicit distance metric selection
 
 ## Data Model
 

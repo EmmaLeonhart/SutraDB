@@ -90,8 +90,8 @@
     </div>
 
     <div style="margin-bottom: 40px;">
-        <span class="progress-bar"><span class="fill" style="width: 88%;"></span></span>
-        <span class="progress-text"><strong>196 / 223</strong> items complete (88%)</span>
+        <span class="progress-bar"><span class="fill" style="width: 93%;"></span></span>
+        <span class="progress-text"><strong>215 / 232</strong> items complete (93%)</span>
     </div>
 
     <h2>Active Work</h2>
@@ -173,6 +173,21 @@
     <div class="roadmap-item">
         <h3>CI/CD &amp; Benchmarks <span class="status-tag status-done">Complete</span></h3>
         <p>6 GitHub Actions workflows. Clippy + rustfmt enforcement. 256 tests, 50+ Criterion benchmarks tracked historically. Docker image. Cross-platform install scripts.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>Self-Update &amp; Version Management <span class="status-tag status-done">Complete</span></h3>
+        <p><code>sutra update</code> command, <code>--version</code> flag, startup version check, and HNSW rebuild endpoint. The CLI can check for new releases, self-update in place, and trigger index rebuilds after version upgrades.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>MCP Server <span class="status-tag status-done">Complete</span></h3>
+        <p>Dual-mode MCP server supporting both serverless and server configurations. Provides 8 maintenance tools for AI agents to manage SutraDB instances through the Model Context Protocol.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>ACID Compliance <span class="status-tag status-done">Complete</span></h3>
+        <p>Atomic transactions, startup verification, durability guarantees, and isolation. All write operations are fully transactional with crash recovery support.</p>
     </div>
 
     <h2>Future</h2>

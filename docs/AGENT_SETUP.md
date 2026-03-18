@@ -66,6 +66,8 @@ docker run -p 3030:3030 -v sutra-data:/data sutradb
 | `sutra export -o dump.nt` | Export to file |
 | `sutra export -f ttl` | Export as Turtle |
 | `sutra info` | Show triple/term counts |
+| `sutra update` | Check for and install updates |
+| `sutra --version` | Print version |
 
 ## HTTP API Endpoints
 
@@ -81,6 +83,7 @@ docker run -p 3030:3030 -v sutra-data:/data sutradb
 | `/graph?format=nt` | GET | Export as N-Triples |
 | `/health` | GET | Health check |
 | `/service-description` | GET | SPARQL service description |
+| `/vectors/rebuild` | POST | Compact and rebuild all HNSW indexes |
 
 ## Inserting Data
 
@@ -188,3 +191,7 @@ Use `--memory-only` for ephemeral testing.
 - **SIMD:** AVX2+FMA and SSE acceleration for distance functions
 - **Concurrency:** RwLock for read-heavy SPARQL queries, write-through to sled on mutations
 - **Query planner:** Reorders patterns by selectivity, pushes LIMIT down, vector-first for unbound subjects
+
+## MCP Server
+
+AI agents can use the MCP (Model Context Protocol) server at `tools/mcp-server/server.py` for database maintenance operations. The MCP server supports dual-mode operation (serverless and server) and exposes 8 maintenance tools for tasks such as health checks, HNSW index management, backup operations, and database statistics. To start it, run `python tools/mcp-server/server.py` alongside the SutraDB instance.

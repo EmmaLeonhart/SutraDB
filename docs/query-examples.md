@@ -120,7 +120,7 @@ SELECT ?shrine ?year WHERE {
 
 Finds shrines founded before 800 CE. Uses inline integer comparison.
 
-### String matching (future)
+### String matching
 
 ```sparql
 PREFIX ex: <http://example.org/>
@@ -131,7 +131,7 @@ SELECT ?shrine ?name WHERE {
 }
 ```
 
-String functions like CONTAINS, STRSTARTS, REGEX are future work.
+String functions CONTAINS, STRSTARTS, STRENDS, and REGEX are implemented.
 
 ### Bound/not-bound checks
 
@@ -305,10 +305,9 @@ Finds deity-domain associations that were established before 500 CE.
 
 ---
 
-## 8. Vector SPARQL — Proposed Syntax
+## 8. Vector SPARQL
 
-These queries are not yet implemented but represent the target syntax for
-SutraDB's hybrid SPARQL extension. See `docs/vectorSPARQL.md` for full design.
+These queries use SutraDB's hybrid SPARQL extension. See `docs/vectorSPARQL.md` for full design.
 
 ### Basic similarity search
 
@@ -597,12 +596,13 @@ Graph traversal finds friends-of-friends; vector search ranks them by semantic i
 | Full IRI syntax | Implemented |
 | Prefixed names | Implemented |
 | RDF-star quoted triples | Core support (not yet in SPARQL) |
-| ORDER BY | Not yet |
+| ORDER BY | Implemented |
 | Property paths (+, *, ?) | Not yet |
 | UNION | Not yet |
-| BIND / VALUES | Not yet |
-| String functions (CONTAINS, REGEX) | Not yet |
-| VECTOR_SIMILAR | Not yet (HNSW exists, needs parser integration) |
-| VECTOR_SCORE | Not yet |
+| BIND / VALUES | Implemented |
+| String functions (CONTAINS, STRSTARTS, STRENDS, REGEX) | Implemented |
+| VECTOR_SIMILAR | Implemented |
+| VECTOR_SCORE | Implemented |
+| COSINE_SEARCH / EUCLID_SEARCH / DOTPRODUCT_SEARCH | Implemented |
 | ef_search hint | Not yet |
 | Top-K mode | Not yet |
