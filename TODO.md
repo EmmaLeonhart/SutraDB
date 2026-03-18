@@ -1,10 +1,31 @@
 # SutraDB — TODO
 
-**Status: 202 of 223 items complete (91%)**
+**Status: 202 of 232 items complete (87%)**
 
 ---
 
 ## Active Work
+
+### Self-Update & Version Management (Priority)
+The binary needs to know its own version, check for updates, and update itself from GitHub releases.
+
+- [ ] `--version` / `-V` flag on CLI binary
+- [ ] `sutra update` command: download latest release binary from GitHub, replace self
+- [ ] Startup version check: on `sutra serve`, check GitHub releases API once daily, log if update available
+- [ ] HNSW rebuild HTTP endpoint (`POST /vectors/rebuild`) for agent access
+
+### MCP Server — Agent Studio (Priority)
+The MCP server is Sutra Studio for AI agents. Like Sutra Studio works in both serverless and server mode, the MCP server must support both: direct `.sdb` file access (serverless) and HTTP connection (server mode). Focus on database maintenance, not just querying.
+
+- [ ] MCP server supports serverless mode (opens `.sdb` file directly)
+- [ ] MCP server supports server mode (connects to HTTP endpoint)
+- [ ] MCP tool: `rebuild_hnsw` — trigger HNSW compaction and rebuild
+- [ ] MCP tool: `health_report` — full health diagnostics (HNSW, pseudo-tables, storage)
+- [ ] MCP tool: `verify_consistency` — check and auto-repair index consistency
+- [ ] MCP tool: `backup` — trigger a backup snapshot
+- [ ] MCP tool: `database_info` — triple count, term count, vector index stats
+- [ ] MCP tool: `sparql_query` — execute SPARQL queries
+- [ ] MCP tool: `insert_triples` — insert N-Triples data
 
 ### AI Agent Installer (Priority)
 The `sutra install-agent` command is the primary onboarding path. Current focus: debugging path handling, HNSW rebuild on server startup, error messaging for non-interactive environments, and Flutter availability checks.
