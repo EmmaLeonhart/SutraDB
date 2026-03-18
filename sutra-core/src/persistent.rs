@@ -261,6 +261,15 @@ impl PersistentStore {
             .collect()
     }
 
+    /// Clear all triples from the store (all three indexes).
+    /// Does not clear the term dictionary.
+    pub fn clear(&self) -> Result<()> {
+        self.spo.clear()?;
+        self.pos.clear()?;
+        self.osp.clear()?;
+        Ok(())
+    }
+
     /// Verify index consistency: check that SPO/POS/OSP have the same count.
     /// Returns true if consistent, false if a crash may have caused partial writes.
     pub fn verify_consistency(&self) -> bool {

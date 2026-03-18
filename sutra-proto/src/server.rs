@@ -1136,6 +1136,18 @@ async fn gsp_delete(State(state): State<Arc<AppState>>) -> Result<impl IntoRespo
         .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
     let count = store.len();
     *store = sutra_core::TripleStore::new();
+
+    // Clear persistent store and flush
+    if let Some(ref ps_lock) = state.persistent {
+        let ps = ps_lock
+            .write()
+            .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+        ps.clear()
+            .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
+        ps.flush()
+            .map_err(|e| ProtoError::BadRequest(format!("flush: {}", e)))?;
+    }
+
     Ok((StatusCode::OK, format!("Deleted {} triples", count)))
 }
 
