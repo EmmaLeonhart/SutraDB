@@ -62,6 +62,197 @@ use crate::id::TermId;
 use crate::store::TripleStore;
 
 // ---------------------------------------------------------------------------
+// Selection vector: bitset-based row selection for vectorized execution
+// ---------------------------------------------------------------------------
+
+/// A compact bitset representing selected rows in a segment.
+///
+/// This is the core primitive for vectorized execution (DuckDB/Velox pattern).
+/// Instead of materializing `Vec<usize>` index lists at each filter stage,
+/// we produce a bitset and AND them together with SIMD. The final bitset is
+/// only expanded to row indices once, at the end.
+///
+/// Layout: one bit per row, packed into u64 words. For a 2048-row segment
+/// this is 32 u64s = 256 bytes — fits in 4 cache lines.
+#[derive(Debug, Clone)]
+pub struct SelectionVector {
+    /// Packed bits: bit `i` of word `i/64` represents row `i`.
+    pub bits: Vec<u64>,
+    /// Total number of rows this vector covers (may exceed bits.len() * 64
+    /// if the last word is partial).
+    pub len: usize,
+}
+
+impl SelectionVector {
+    /// Create a selection vector with all rows selected.
+    pub fn all_set(len: usize) -> Self {
+        let nwords = len.div_ceil(64);
+        let mut bits = vec![u64::MAX; nwords];
+        // Clear trailing bits in the last word.
+        let remainder = len % 64;
+        if remainder != 0 && !bits.is_empty() {
+            let last = bits.len() - 1;
+            bits[last] = (1u64 << remainder) - 1;
+        }
+        Self { bits, len }
+    }
+
+    /// Create a selection vector with no rows selected.
+    pub fn none(len: usize) -> Self {
+        let nwords = len.div_ceil(64);
+        Self {
+            bits: vec![0u64; nwords],
+            len,
+        }
+    }
+
+    /// Set bit at position `idx`.
+    #[inline]
+    pub fn set(&mut self, idx: usize) {
+        debug_assert!(idx < self.len);
+        self.bits[idx / 64] |= 1u64 << (idx % 64);
+    }
+
+    /// Test bit at position `idx`.
+    #[inline]
+    pub fn test(&self, idx: usize) -> bool {
+        debug_assert!(idx < self.len);
+        self.bits[idx / 64] & (1u64 << (idx % 64)) != 0
+    }
+
+    /// Count the number of selected rows.
+    pub fn count(&self) -> usize {
+        self.bits.iter().map(|w| w.count_ones() as usize).sum()
+    }
+
+    /// Expand the bitset to a sorted list of selected row indices.
+    pub fn to_indices(&self) -> Vec<usize> {
+        let mut out = Vec::with_capacity(self.count());
+        for (word_idx, &word) in self.bits.iter().enumerate() {
+            if word == 0 {
+                continue;
+            }
+            let base = word_idx * 64;
+            let mut w = word;
+            while w != 0 {
+                let bit = w.trailing_zeros() as usize;
+                let row = base + bit;
+                if row < self.len {
+                    out.push(row);
+                }
+                w &= w - 1; // Clear lowest set bit
+            }
+        }
+        out
+    }
+
+    /// In-place AND: keep only rows selected in both `self` and `other`.
+    /// Uses SIMD when available.
+    pub fn and_inplace(&mut self, other: &SelectionVector) {
+        debug_assert_eq!(self.bits.len(), other.bits.len());
+        bitset_and_inplace(&mut self.bits, &other.bits);
+    }
+
+    /// In-place OR: select rows from either `self` or `other`.
+    pub fn or_inplace(&mut self, other: &SelectionVector) {
+        debug_assert_eq!(self.bits.len(), other.bits.len());
+        bitset_or_inplace(&mut self.bits, &other.bits);
+    }
+
+    /// Whether no rows are selected.
+    pub fn is_empty(&self) -> bool {
+        self.bits.iter().all(|&w| w == 0)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SIMD bitset operations
+// ---------------------------------------------------------------------------
+
+/// AND two bitset arrays in-place using SIMD when available.
+fn bitset_and_inplace(a: &mut [u64], b: &[u64]) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { bitset_and_avx2(a, b) };
+            return;
+        }
+    }
+    // Scalar fallback
+    for (x, &y) in a.iter_mut().zip(b.iter()) {
+        *x &= y;
+    }
+}
+
+/// OR two bitset arrays in-place using SIMD when available.
+fn bitset_or_inplace(a: &mut [u64], b: &[u64]) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { bitset_or_avx2(a, b) };
+            return;
+        }
+    }
+    // Scalar fallback
+    for (x, &y) in a.iter_mut().zip(b.iter()) {
+        *x |= y;
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn bitset_and_avx2(a: &mut [u64], b: &[u64]) {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    let n = a.len();
+    let chunks = n / 4; // 4 u64s = 256 bits per AVX2 register
+    let a_ptr = a.as_mut_ptr() as *mut __m256i;
+    let b_ptr = b.as_ptr() as *const __m256i;
+
+    for i in 0..chunks {
+        let va = _mm256_loadu_si256(a_ptr.add(i) as *const __m256i);
+        let vb = _mm256_loadu_si256(b_ptr.add(i));
+        let result = _mm256_and_si256(va, vb);
+        _mm256_storeu_si256(a_ptr.add(i), result);
+    }
+
+    // Scalar tail
+    let tail = chunks * 4;
+    for i in tail..n {
+        a[i] &= b[i];
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn bitset_or_avx2(a: &mut [u64], b: &[u64]) {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    let n = a.len();
+    let chunks = n / 4;
+    let a_ptr = a.as_mut_ptr() as *mut __m256i;
+    let b_ptr = b.as_ptr() as *const __m256i;
+
+    for i in 0..chunks {
+        let va = _mm256_loadu_si256(a_ptr.add(i) as *const __m256i);
+        let vb = _mm256_loadu_si256(b_ptr.add(i));
+        let result = _mm256_or_si256(va, vb);
+        _mm256_storeu_si256(a_ptr.add(i), result);
+    }
+
+    let tail = chunks * 4;
+    for i in tail..n {
+        a[i] |= b[i];
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SIMD implementation for u64 column scanning (x86/x86_64)
 // ---------------------------------------------------------------------------
 
@@ -76,6 +267,90 @@ mod simd {
     use std::arch::x86::*;
     #[cfg(target_arch = "x86_64")]
     use std::arch::x86_64::*;
+
+    // -- AVX2 bitset-producing column scans (256-bit, 4 u64s per iteration) --
+
+    /// Scan a packed u64 column for equality matches, producing a bitset.
+    /// Each matching row sets its corresponding bit in `out_bits`.
+    #[target_feature(enable = "avx2")]
+    pub(crate) unsafe fn scan_eq_to_bitset_avx2(data: &[u64], value: u64, out_bits: &mut [u64]) {
+        let n = data.len();
+        let chunks = n / 4;
+        let ptr = data.as_ptr() as *const __m256i;
+        let needle = _mm256_set1_epi64x(value as i64);
+
+        for i in 0..chunks {
+            let block = _mm256_loadu_si256(ptr.add(i));
+            let cmp = _mm256_cmpeq_epi64(block, needle);
+            let mask = _mm256_movemask_epi8(cmp) as u32;
+            // Extract per-element match bits and set in bitset
+            let base = i * 4;
+            if mask & 0x000000FF != 0 {
+                out_bits[base / 64] |= 1u64 << (base % 64);
+            }
+            if mask & 0x0000FF00 != 0 {
+                out_bits[(base + 1) / 64] |= 1u64 << ((base + 1) % 64);
+            }
+            if mask & 0x00FF0000 != 0 {
+                out_bits[(base + 2) / 64] |= 1u64 << ((base + 2) % 64);
+            }
+            if mask & 0xFF000000 != 0 {
+                out_bits[(base + 3) / 64] |= 1u64 << ((base + 3) % 64);
+            }
+        }
+
+        // Scalar tail
+        let tail_start = chunks * 4;
+        for (i, &v) in data[tail_start..].iter().enumerate() {
+            let idx = tail_start + i;
+            if v == value {
+                out_bits[idx / 64] |= 1u64 << (idx % 64);
+            }
+        }
+    }
+
+    /// Scan a packed u64 column for non-null values, producing a bitset.
+    #[target_feature(enable = "avx2")]
+    pub(crate) unsafe fn scan_not_null_to_bitset_avx2(
+        data: &[u64],
+        null_sentinel: u64,
+        out_bits: &mut [u64],
+    ) {
+        let n = data.len();
+        let chunks = n / 4;
+        let ptr = data.as_ptr() as *const __m256i;
+        let sentinel = _mm256_set1_epi64x(null_sentinel as i64);
+
+        for i in 0..chunks {
+            let block = _mm256_loadu_si256(ptr.add(i));
+            let cmp = _mm256_cmpeq_epi64(block, sentinel);
+            let mask = _mm256_movemask_epi8(cmp) as u32;
+            // Invert: we want NOT null
+            let base = i * 4;
+            if mask & 0x000000FF == 0 {
+                out_bits[base / 64] |= 1u64 << (base % 64);
+            }
+            if mask & 0x0000FF00 == 0 {
+                out_bits[(base + 1) / 64] |= 1u64 << ((base + 1) % 64);
+            }
+            if mask & 0x00FF0000 == 0 {
+                out_bits[(base + 2) / 64] |= 1u64 << ((base + 2) % 64);
+            }
+            if mask & 0xFF000000 == 0 {
+                out_bits[(base + 3) / 64] |= 1u64 << ((base + 3) % 64);
+            }
+        }
+
+        let tail_start = chunks * 4;
+        for (i, &v) in data[tail_start..].iter().enumerate() {
+            let idx = tail_start + i;
+            if v != null_sentinel {
+                out_bits[idx / 64] |= 1u64 << (idx % 64);
+            }
+        }
+    }
+
+    // -- Original index-producing scans (kept for backward compatibility) --
 
     // -- AVX2 (256-bit, 4 u64s per iteration) --
 
@@ -336,6 +611,223 @@ fn packed_scan_not_null(data: &[u64]) -> Vec<usize> {
         }
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// Bitset-producing column scans (for vectorized execution)
+// ---------------------------------------------------------------------------
+
+/// Scan a packed column for equality matches, producing a SelectionVector bitset.
+/// This is the vectorized equivalent of `packed_scan_eq` — instead of materializing
+/// a Vec<usize>, it produces a compact bitset that can be AND'd with other scans.
+fn packed_scan_eq_bitset(data: &[u64], value: u64, len: usize) -> SelectionVector {
+    let nwords = len.div_ceil(64);
+    let mut sel = SelectionVector::none(len);
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { simd::scan_eq_to_bitset_avx2(data, value, &mut sel.bits) };
+            return sel;
+        }
+    }
+    // Scalar fallback
+    for (i, &v) in data.iter().enumerate() {
+        if i < len && v == value {
+            sel.bits[i / 64] |= 1u64 << (i % 64);
+        }
+    }
+    let _ = nwords;
+    sel
+}
+
+/// Scan a packed column for non-null values, producing a SelectionVector bitset.
+fn packed_scan_not_null_bitset(data: &[u64], len: usize) -> SelectionVector {
+    let nwords = len.div_ceil(64);
+    let mut sel = SelectionVector::none(len);
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { simd::scan_not_null_to_bitset_avx2(data, NULL_SENTINEL, &mut sel.bits) };
+            return sel;
+        }
+    }
+    // Scalar fallback
+    for (i, &v) in data.iter().enumerate() {
+        if i < len && v != NULL_SENTINEL {
+            sel.bits[i / 64] |= 1u64 << (i % 64);
+        }
+    }
+    let _ = nwords;
+    sel
+}
+
+/// Scan a packed column for values in range [lo, hi], producing a SelectionVector.
+fn packed_scan_range_bitset(
+    data: &[u64],
+    lo: Option<u64>,
+    hi: Option<u64>,
+    len: usize,
+) -> SelectionVector {
+    let mut sel = SelectionVector::none(len);
+    for (i, &v) in data.iter().enumerate() {
+        if i >= len || v == NULL_SENTINEL {
+            continue;
+        }
+        let above = lo.is_none_or(|l| v >= l);
+        let below = hi.is_none_or(|h| v <= h);
+        if above && below {
+            sel.bits[i / 64] |= 1u64 << (i % 64);
+        }
+    }
+    sel
+}
+
+// ---------------------------------------------------------------------------
+// Fused multi-column scan (vectorized execution core)
+// ---------------------------------------------------------------------------
+
+/// A column filter specification for fused multi-column scanning.
+#[derive(Debug, Clone)]
+pub enum ColumnFilter {
+    /// Equality: column value must equal this TermId.
+    Eq(TermId),
+    /// Non-null: column must have a value (any value).
+    NotNull,
+    /// Range: column value must be in [lo, hi]. None means unbounded.
+    Range {
+        lo: Option<TermId>,
+        hi: Option<TermId>,
+    },
+}
+
+/// Fused multi-column scan: apply multiple column filters in a single pass
+/// over the segment, AND'ing bitsets together with SIMD.
+///
+/// This is the key vectorized execution primitive. Instead of:
+/// 1. Scan column A → Vec<usize>
+/// 2. Scan column B → Vec<usize>
+/// 3. Sorted merge intersection
+///
+/// We do:
+/// 1. Scan column A → bitset
+/// 2. Scan column B → bitset
+/// 3. AVX2 AND (256 bits per cycle)
+///
+/// For a 2048-row segment, the AND is 32 u64s = 8 AVX2 iterations.
+/// The sorted merge was O(n + m) comparisons on variable-length arrays.
+pub fn fused_multi_column_scan(
+    segment: &Segment,
+    filters: &[(usize, ColumnFilter)],
+) -> SelectionVector {
+    let len = segment.len();
+    if len == 0 || filters.is_empty() {
+        return SelectionVector::none(len);
+    }
+
+    let mut result = SelectionVector::all_set(len);
+
+    for &(col_idx, ref filter) in filters {
+        // Zonemap pruning: check if this filter can match any rows in this segment.
+        let stats = &segment.column_stats[col_idx];
+        match filter {
+            ColumnFilter::Eq(value) => {
+                if !stats.range_could_match(Some(*value), Some(*value)) {
+                    return SelectionVector::none(len);
+                }
+            }
+            ColumnFilter::Range { lo, hi } => {
+                if !stats.range_could_match(*lo, *hi) {
+                    return SelectionVector::none(len);
+                }
+            }
+            ColumnFilter::NotNull => {
+                if stats.null_count == stats.row_count {
+                    return SelectionVector::none(len);
+                }
+            }
+        }
+
+        // Produce bitset for this column filter.
+        let col_sel = if let Some(packed) = segment.packed_columns.get(col_idx) {
+            match filter {
+                ColumnFilter::Eq(value) => packed_scan_eq_bitset(packed, *value, len),
+                ColumnFilter::NotNull => packed_scan_not_null_bitset(packed, len),
+                ColumnFilter::Range { lo, hi } => packed_scan_range_bitset(packed, *lo, *hi, len),
+            }
+        } else {
+            // Fallback: build bitset from Option columns.
+            let col = &segment.columns[col_idx];
+            let mut sel = SelectionVector::none(len);
+            for (i, val) in col.iter().enumerate() {
+                let matches = match filter {
+                    ColumnFilter::Eq(value) => *val == Some(*value),
+                    ColumnFilter::NotNull => val.is_some(),
+                    ColumnFilter::Range { lo, hi } => {
+                        if let Some(v) = val {
+                            lo.is_none_or(|l| *v >= l) && hi.is_none_or(|h| *v <= h)
+                        } else {
+                            false
+                        }
+                    }
+                };
+                if matches {
+                    sel.set(i);
+                }
+            }
+            sel
+        };
+
+        // AND with running result — SIMD accelerated.
+        result.and_inplace(&col_sel);
+
+        // Early termination: if nothing matches, stop scanning more columns.
+        if result.is_empty() {
+            return result;
+        }
+    }
+
+    result
+}
+
+/// Batch gather: extract column values for all selected rows at once.
+///
+/// Returns a parallel array of Option<TermId> for each selected row.
+/// This avoids per-row random access into the column arrays.
+pub fn batch_gather(
+    segment: &Segment,
+    col_idx: usize,
+    selection: &SelectionVector,
+) -> Vec<Option<TermId>> {
+    let indices = selection.to_indices();
+    let col = &segment.columns[col_idx];
+    indices.iter().map(|&i| col[i]).collect()
+}
+
+/// Batch gather for multiple columns at once.
+///
+/// Returns rows × columns: `result[row][col]` is the value for that
+/// selected row at that column index.
+pub fn batch_gather_multi(
+    segment: &Segment,
+    col_indices: &[usize],
+    selection: &SelectionVector,
+) -> Vec<Vec<Option<TermId>>> {
+    let row_indices = selection.to_indices();
+    row_indices
+        .iter()
+        .map(|&row_idx| {
+            col_indices
+                .iter()
+                .map(|&col_idx| segment.columns[col_idx][row_idx])
+                .collect()
+        })
+        .collect()
+}
+
+/// Batch gather of node IDs for selected rows.
+pub fn batch_gather_nodes(segment: &Segment, selection: &SelectionVector) -> Vec<TermId> {
+    let indices = selection.to_indices();
+    indices.iter().map(|&i| segment.nodes[i]).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -2492,6 +2984,279 @@ mod tests {
             // (possible if the pattern decomposed differently).
             for table in &student_tables {
                 assert!(table.total_rows > 0, "If materialized, should have rows");
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // SelectionVector and vectorized execution tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn selection_vector_all_set() {
+        let sv = SelectionVector::all_set(100);
+        assert_eq!(sv.count(), 100);
+        assert!(sv.test(0));
+        assert!(sv.test(99));
+        assert_eq!(sv.to_indices().len(), 100);
+    }
+
+    #[test]
+    fn selection_vector_none() {
+        let sv = SelectionVector::none(100);
+        assert_eq!(sv.count(), 0);
+        assert!(sv.is_empty());
+        assert!(sv.to_indices().is_empty());
+    }
+
+    #[test]
+    fn selection_vector_set_and_test() {
+        let mut sv = SelectionVector::none(128);
+        sv.set(0);
+        sv.set(63);
+        sv.set(64);
+        sv.set(127);
+        assert_eq!(sv.count(), 4);
+        assert!(sv.test(0));
+        assert!(sv.test(63));
+        assert!(sv.test(64));
+        assert!(sv.test(127));
+        assert!(!sv.test(1));
+        assert_eq!(sv.to_indices(), vec![0, 63, 64, 127]);
+    }
+
+    #[test]
+    fn selection_vector_and() {
+        let mut a = SelectionVector::all_set(128);
+        let mut b = SelectionVector::none(128);
+        b.set(10);
+        b.set(50);
+        b.set(100);
+        a.and_inplace(&b);
+        assert_eq!(a.count(), 3);
+        assert_eq!(a.to_indices(), vec![10, 50, 100]);
+    }
+
+    #[test]
+    fn selection_vector_or() {
+        let mut a = SelectionVector::none(128);
+        a.set(10);
+        let mut b = SelectionVector::none(128);
+        b.set(20);
+        a.or_inplace(&b);
+        assert_eq!(a.count(), 2);
+        assert_eq!(a.to_indices(), vec![10, 20]);
+    }
+
+    #[test]
+    fn selection_vector_non_power_of_two() {
+        // Test with a length that isn't a multiple of 64.
+        let sv = SelectionVector::all_set(100);
+        assert_eq!(sv.count(), 100);
+        let indices = sv.to_indices();
+        assert_eq!(indices.len(), 100);
+        assert_eq!(*indices.last().unwrap(), 99);
+    }
+
+    #[test]
+    fn bitset_scan_eq_matches_index_scan() {
+        // Create a packed column and verify bitset scan matches index scan.
+        let data: Vec<u64> = (0..200).collect();
+        let target = 42u64;
+
+        let index_result = packed_scan_eq(&data, target);
+        let bitset_result = packed_scan_eq_bitset(&data, target, data.len());
+        let bitset_indices = bitset_result.to_indices();
+
+        assert_eq!(index_result, bitset_indices);
+        assert_eq!(bitset_indices, vec![42]);
+    }
+
+    #[test]
+    fn bitset_scan_not_null_matches_index_scan() {
+        let mut data: Vec<u64> = (0..100).collect();
+        // Insert some nulls.
+        data[10] = NULL_SENTINEL;
+        data[50] = NULL_SENTINEL;
+        data[99] = NULL_SENTINEL;
+
+        let index_result = packed_scan_not_null(&data);
+        let bitset_result = packed_scan_not_null_bitset(&data, data.len());
+        let bitset_indices = bitset_result.to_indices();
+
+        assert_eq!(index_result, bitset_indices);
+        assert_eq!(bitset_indices.len(), 97);
+        assert!(!bitset_indices.contains(&10));
+        assert!(!bitset_indices.contains(&50));
+        assert!(!bitset_indices.contains(&99));
+    }
+
+    #[test]
+    fn fused_scan_single_column_eq() {
+        let (store, ids) = make_person_store();
+        let node_props = extract_node_properties(&store);
+        let registry = discover_pseudo_tables(&node_props, &store);
+        assert!(!registry.is_empty());
+
+        let table = &registry.tables[0];
+        let person_id = ids["Person"];
+
+        // Find rdf:type column index.
+        let rdf_type = ids["rdf:type"];
+        let rdf_type_prop = Property {
+            predicate: rdf_type,
+            position: PropertyPosition::Subject,
+        };
+        let col_idx = table
+            .columns
+            .iter()
+            .position(|p| *p == rdf_type_prop)
+            .expect("rdf:type should be a column");
+
+        for segment in &table.segments {
+            let selection =
+                fused_multi_column_scan(segment, &[(col_idx, ColumnFilter::Eq(person_id))]);
+            // All rows should match since all nodes are Person.
+            assert_eq!(selection.count(), segment.len());
+        }
+    }
+
+    #[test]
+    fn fused_scan_multi_column() {
+        let (store, ids) = make_person_store();
+        let node_props = extract_node_properties(&store);
+        let registry = discover_pseudo_tables(&node_props, &store);
+        assert!(!registry.is_empty());
+
+        let table = &registry.tables[0];
+
+        // Find name and age column indices.
+        let name_prop = Property {
+            predicate: ids["name"],
+            position: PropertyPosition::Subject,
+        };
+        let age_prop = Property {
+            predicate: ids["age"],
+            position: PropertyPosition::Subject,
+        };
+        let name_col = table.columns.iter().position(|p| *p == name_prop);
+        let age_col = table.columns.iter().position(|p| *p == age_prop);
+
+        if let (Some(name_idx), Some(age_idx)) = (name_col, age_col) {
+            for segment in &table.segments {
+                // Scan for non-null name AND non-null age.
+                let selection = fused_multi_column_scan(
+                    segment,
+                    &[
+                        (name_idx, ColumnFilter::NotNull),
+                        (age_idx, ColumnFilter::NotNull),
+                    ],
+                );
+                // All person nodes have both name and age.
+                assert_eq!(selection.count(), segment.len());
+            }
+        }
+    }
+
+    #[test]
+    fn fused_scan_empty_result() {
+        let (store, ids) = make_person_store();
+        let node_props = extract_node_properties(&store);
+        let registry = discover_pseudo_tables(&node_props, &store);
+        assert!(!registry.is_empty());
+
+        let table = &registry.tables[0];
+        let rdf_type = ids["rdf:type"];
+        let rdf_type_prop = Property {
+            predicate: rdf_type,
+            position: PropertyPosition::Subject,
+        };
+        let col_idx = table
+            .columns
+            .iter()
+            .position(|p| *p == rdf_type_prop)
+            .expect("rdf:type should be a column");
+
+        for segment in &table.segments {
+            // Search for a value that doesn't exist — should get empty result.
+            let selection = fused_multi_column_scan(segment, &[(col_idx, ColumnFilter::Eq(99999))]);
+            assert!(selection.is_empty());
+        }
+    }
+
+    #[test]
+    fn batch_gather_returns_correct_values() {
+        let (store, ids) = make_person_store();
+        let node_props = extract_node_properties(&store);
+        let registry = discover_pseudo_tables(&node_props, &store);
+        assert!(!registry.is_empty());
+
+        let table = &registry.tables[0];
+        let rdf_type = ids["rdf:type"];
+        let rdf_type_prop = Property {
+            predicate: rdf_type,
+            position: PropertyPosition::Subject,
+        };
+        if let Some(col_idx) = table.columns.iter().position(|p| *p == rdf_type_prop) {
+            for segment in &table.segments {
+                let selection = SelectionVector::all_set(segment.len());
+                let values = super::batch_gather(segment, col_idx, &selection);
+                assert_eq!(values.len(), segment.len());
+                // All values should be the Person TermId (since all nodes are Person type).
+                let person_id = ids["Person"];
+                for val in &values {
+                    assert_eq!(*val, Some(person_id));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn batch_gather_nodes_returns_all_node_ids() {
+        let (store, _ids) = make_person_store();
+        let node_props = extract_node_properties(&store);
+        let registry = discover_pseudo_tables(&node_props, &store);
+        assert!(!registry.is_empty());
+
+        let table = &registry.tables[0];
+        for segment in &table.segments {
+            let selection = SelectionVector::all_set(segment.len());
+            let nodes = super::batch_gather_nodes(segment, &selection);
+            assert_eq!(nodes.len(), segment.len());
+            assert_eq!(nodes, segment.nodes);
+        }
+    }
+
+    #[test]
+    fn batch_gather_multi_returns_correct_shape() {
+        let (store, ids) = make_person_store();
+        let node_props = extract_node_properties(&store);
+        let registry = discover_pseudo_tables(&node_props, &store);
+        assert!(!registry.is_empty());
+
+        let table = &registry.tables[0];
+        let name_prop = Property {
+            predicate: ids["name"],
+            position: PropertyPosition::Subject,
+        };
+        let age_prop = Property {
+            predicate: ids["age"],
+            position: PropertyPosition::Subject,
+        };
+
+        let col_indices: Vec<usize> = [name_prop, age_prop]
+            .iter()
+            .filter_map(|p| table.columns.iter().position(|c| c == p))
+            .collect();
+
+        if col_indices.len() == 2 {
+            for segment in &table.segments {
+                let selection = SelectionVector::all_set(segment.len());
+                let rows = super::batch_gather_multi(segment, &col_indices, &selection);
+                assert_eq!(rows.len(), segment.len());
+                for row in &rows {
+                    assert_eq!(row.len(), 2); // name + age columns
+                }
             }
         }
     }

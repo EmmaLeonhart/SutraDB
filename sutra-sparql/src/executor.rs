@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use sutra_core::{
-    DatabaseConfig, HnswEdgeMode, Property, PropertyPosition, PseudoTableRegistry, TermDictionary,
-    TermId, Triple, TripleStore,
+    batch_gather_nodes, fused_multi_column_scan, ColumnFilter, DatabaseConfig, HnswEdgeMode,
+    Property, PropertyPosition, PseudoTableRegistry, TermDictionary, TermId, Triple, TripleStore,
 };
 use sutra_hnsw::VectorRegistry;
 
@@ -97,12 +97,57 @@ fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Resu
         None
     };
 
-    // Evaluate each pattern, threading the pushable limit through
-    for pattern in &query.patterns {
+    // Evaluate each pattern, threading the pushable limit through.
+    //
+    // Multi-pattern fusion: when consecutive triple patterns share the same
+    // subject variable and map to the same pseudo-table, fuse them into a
+    // single vectorized multi-column scan (SIMD bitset AND). This avoids
+    // intermediate materialization and join overhead.
+    let patterns = &query.patterns;
+    let mut i = 0;
+    while i < patterns.len() {
+        // Try to detect a run of fuseable triple patterns.
+        if let Some(registry) = ctx.pseudo_tables {
+            let run_end = find_fuseable_pattern_run(patterns, i, ctx, registry);
+            if run_end > i + 1 {
+                // We found 2+ consecutive patterns that can be fused.
+                let fuseable: Vec<&Pattern> = patterns[i..run_end].iter().collect();
+                if let Some(fused_results) =
+                    try_fused_pseudo_table_scan(&fuseable, &results, ctx, registry, pushable_limit)?
+                {
+                    let new_scores = fused_results
+                        .iter()
+                        .map(|new_row| {
+                            // Find source row to carry forward scores.
+                            for (j, old_row) in results.iter().enumerate() {
+                                if old_row.iter().all(|(k, v)| new_row.get(k) == Some(v)) {
+                                    return scores[j].clone();
+                                }
+                            }
+                            HashMap::new()
+                        })
+                        .collect();
+                    results = fused_results;
+                    scores = new_scores;
+                    i = run_end;
+
+                    if let Some(limit) = pushable_limit {
+                        if results.len() >= limit {
+                            results.truncate(limit);
+                            scores.truncate(limit);
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
+
+        // Normal single-pattern evaluation.
         let (new_results, new_scores) =
-            evaluate_pattern(pattern, &results, &scores, ctx, pushable_limit)?;
+            evaluate_pattern(&patterns[i], &results, &scores, ctx, pushable_limit)?;
         results = new_results;
         scores = new_scores;
+        i += 1;
 
         // Early termination when we have enough rows
         if let Some(limit) = pushable_limit {
@@ -1190,19 +1235,29 @@ fn try_pseudo_table_scan(
         let s_id = resolve_term(subject, row, ctx.dict, ctx.prefixes)?;
         let o_id = resolve_term(object, row, ctx.dict, ctx.prefixes)?;
 
-        // Scan each segment of the pseudo-table.
+        // Scan each segment using vectorized bitset-based execution.
         for segment in &table.segments {
-            // Determine which rows match based on bound variables.
-            let scan_result = if let Some(obj_value) = o_id {
-                // Object is bound: equality scan on the column.
-                sutra_core::scan_column_eq(segment, col_idx, obj_value)
-            } else {
-                // Object is unbound: scan for non-null values.
-                sutra_core::scan_column_not_null(segment, col_idx)
+            // Build filter for the fused scan.
+            let filter = match o_id {
+                Some(obj_value) => ColumnFilter::Eq(obj_value),
+                None => ColumnFilter::NotNull,
             };
 
-            for &seg_row_idx in &scan_result.matching_rows {
-                let node_id = segment.nodes[seg_row_idx];
+            // Fused single-column scan producing a bitset (SIMD-accelerated).
+            // Even for a single column, the bitset path is beneficial because
+            // it avoids materializing a Vec<usize> until the final gather.
+            let selection = fused_multi_column_scan(segment, &[(col_idx, filter)]);
+
+            if selection.is_empty() {
+                continue;
+            }
+
+            // Batch gather: extract node IDs and column values for selected rows.
+            let node_ids = batch_gather_nodes(segment, &selection);
+            let matching_indices = selection.to_indices();
+
+            for (i, &node_id) in node_ids.iter().enumerate() {
+                let seg_row_idx = matching_indices[i];
                 let col_value = segment.columns[col_idx][seg_row_idx];
 
                 // Filter by subject if bound.
@@ -1253,6 +1308,262 @@ fn try_pseudo_table_scan(
     }
 
     Ok(Some((results, source_indices)))
+}
+
+/// Attempt to evaluate multiple consecutive triple patterns as a single fused
+/// vectorized scan over a pseudo-table.
+///
+/// When a SPARQL query has patterns like:
+/// ```sparql
+/// ?s :name ?name .
+/// ?s :age ?age .
+/// ?s :city ?city .
+/// ```
+///
+/// Instead of evaluating each pattern separately (scan + join + scan + join),
+/// this function detects that all three hit the same pseudo-table and fuses
+/// them into a single multi-column bitset scan:
+/// 1. Scan :name column → bitset A
+/// 2. Scan :age column → bitset B
+/// 3. AND(A, B) with AVX2 (256 bits/cycle)
+/// 4. Gather all column values for surviving rows in one pass
+///
+/// Returns `None` if the patterns can't be fused (different tables, variable
+/// predicates, etc.), letting the caller fall through to per-pattern evaluation.
+fn try_fused_pseudo_table_scan(
+    patterns: &[&Pattern],
+    current: &[Bindings],
+    ctx: &ExecutionContext<'_>,
+    registry: &PseudoTableRegistry,
+    row_limit: Option<usize>,
+) -> Result<Option<Vec<Bindings>>> {
+    if patterns.len() < 2 {
+        return Ok(None);
+    }
+
+    // Extract triple patterns and resolve their predicates.
+    let mut pattern_info: Vec<(&Term, TermId, usize, &Term, &Term)> = Vec::new();
+    let mut common_table: Option<usize> = None;
+    let mut subject_var: Option<&str> = None;
+
+    for &pat in patterns {
+        let (subject, predicate, object) = match pat {
+            Pattern::Triple {
+                subject,
+                predicate,
+                object,
+            } => (subject, predicate, object),
+            _ => return Ok(None), // Non-triple pattern, can't fuse
+        };
+
+        // All patterns must share the same subject variable.
+        match subject {
+            Term::Variable(name) => {
+                if let Some(expected) = subject_var {
+                    if name != expected {
+                        return Ok(None);
+                    }
+                } else {
+                    subject_var = Some(name);
+                }
+            }
+            _ => return Ok(None), // Bound subject — can't batch across different subjects
+        }
+
+        // Resolve predicate to a column index.
+        let pred_id = match predicate {
+            Term::Variable(_) => return Ok(None),
+            _ => resolve_term(predicate, &HashMap::new(), ctx.dict, ctx.prefixes)?,
+        };
+        let pred_id = match pred_id {
+            Some(id) => id,
+            None => return Ok(None),
+        };
+
+        let property = Property {
+            predicate: pred_id,
+            position: PropertyPosition::Subject,
+        };
+        let table_matches = registry.find_tables_for_property(&property);
+        if table_matches.is_empty() {
+            return Ok(None);
+        }
+
+        let (table_idx, col_idx) = table_matches[0];
+
+        // All patterns must hit the same pseudo-table.
+        match common_table {
+            Some(t) if t != table_idx => return Ok(None),
+            None => common_table = Some(table_idx),
+            _ => {}
+        }
+
+        pattern_info.push((subject, pred_id, col_idx, predicate, object));
+    }
+
+    let table_idx = match common_table {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    let table = &registry.tables[table_idx];
+    let subj_var = subject_var.unwrap();
+
+    let mut results = Vec::new();
+
+    for row in current {
+        // Check if subject is already bound in this row.
+        let s_bound = row.get(subj_var).copied();
+
+        for segment in &table.segments {
+            // Build fused filter list: one filter per pattern column.
+            let filters: Vec<(usize, ColumnFilter)> = pattern_info
+                .iter()
+                .map(|&(_, _, col_idx, _, object)| {
+                    let o_id = match object {
+                        Term::Variable(name) => row.get(name).copied(),
+                        _ => resolve_term(object, row, ctx.dict, ctx.prefixes)
+                            .ok()
+                            .flatten(),
+                    };
+                    let filter = match o_id {
+                        Some(val) => ColumnFilter::Eq(val),
+                        None => ColumnFilter::NotNull,
+                    };
+                    (col_idx, filter)
+                })
+                .collect();
+
+            // Fused multi-column scan: SIMD bitset AND across all columns.
+            let selection = fused_multi_column_scan(segment, &filters);
+
+            if selection.is_empty() {
+                continue;
+            }
+
+            // Batch gather: extract all needed column values at once.
+            let node_ids = batch_gather_nodes(segment, &selection);
+            let matching_indices = selection.to_indices();
+
+            for (i, &node_id) in node_ids.iter().enumerate() {
+                // Filter by subject if bound.
+                if let Some(bound_s) = s_bound {
+                    if node_id != bound_s {
+                        continue;
+                    }
+                }
+
+                let seg_row_idx = matching_indices[i];
+                let mut new_row = row.clone();
+                new_row.insert(subj_var.to_string(), node_id);
+
+                // Bind all object variables from their respective columns.
+                let mut skip = false;
+                for &(_, _, col_idx, _, object) in &pattern_info {
+                    if let Term::Variable(name) = object {
+                        let col_value = segment.columns[col_idx][seg_row_idx];
+                        if let Some(value) = col_value {
+                            if let Some(&existing) = new_row.get(name) {
+                                if existing != value {
+                                    skip = true;
+                                    break;
+                                }
+                            } else {
+                                new_row.insert(name.clone(), value);
+                            }
+                        } else {
+                            skip = true;
+                            break;
+                        }
+                    }
+                }
+
+                if skip {
+                    continue;
+                }
+
+                results.push(new_row);
+
+                if let Some(limit) = row_limit {
+                    if results.len() >= limit {
+                        return Ok(Some(results));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Some(results))
+}
+
+/// Find the longest run of consecutive triple patterns starting at `start`
+/// that can be fused into a single vectorized pseudo-table scan.
+///
+/// Requirements for fusion:
+/// - All patterns must be triple patterns (not filters, optionals, etc.)
+/// - All must share the same subject variable
+/// - All must have constant predicates that map to columns in the same pseudo-table
+fn find_fuseable_pattern_run(
+    patterns: &[Pattern],
+    start: usize,
+    ctx: &ExecutionContext<'_>,
+    registry: &PseudoTableRegistry,
+) -> usize {
+    let mut subject_var: Option<&str> = None;
+    let mut table_idx: Option<usize> = None;
+    let mut end = start;
+
+    for pat in &patterns[start..] {
+        let (subject, predicate, _object) = match pat {
+            Pattern::Triple {
+                subject,
+                predicate,
+                object,
+            } => (subject, predicate, object),
+            _ => break,
+        };
+
+        // Must be a variable subject.
+        let var_name = match subject {
+            Term::Variable(name) => name.as_str(),
+            _ => break,
+        };
+
+        // Must share the same subject variable.
+        match subject_var {
+            Some(expected) if expected != var_name => break,
+            None => subject_var = Some(var_name),
+            _ => {}
+        }
+
+        // Predicate must be constant and map to a pseudo-table column.
+        let pred_id = match predicate {
+            Term::Variable(_) => break,
+            _ => match resolve_term(predicate, &HashMap::new(), ctx.dict, ctx.prefixes) {
+                Ok(Some(id)) => id,
+                _ => break,
+            },
+        };
+
+        let property = Property {
+            predicate: pred_id,
+            position: PropertyPosition::Subject,
+        };
+        let matches = registry.find_tables_for_property(&property);
+        if matches.is_empty() {
+            break;
+        }
+
+        let (t_idx, _) = matches[0];
+        match table_idx {
+            Some(t) if t != t_idx => break,
+            None => table_idx = Some(t_idx),
+            _ => {}
+        }
+
+        end += 1;
+    }
+
+    end
 }
 
 /// Expand scores from current rows into new results.
