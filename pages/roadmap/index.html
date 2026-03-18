@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Roadmap — SutraDB">
+    <meta property="og:description" content="SutraDB development roadmap. Developer Preview status and what's coming next.">
+    <meta property="og:url" content="https://sutradb.org/roadmap/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Roadmap — SutraDB">
+    <meta name="twitter:description" content="SutraDB development roadmap. Developer Preview status and what's coming next.">
+    <meta name="theme-color" content="#58a6ff">
+    <title>Roadmap &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .status-tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .status-done { background: #1b3a1f; color: #3fb950; }
+        .status-active { background: #3a2e1b; color: #d29922; }
+        .status-planned { background: #2a1b3a; color: #bc8cff; }
+        .status-deferred { background: #1b2a3a; color: #58a6ff; }
+
+        .roadmap-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+        }
+        .roadmap-item h3 {
+            margin: 0 0 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .roadmap-item p {
+            color: var(--muted);
+            margin-bottom: 0;
+            font-size: 0.95em;
+        }
+
+        .progress-bar {
+            display: inline-block;
+            background: #21262d;
+            border-radius: 6px;
+            width: 200px;
+            height: 8px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        .progress-bar .fill {
+            display: block;
+            height: 100%;
+            border-radius: 6px;
+            background: #3fb950;
+        }
+        .progress-text {
+            font-size: 0.85em;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+<nav>
+    <a href="../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../protocols/">Protocols</a>
+    <a href="../sparql/">SPARQL</a>
+    <a href="../rdf/">RDF</a>
+    <a href="../owl/">OWL</a>
+    <a href="../serverless/">Serverless</a>
+    <a href="../graph-vector/">Graph+Vector</a>
+    <a href="../sdb-format/">.sdb Format</a>
+    <a href="../libraries/">Libraries</a>
+    <a href="./" class="active">Roadmap</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1><span>Roadmap</span></h1>
+        <p class="subtitle">SutraDB is in <strong>Developer Preview</strong>. Core engine, SPARQL+, vector indexing, and HTTP server are fully functional. Here's what's done and what's next.</p>
+    </div>
+
+    <div style="margin-bottom: 40px;">
+        <span class="progress-bar"><span class="fill" style="width: 88%;"></span></span>
+        <span class="progress-text"><strong>191 / 218</strong> items complete (88%)</span>
+    </div>
+
+    <h2>Active Work</h2>
+
+    <div class="roadmap-item">
+        <h3>AI Agent Installer <span class="status-tag status-active">In Progress</span></h3>
+        <p>The <code>sutra install-agent</code> command sets up a database interactively for AI agents. Currently debugging path handling, HNSW index rebuild on startup, and error messaging for non-interactive environments. Goal: any AI agent says "set up a database" and it just works.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>Cost-Based Query Planning <span class="status-tag status-active">In Progress</span></h3>
+        <p>Cardinality estimation and predicate pushdown are done. Remaining: planner should choose HNSW index scan vs SPO triple scan based on cost, and adaptive execution should observe intermediate result sizes at runtime and reorder mid-query.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>HNSW Traversal via SPARQL Property Paths <span class="status-tag status-active">In Progress</span></h3>
+        <p>HNSW topology is exposed as virtual RDF triples (<code>sutra:hnswNeighbor</code>). Remaining: make property path evaluation produce correct ANN results by letting greedy descent + beam search emerge from the graph structure.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>Predicate-Based Exit Conditions (UNTIL) <span class="status-tag status-active">Design Phase</span></h3>
+        <p>Standard SPARQL property paths can't express "traverse and stop when a condition is met." The UNTIL extension adds per-step predicate evaluation during traversal with backtracking support and ordered traversal semantics.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>Background Maintenance Cycle <span class="status-tag status-active">In Progress</span></h3>
+        <p>During low-usage periods, rebuild HNSW indexes and rediscover pseudo-tables in the background. Old indexes stay live until the new ones are ready, then atomic swap.</p>
+    </div>
+
+    <h2>SDK Publishing</h2>
+
+    <div class="roadmap-item">
+        <h3>Java SDK &rarr; Maven Central <span class="status-tag status-active">Priority</span></h3>
+        <p>The semantic web ecosystem runs on Java. The SDK code is complete; publishing to Maven Central requires GPG signing configuration, Sonatype account setup, and pom.xml updates for distribution management. This is the highest-priority SDK to publish.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>Other SDKs <span class="status-tag status-planned">Planned</span></h3>
+        <p>Python (PyPI), TypeScript (npm), Rust (crates.io), Go (pkg.go.dev), and .NET (NuGet). All SDK code is complete and tested. Publishing requires registry account setup for each platform. See <a href="https://github.com/EmmaLeonhart/SutraDB/blob/main/docs/SDK_ACCOUNTS_SETUP.md">SDK Accounts Setup</a>.</p>
+    </div>
+
+    <h2>What's Done</h2>
+
+    <div class="roadmap-item">
+        <h3>Triple Storage Engine <span class="status-tag status-done">Complete</span></h3>
+        <p>SPO/POS/OSP indexes over interned u64 IDs. sled LSM-tree persistence with crash recovery. RDF-star quoted triple support. Bulk insert at 20K triples/sec.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>HNSW Vector Index <span class="status-tag status-done">Complete</span></h3>
+        <p>Per-predicate HNSW indexes with cosine, Euclidean, and dot product distance metrics. SIMD acceleration (AVX2/SSE). Tombstone-based deletion. Multiple entry points for search quality.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>SPARQL+ Query Engine <span class="status-tag status-done">Complete</span></h3>
+        <p>Full SPARQL 1.1 parser, cost-based query planner, and iterator-based executor. Extensions: VECTOR_SIMILAR, VECTOR_SCORE, metric-specific search operators. Property paths, subqueries, aggregates, all working.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>HTTP Server &amp; Protocol <span class="status-tag status-done">Complete</span></h3>
+        <p>SPARQL endpoint, Graph Store Protocol, REST API for triples and vectors. Content negotiation (JSON, XML, CSV, TSV, Turtle). Optional passcode auth, rate limiting, query timeouts, periodic backups.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>Pseudo-Tables &amp; Vectorized Execution <span class="status-tag status-done">Complete</span></h3>
+        <p>Automatic discovery of columnar indexes from graph structure. SIMD-accelerated column scans, zonemap pruning, segment-level storage. Deep subgraph pattern mining with fan-in detection.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>6 Client SDKs <span class="status-tag status-done">Complete</span></h3>
+        <p>Python, TypeScript, Go, Rust, Java, .NET. All with client-side OWL validation, typed error handling, and vector search support. Code complete, awaiting registry publishing.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>Sutra Studio (Flutter GUI) <span class="status-tag status-done">Complete</span></h3>
+        <p>Desktop and web client. Graph visualization, SPARQL editor, HNSW health dashboard, triple editor, OWL ontology viewer, backup management. 90% feature complete.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>CI/CD &amp; Benchmarks <span class="status-tag status-done">Complete</span></h3>
+        <p>6 GitHub Actions workflows. Clippy + rustfmt enforcement. 256 tests, 50+ Criterion benchmarks tracked historically. Docker image. Cross-platform install scripts.</p>
+    </div>
+
+    <h2>Future</h2>
+
+    <div class="roadmap-item">
+        <h3>Query Language Wrappers <span class="status-tag status-deferred">Future</span></h3>
+        <p>Cypher and GQL (ISO 39075) as translation layers over SPARQL. The database still speaks SPARQL+ internally; these wrappers let users query with familiar graph query syntax. SQL and MQL are deliberately excluded.</p>
+    </div>
+
+    <div class="roadmap-item">
+        <h3>Premium Tier <span class="status-tag status-deferred">Future</span></h3>
+        <p>RBAC, encryption at rest, TLS, audit logging, replication, clustering, multi-tenancy. These will be shaped by customer feedback. The open-source core is designed to be sufficient for most use cases.</p>
+    </div>
+</div>
+
+<footer>
+    <a href="../">Home</a> &middot;
+    <a href="../protocols/">Protocols</a> &middot;
+    <a href="../sparql/">SPARQL</a> &middot;
+    <a href="../rdf/">RDF</a> &middot;
+    <a href="../owl/">OWL</a> &middot;
+    <a href="../libraries/">Libraries</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>

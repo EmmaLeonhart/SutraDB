@@ -1,10 +1,19 @@
 # SutraDB — TODO
 
-**Status: 191 of 218 items complete (88%)**
+**Status: 196 of 223 items complete (88%)**
 
 ---
 
 ## Active Work
+
+### AI Agent Installer (Priority)
+The `sutra install-agent` command is the primary onboarding path. Current focus: debugging path handling, HNSW rebuild on server startup, error messaging for non-interactive environments, and Flutter availability checks.
+
+- [x] HNSW index rebuild from stored vectors on install-agent server startup
+- [x] Flutter availability check and helpful error message
+- [ ] End-to-end test: fresh install → insert → query → verify
+- [ ] Serverless mode testing (no `--serve`, just create the `.sdb`)
+- [ ] Agent-consumable structured output (JSON mode for programmatic setup)
 
 ### HNSW Traversal via SPARQL Property Paths
 HNSW topology is exposed as virtual RDF triples (`sutra:hnswNeighbor`) with labeled edges (vertical descent vs horizontal neighbor). The remaining work: make the SPARQL executor's property path evaluation produce correct ANN results by letting greedy descent + beam search emerge from the graph structure.
@@ -23,8 +32,10 @@ Standard SPARQL property paths can't express "traverse and stop when a condition
 - [ ] Test: ordered traversal with UNTIL produces correct early termination
 
 ### Cost-Based Query Planning (remaining)
-Cardinality estimation and predicate pushdown are done. Remaining:
+Cardinality estimation, predicate pushdown, and dictionary-based IRI resolution are done. The planner now resolves IRI constants via the TermDictionary for tighter cardinality estimates. Remaining:
 
+- [x] Dictionary-aware cardinality estimation: resolve IRIs to TermIds for tighter index scans
+- [x] Server uses `optimize_full` with both store and dictionary
 - [ ] HNSW as access path: planner chooses "HNSW index scan" vs "SPO triple scan" based on cost
 - [ ] Adaptive execution: observe intermediate result sizes at runtime, reorder mid-query
 

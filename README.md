@@ -4,6 +4,8 @@ A lean, high-performance RDF-star triplestore written in Rust with native HNSW v
 
 [![CI](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml/badge.svg)](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml)
 
+> **Status: Developer Preview.** Core engine, SPARQL+, vector indexing, and HTTP server are fully functional. APIs may evolve before 1.0. See the [Roadmap](https://sutradb.org/roadmap/) for what's done and what's next.
+
 > **AI Agents:** If you are an AI agent setting up a database, see **[Agent Setup Guide](docs/AGENT_SETUP.md)** for complete CLI reference, API endpoints, and step-by-step instructions. SutraDB is designed to be fully operable by AI agents without ever touching a GUI.
 
 ## What is this?
@@ -108,7 +110,7 @@ cd sutra-studio && flutter run -d chrome
 
 ## Test Suite
 
-200+ tests across 5 crates:
+256 tests across 5 crates:
 
 ```bash
 cargo test --workspace

@@ -28,7 +28,7 @@
 
 use std::collections::HashSet;
 
-use sutra_core::TripleStore;
+use sutra_core::{TermDictionary, TripleStore};
 
 use crate::parser::{FilterExpr, Pattern, Query, Term};
 
@@ -123,35 +123,41 @@ pub fn optimize(query: &mut Query) {
 /// The planner picks patterns greedily from lowest to highest cost,
 /// updating which variables are bound after each selection.
 pub fn optimize_with_store(query: &mut Query, store: Option<&TripleStore>) {
+    optimize_full(query, store, None);
+}
+
+/// Reorder patterns using both store cardinality and dictionary-based IRI resolution.
+///
+/// When the dictionary is provided, the planner can resolve IRI constants to
+/// their interned TermIds, enabling tighter cardinality estimates from the
+/// store's indexes. Without the dictionary, only integer literals contribute
+/// to cardinality estimation (all IRIs are treated as unbound).
+///
+/// This is the most accurate optimization mode and should be used whenever
+/// both the store and dictionary are available (i.e., in the server).
+pub fn optimize_full(
+    query: &mut Query,
+    store: Option<&TripleStore>,
+    dict: Option<&TermDictionary>,
+) {
     let mut bound_vars: HashSet<String> = HashSet::new();
     let mut reordered: Vec<Pattern> = Vec::new();
     let mut remaining: Vec<Pattern> = query.patterns.drain(..).collect();
 
     while !remaining.is_empty() {
-        // Score every remaining pattern using the combined cost model.
-        // The cost accounts for both structural selectivity (how many
-        // positions are bound) and data-dependent selectivity (how many
-        // triples actually match in the store).
         let best_idx = remaining
             .iter()
             .enumerate()
-            .min_by_key(|(_, p)| pattern_cost(p, &bound_vars, store))
+            .min_by_key(|(_, p)| pattern_cost(p, &bound_vars, store, dict))
             .map(|(i, _)| i)
             .unwrap();
 
         let chosen = remaining.remove(best_idx);
-
-        // Mark variables from the chosen pattern as bound so that
-        // subsequent patterns can be re-scored with tighter bindings.
         collect_variables(&chosen, &mut bound_vars);
-
         reordered.push(chosen);
     }
 
-    // Predicate pushdown: reposition FILTERs immediately after the
-    // pattern that binds their last required variable.
     reordered = pushdown_filters(reordered);
-
     query.patterns = reordered;
 }
 
@@ -163,7 +169,12 @@ pub fn optimize_with_store(query: &mut Query, store: Option<&TripleStore>) {
 /// selectivity and data-dependent cardinality.
 ///
 /// Returns a u64 cost where lower = cheaper = should be evaluated first.
-fn pattern_cost(pattern: &Pattern, bound: &HashSet<String>, store: Option<&TripleStore>) -> u64 {
+fn pattern_cost(
+    pattern: &Pattern,
+    bound: &HashSet<String>,
+    store: Option<&TripleStore>,
+    dict: Option<&TermDictionary>,
+) -> u64 {
     let weight = pattern_weight(pattern, bound);
 
     // For non-triple patterns, cardinality estimation doesn't apply —
@@ -178,7 +189,7 @@ fn pattern_cost(pattern: &Pattern, bound: &HashSet<String>, store: Option<&Tripl
             // (property paths have complex cardinality that we can't estimate
             // from a single index scan).
             if let Some(store) = store {
-                estimate_triple_cardinality(subject, predicate, object, bound, store)
+                estimate_triple_cardinality(subject, predicate, object, bound, store, dict)
             } else {
                 DEFAULT_CARDINALITY
             }
@@ -265,14 +276,15 @@ fn estimate_triple_cardinality(
     object: &Term,
     _bound: &HashSet<String>,
     store: &TripleStore,
+    dict: Option<&TermDictionary>,
 ) -> usize {
     // Resolve each position to a TermId if it's a constant (IRI, literal).
     // Variables that are bound by previous patterns are treated as None
     // because we don't know their runtime value at plan time.
     // Only truly constant terms (IRIs, literals) contribute to the estimate.
-    let s = term_to_constant_id(subject);
-    let p = term_to_constant_id(predicate);
-    let o = term_to_constant_id(object);
+    let s = term_to_constant_id(subject, dict);
+    let p = term_to_constant_id(predicate, dict);
+    let o = term_to_constant_id(object, dict);
 
     // Use the store's cardinality estimator, which does efficient
     // range scans on SPO/POS/OSP indexes.
@@ -290,23 +302,41 @@ fn estimate_triple_cardinality(
 /// positions are constrained. Variables (even if bound by previous
 /// patterns) return None because we don't know their runtime value.
 ///
-/// Note: This only handles terms that carry their ID inline (like
-/// IntegerLiteral). For IRIs and literals that need dictionary lookup,
-/// we return None because the planner doesn't have access to the
-/// TermDictionary. This is a known limitation — future work could
-/// pass the dictionary to the planner for tighter estimates.
-fn term_to_constant_id(term: &Term) -> Option<sutra_core::TermId> {
+/// When a `TermDictionary` is provided, IRIs and string literals can be
+/// resolved to their interned IDs, enabling much tighter cardinality
+/// estimates. Without the dictionary, only integer literals (which carry
+/// inline IDs) contribute to the estimate.
+fn term_to_constant_id(
+    term: &Term,
+    dict: Option<&TermDictionary>,
+) -> Option<sutra_core::TermId> {
     match term {
         // Variables are always unbound from the estimator's perspective.
         Term::Variable(_) => None,
         // Integer literals have inline IDs — no dictionary needed.
         Term::IntegerLiteral(n) => sutra_core::inline_integer(*n),
-        // All other constant terms (IRIs, literals) would need the
-        // dictionary to resolve. Without it, we conservatively return
-        // None, which makes the estimator assume the position is unbound.
-        // This is safe — it overestimates cardinality, which may lead
-        // to suboptimal ordering but never incorrect results.
-        _ => None,
+        // IRIs can be resolved via the dictionary if available.
+        Term::Iri(iri) => dict.and_then(|d| d.lookup(iri)),
+        // rdf:type shorthand
+        Term::A => dict.and_then(|d| {
+            d.lookup("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+        }),
+        // Prefixed names would need prefix expansion which we don't have
+        // at the planner level. Return None (conservative).
+        Term::PrefixedName { .. } => None,
+        // String literals
+        Term::Literal(s) => dict.and_then(|d| d.lookup(s)),
+        // Typed literals: "value"^^<datatype>
+        Term::TypedLiteral { value, datatype } => {
+            let typed = format!("\"{}\"^^<{}>", value, datatype);
+            dict.and_then(|d| d.lookup(&typed))
+        }
+        // Vector literals can't be meaningfully resolved for cardinality.
+        Term::VectorLiteral(_) => None,
+        // Property paths can't be resolved to a single TermId.
+        Term::Path { .. } => None,
+        // Quoted triples can't be resolved without hashing.
+        Term::QuotedTriple { .. } => None,
     }
 }
 
