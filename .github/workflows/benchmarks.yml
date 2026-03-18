@@ -102,7 +102,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git pull origin main
           git add benchmarks/HISTORY.md benchmarks/LATEST.md
           git diff --staged --quiet || git commit -m "Update benchmark results [skip ci]"
-          git pull --rebase || true
-          git push
+          git push origin main
