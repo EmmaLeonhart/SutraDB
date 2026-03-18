@@ -871,3 +871,66 @@ test sparql_vector_search/docs/100 ... bench:      243569 ns/iter (+/- 1236)
 test sparql_vector_search/docs/500 ... bench:     3037166 ns/iter (+/- 19841)
 test sparql_vector_search/docs/1000 ... bench:     1547727 ns/iter (+/- 8453)
 ```
+
+## 2026-03-18 22:07 UTC — `5d9196b` Java SDK: add test suite, rebuildHnsw, healthReport, bump to v0.3.0
+
+### sutra-core (triple store)
+```
+test triple_insert_single ... bench:         119 ns/iter (+/- 7)
+test triple_bulk_insert/triples/100 ... bench:       33571 ns/iter (+/- 431)
+test triple_bulk_insert/triples/1000 ... bench:      443967 ns/iter (+/- 8290)
+test triple_bulk_insert/triples/10000 ... bench:     5475662 ns/iter (+/- 58346)
+test triple_lookup_subject/graph_size/1000 ... bench:          85 ns/iter (+/- 0)
+test triple_lookup_subject/graph_size/10000 ... bench:          96 ns/iter (+/- 2)
+test triple_lookup_predicate_5k ... bench:        7987 ns/iter (+/- 79)
+test triple_contains_10k ... bench:          49 ns/iter (+/- 0)
+test triple_remove_single ... bench:       44594 ns/iter (+/- 1230)
+test adjacency_star_500 ... bench:          14 ns/iter (+/- 0)
+test term_dictionary_intern_10k ... bench:     2505020 ns/iter (+/- 24263)
+```
+
+### sutra-hnsw (vector index)
+```
+test hnsw_insert/128d/100 ... bench:     3492713 ns/iter (+/- 33966)
+test hnsw_insert/128d/1000 ... bench:    98757824 ns/iter (+/- 449369)
+test hnsw_insert/128d/5000 ... bench:   847785919 ns/iter (+/- 1944070)
+test hnsw_insert/384d/1000 ... bench:   154924085 ns/iter (+/- 879082)
+test hnsw_search/n1000_128d_ef50/k10 ... bench:       60576 ns/iter (+/- 285)
+test hnsw_search/n1000_128d_ef100/k10 ... bench:       90941 ns/iter (+/- 319)
+test hnsw_search/n1000_128d_ef200/k10 ... bench:      150608 ns/iter (+/- 443)
+test hnsw_search/n5000_128d_ef100/k10 ... bench:      152783 ns/iter (+/- 571)
+test hnsw_search/n1000_384d_ef100/k10 ... bench:      124050 ns/iter (+/- 601)
+test hnsw_search_k/5k_128d/1 ... bench:      153477 ns/iter (+/- 621)
+test hnsw_search_k/5k_128d/5 ... bench:      154353 ns/iter (+/- 869)
+test hnsw_search_k/5k_128d/10 ... bench:      154334 ns/iter (+/- 898)
+test hnsw_search_k/5k_128d/25 ... bench:      154237 ns/iter (+/- 540)
+test hnsw_search_k/5k_128d/50 ... bench:      154021 ns/iter (+/- 1556)
+test hnsw_search_k/5k_128d/100 ... bench:      153339 ns/iter (+/- 579)
+test hnsw_delete_then_search/1k_128d/10pct_deleted ... bench:      198457 ns/iter (+/- 6994)
+test hnsw_delete_then_search/1k_128d/25pct_deleted ... bench:      198001 ns/iter (+/- 6098)
+test hnsw_delete_then_search/1k_128d/50pct_deleted ... bench:      197911 ns/iter (+/- 10427)
+test hnsw_bulk_insert/128d/100 ... bench:     3578521 ns/iter (+/- 12520)
+test hnsw_bulk_insert/128d/500 ... bench:    37701477 ns/iter (+/- 176940)
+test hnsw_bulk_insert/128d/1000 ... bench:    97966866 ns/iter (+/- 378803)
+test hnsw_metrics/1k_128d/Cosine ... bench:       90850 ns/iter (+/- 259)
+test hnsw_metrics/1k_128d/Euclidean ... bench:       96661 ns/iter (+/- 254)
+test hnsw_metrics/1k_128d/DotProduct ... bench:       53631 ns/iter (+/- 285)
+```
+
+### sutra-sparql (query engine)
+```
+test sparql_parse/simple_select ... bench:         622 ns/iter (+/- 13)
+test sparql_parse/complex_with_filter ... bench:        1478 ns/iter (+/- 13)
+test sparql_parse/vector_similar ... bench:        1067 ns/iter (+/- 15)
+test sparql_chain_traversal/500_nodes/2_hops ... bench:       73442 ns/iter (+/- 455)
+test sparql_chain_traversal/1000_nodes/2_hops ... bench:       76497 ns/iter (+/- 664)
+test sparql_chain_traversal/500_nodes/3_hops ... bench:      145165 ns/iter (+/- 844)
+test sparql_chain_traversal/200_nodes/4_hops ... bench:      213580 ns/iter (+/- 39338)
+test sparql_star_join/1000_leaves/10_cats ... bench:      332787 ns/iter (+/- 28204)
+test sparql_star_join/5000_leaves/20_cats ... bench:      368900 ns/iter (+/- 5418)
+test sparql_star_join/1000_leaves/5_cats ... bench:      335013 ns/iter (+/- 3156)
+test sparql_vector_search/docs/100 ... bench:      241483 ns/iter (+/- 628)
+test sparql_vector_search/docs/500 ... bench:     3001436 ns/iter (+/- 14679)
+test sparql_vector_search/docs/1000 ... bench:     1540378 ns/iter (+/- 5445)
+```
+
