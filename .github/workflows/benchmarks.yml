@@ -106,11 +106,42 @@ jobs:
           git add benchmarks/HISTORY.md benchmarks/LATEST.md
           git diff --staged --quiet && exit 0
           git commit -m "Update benchmark results [skip ci]"
-          # Retry loop: pull --rebase then push, handles race with other runs
+          # Retry loop: handles race condition with concurrent benchmark runs.
+          # On rebase conflict (both runs appended to HISTORY.md), abort rebase,
+          # reset to remote, re-run the benchmark append, and try again.
           for i in 1 2 3; do
-            git pull --rebase origin main && git push origin main && exit 0
-            echo "Push attempt $i failed, retrying..."
-            sleep 5
+            if git pull --rebase origin main 2>/dev/null; then
+              git push origin main && exit 0
+            fi
+            echo "Push attempt $i failed (likely rebase conflict), resetting..."
+            git rebase --abort 2>/dev/null || true
+            git reset --hard origin/main
+            # Re-generate and commit (the benchmark data is still in /tmp)
+            bash -c 'source /dev/stdin' <<'REGEN'
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          {
+            echo ""
+            echo "## ${TIMESTAMP} — \`${COMMIT_SHA}\` ${COMMIT_MSG}"
+            echo ""
+            for SUITE in core hnsw sparql; do
+              case $SUITE in
+                core)   echo "### sutra-core (triple store)" ;;
+                hnsw)   echo "### sutra-hnsw (vector index)" ;;
+                sparql) echo "### sutra-sparql (query engine)" ;;
+              esac
+              echo '```'
+              grep "^test " /tmp/bench_${SUITE}.txt 2>/dev/null || echo "(no output)"
+              echo '```'
+              echo ""
+            done
+          } >> benchmarks/HISTORY.md
+          REGEN
+            git add benchmarks/HISTORY.md benchmarks/LATEST.md
+            git diff --staged --quiet && exit 0
+            git commit -m "Update benchmark results [skip ci]"
+            sleep 3
           done
           echo "Failed to push after 3 attempts"
           exit 1
