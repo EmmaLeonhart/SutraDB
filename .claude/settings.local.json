@@ -71,7 +71,11 @@
       "Bash(npx -p typescript tsc)",
       "Bash(npm install:*)",
       "Bash(npm run:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(cargo doc:*)",
+      "Bash(./target/release/sutra --help)",
+      "Bash(cargo fix:*)"
     ]
   }
 }
