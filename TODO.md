@@ -1,6 +1,6 @@
 # SutraDB — TODO
 
-**Status: 215 of 241 items complete (89%)**
+**Status: 219 of 241 items complete (91%)**
 
 ---
 
@@ -11,15 +11,14 @@ The Java SDK is the priority for v0.3.0. The semantic web community (Apache Jena
 ### Java SDK — Maven Central Ready
 The SDK is functionally complete (3 classes, ~400 LOC) but needs tests, OWL validation, and the new endpoints.
 
-- [ ] JUnit 5 test suite: unit tests with HTTP mocking for all SutraClient methods
+- [x] JUnit 5 test suite: 24 unit tests with HTTP mocking for all SutraClient methods
+- [x] Add `rebuildHnsw()` method (calls `POST /vectors/rebuild`)
+- [x] Add `healthReport()` method (calls `GET /health` + `GET /vectors/health`)
+- [x] Bump version to 0.3.0 (match main project)
 - [ ] Integration test: start SutraDB, insert triples, query, verify round-trip
 - [ ] OWL validation (match Python SDK: domain/range/subclass/disjoint/equivalent)
-- [ ] Add `rebuildHnsw()` method (calls `POST /vectors/rebuild`)
-- [ ] Add `healthReport()` method (calls `GET /health` + `GET /vectors/health`)
 - [ ] Connection retry logic with configurable timeouts
-- [ ] Bump version to 0.3.0 (match main project)
-- [ ] GPG signing configuration for Maven Central
-- [ ] Publish to Maven Central (Sonatype OSSRH)
+- [ ] Publish to Maven Central (Sonatype OSSRH — deferred, needs account setup)
 
 ---
 

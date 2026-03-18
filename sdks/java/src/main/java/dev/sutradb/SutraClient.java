@@ -180,6 +180,65 @@ public class SutraClient {
     }
 
     /**
+     * Compact and rebuild all HNSW indexes on the server.
+     *
+     * <p>This operation may take a long time depending on the number
+     * of indexed vectors. A 60-second timeout is used.</p>
+     *
+     * @return the server response as a JSONObject
+     * @throws SutraError if the rebuild fails
+     */
+    public JSONObject rebuildHnsw() {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint + "/vectors/rebuild"))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .timeout(Duration.ofSeconds(60))
+                .build();
+
+        HttpResponse<String> response = send(request);
+        requireSuccess(response);
+        return new JSONObject(response.body());
+    }
+
+    /**
+     * Get a combined health report including general health and vector index status.
+     *
+     * <p>Calls both {@code GET /health} and {@code GET /vectors/health},
+     * returning a single JSON object with keys {@code "healthy"} (boolean)
+     * and {@code "vectors"} (vector index details).</p>
+     *
+     * @return a combined health report as a JSONObject
+     * @throws SutraError if either health endpoint fails
+     */
+    public JSONObject healthReport() {
+        // Check general health
+        HttpRequest healthReq = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint + "/health"))
+                .GET()
+                .timeout(Duration.ofSeconds(5))
+                .build();
+
+        HttpResponse<String> healthResp = send(healthReq);
+        boolean healthy = healthResp.statusCode() >= 200 && healthResp.statusCode() < 300;
+
+        // Get vector health details
+        HttpRequest vectorReq = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint + "/vectors/health"))
+                .GET()
+                .header("Accept", "application/json")
+                .timeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpResponse<String> vectorResp = send(vectorReq);
+        requireSuccess(vectorResp);
+
+        JSONObject report = new JSONObject();
+        report.put("healthy", healthy);
+        report.put("vectors", new JSONObject(vectorResp.body()));
+        return report;
+    }
+
+    /**
      * Return the base endpoint URL this client is configured with.
      *
      * @return the endpoint URL

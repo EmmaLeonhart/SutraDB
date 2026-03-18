@@ -12,14 +12,14 @@ Requires Java 11+. Uses `java.net.http.HttpClient` (no external HTTP dependencie
 <dependency>
     <groupId>dev.sutradb</groupId>
     <artifactId>sutradb-java</artifactId>
-    <version>0.1.0</version>
+    <version>0.3.0</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```groovy
-implementation 'dev.sutradb:sutradb-java:0.1.0'
+implementation 'dev.sutradb:sutradb-java:0.3.0'
 ```
 
 ## Usage
@@ -48,6 +48,14 @@ client.declareVector("http://example.org/hasEmbedding", 1536);
 // Insert a vector
 double[] embedding = new double[1536];
 client.insertVector("http://example.org/hasEmbedding", "http://example.org/paper1", embedding);
+
+// Rebuild all HNSW indexes
+JSONObject rebuildResult = client.rebuildHnsw();
+
+// Get a combined health report (general health + vector index status)
+JSONObject report = client.healthReport();
+System.out.println("Healthy: " + report.getBoolean("healthy"));
+System.out.println("Vector indexes: " + report.getJSONObject("vectors"));
 ```
 
 ## License
