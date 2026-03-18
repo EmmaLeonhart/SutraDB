@@ -129,7 +129,7 @@ fn grid_graph(width: usize, height: usize) -> (TripleStore, TermDictionary) {
 #[test]
 fn traverse_2_hops_on_1000_node_chain() {
     let (store, dict) = chain_graph(1000);
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -147,7 +147,7 @@ fn traverse_2_hops_on_1000_node_chain() {
 #[test]
 fn traverse_3_hops_on_500_node_chain() {
     let (store, dict) = chain_graph(500);
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -166,7 +166,7 @@ fn traverse_3_hops_on_500_node_chain() {
 #[test]
 fn traverse_4_hops_on_200_node_chain() {
     let (store, dict) = chain_graph(200);
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -204,7 +204,7 @@ fn traverse_4_hops_on_200_node_chain() {
 #[test]
 fn join_1000_leaves_with_type_filter() {
     let (store, dict) = star_graph(1000, 10);
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
 
     // Join: center → leaf, leaf has type Leaf and category
     let q = parse(
@@ -224,7 +224,7 @@ fn join_1000_leaves_with_type_filter() {
 #[test]
 fn join_5000_leaves_filtered_by_category() {
     let (store, dict) = star_graph(5000, 20);
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
 
     let _cat_0 = dict.lookup("http://example.org/cat/0").unwrap();
 
@@ -246,7 +246,7 @@ fn join_5000_leaves_filtered_by_category() {
 #[test]
 fn self_join_on_shared_category() {
     let (store, dict) = star_graph(200, 5);
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
 
     // Self-join: find pairs of leaves that share the same category
     let q = parse(
@@ -280,7 +280,7 @@ fn self_join_on_shared_category() {
 #[test]
 fn grid_2hop_traversal_20x20() {
     let (store, dict) = grid_graph(20, 20);
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
 
     // 2-hop right traversal: find nodes 2 steps right
     let q = parse(

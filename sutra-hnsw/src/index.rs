@@ -782,7 +782,7 @@ mod tests {
 
     #[test]
     fn empty_index_search() {
-        let mut index = make_index(3);
+        let index = make_index(3);
         let result = index.search(&[1.0, 0.0, 0.0], 5, 10);
         assert!(matches!(result, Err(HnswError::EmptyIndex)));
     }

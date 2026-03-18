@@ -132,7 +132,7 @@ fn academic_graph() -> (TripleStore, TermDictionary, VectorRegistry) {
 
 #[test]
 fn vector_similar_finds_similar_papers() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // Search for papers similar to NLP embedding
     let q = parse(
@@ -162,7 +162,7 @@ fn vector_similar_finds_similar_papers() {
 
 #[test]
 fn vector_similar_with_high_threshold() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // High threshold — only very close matches
     // After normalization, NLP vectors all have cosine >0.99 with each other,
@@ -185,7 +185,7 @@ fn vector_similar_with_high_threshold() {
 
 #[test]
 fn vector_similar_with_graph_filter() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // Find similar papers that were published after 2018
     let mut q = parse(
@@ -207,7 +207,7 @@ fn vector_similar_with_graph_filter() {
 
 #[test]
 fn vector_similar_with_type_constraint() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // Combine vector search with rdf:type constraint
     let mut q = parse(
@@ -236,7 +236,7 @@ fn vector_similar_with_type_constraint() {
 
 #[test]
 fn vector_similar_scores_are_populated() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -261,7 +261,7 @@ fn vector_similar_scores_are_populated() {
 
 #[test]
 fn union_combines_branches() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -280,7 +280,7 @@ fn union_combines_branches() {
 
 #[test]
 fn union_with_different_variables() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -301,7 +301,7 @@ fn union_with_different_variables() {
 
 #[test]
 fn order_by_ascending() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -327,7 +327,7 @@ fn order_by_ascending() {
 
 #[test]
 fn order_by_descending() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -353,7 +353,7 @@ fn order_by_descending() {
 
 #[test]
 fn join_across_three_patterns() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // Find titles of papers that cite papers authored by Vaswani
     let mut q = parse(
@@ -375,7 +375,7 @@ fn join_across_three_patterns() {
 
 #[test]
 fn optional_with_vector() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // Get papers with optional author info, filtered by vector similarity
     let mut q = parse(
@@ -405,7 +405,7 @@ fn optional_with_vector() {
 
 #[test]
 fn distinct_eliminates_duplicates() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // Without DISTINCT
     let q1 = parse(
@@ -434,7 +434,7 @@ fn distinct_eliminates_duplicates() {
 
 #[test]
 fn limit_and_offset() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -452,7 +452,7 @@ fn limit_and_offset() {
 
 #[test]
 fn vector_similar_no_matches() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // Query vector that matches nothing at high threshold
     let q = parse(
@@ -472,7 +472,7 @@ fn vector_similar_no_matches() {
 fn empty_graph_query() {
     let store = TripleStore::new();
     let dict = TermDictionary::new();
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
 
     let q = parse("SELECT * WHERE { ?s ?p ?o }").unwrap();
     let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
@@ -481,7 +481,7 @@ fn empty_graph_query() {
 
 #[test]
 fn vector_similar_with_ef_hint() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -498,7 +498,7 @@ fn vector_similar_with_ef_hint() {
 
 #[test]
 fn vector_similar_with_k_hint() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     let q = parse(
         "PREFIX ex: <http://example.org/> \
@@ -517,7 +517,7 @@ fn vector_similar_with_k_hint() {
 
 #[test]
 fn standard_sparql_still_works() {
-    let (store, dict, mut vectors) = academic_graph();
+    let (store, dict, vectors) = academic_graph();
 
     // Standard SPARQL 1.1 query — no vector extensions
     let mut q = parse(
@@ -611,7 +611,7 @@ fn rdf_star_edge_with_vector() {
     )
     .unwrap();
 
-    let mut vectors = VectorRegistry::new();
+    let vectors = VectorRegistry::new();
     let result = execute_with_vectors(&q, &store, &dict, &vectors).unwrap();
     assert_eq!(result.rows.len(), 1);
     let conf = sutra_core::decode_inline_integer(*result.rows[0].get("conf").unwrap()).unwrap();

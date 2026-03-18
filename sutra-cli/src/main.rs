@@ -32,7 +32,7 @@ enum Commands {
         memory_only: bool,
 
         /// Simple passcode authentication. When set, all requests
-        /// (except /health) require Authorization: Bearer <passcode>.
+        /// (except /health) require `Authorization: Bearer <passcode>`.
         #[arg(long)]
         passcode: Option<String>,
 

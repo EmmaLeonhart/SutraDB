@@ -24,6 +24,10 @@ pub enum CoreError {
     /// Sled storage error.
     #[error("sled error: {0}")]
     Sled(#[from] sled::Error),
+
+    /// A stored byte sequence had an unexpected length (corrupt data).
+    #[error("corrupt stored value: expected {expected} bytes, got {actual}")]
+    CorruptValue { expected: usize, actual: usize },
 }
 
 pub type Result<T> = std::result::Result<T, CoreError>;

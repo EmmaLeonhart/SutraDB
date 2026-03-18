@@ -162,7 +162,7 @@ pub struct HnswHealthMetrics {
 impl HnswHealthMetrics {
     /// Format as AI-readable structured text with context annotations.
     ///
-    /// Each metric line includes [CONTEXT] showing ideal vs concerning ranges.
+    /// Each metric line includes \[CONTEXT\] showing ideal vs concerning ranges.
     /// AI agents can parse this to determine which indexes need maintenance.
     pub fn to_ai_text(&self) -> String {
         let mut lines = Vec::new();

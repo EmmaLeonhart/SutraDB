@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn search_undeclared_predicate_errors() {
-        let mut reg = VectorRegistry::new();
+        let reg = VectorRegistry::new();
         let result = reg.search(PRED_EMBEDDING, &[1.0, 0.0, 0.0], 1, 10);
         assert!(matches!(
             result,

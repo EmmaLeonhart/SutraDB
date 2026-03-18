@@ -180,7 +180,7 @@ impl PersistentStore {
     /// Intern a string term, returning its ID. If already interned, returns existing ID.
     pub fn intern(&self, term: &str) -> Result<TermId> {
         if let Some(id_bytes) = self.terms_forward.get(term.as_bytes())? {
-            return Ok(u64::from_le_bytes(id_bytes.as_ref().try_into().unwrap()));
+            return bytes_to_u64(id_bytes.as_ref());
         }
 
         // Atomically increment the counter
@@ -202,9 +202,7 @@ impl PersistentStore {
     /// Look up an ID by its string term.
     pub fn lookup(&self, term: &str) -> Result<Option<TermId>> {
         match self.terms_forward.get(term.as_bytes())? {
-            Some(id_bytes) => Ok(Some(u64::from_le_bytes(
-                id_bytes.as_ref().try_into().unwrap(),
-            ))),
+            Some(id_bytes) => Ok(Some(bytes_to_u64(id_bytes.as_ref())?)),
             None => Ok(None),
         }
     }
@@ -215,7 +213,10 @@ impl PersistentStore {
         let mut count = 0;
         for (key_bytes, val_bytes) in self.terms_forward.iter().flatten() {
             let term = String::from_utf8_lossy(&key_bytes).into_owned();
-            let id = u64::from_le_bytes(val_bytes.as_ref().try_into().unwrap());
+            let id = match bytes_to_u64(val_bytes.as_ref()) {
+                Ok(id) => id,
+                Err(_) => continue, // skip corrupt entries
+            };
             dict.insert_with_id(&term, id);
             count += 1;
         }
@@ -276,12 +277,21 @@ impl PersistentStore {
         let old = self
             .meta
             .fetch_and_update(NEXT_ID_KEY, |old| {
-                let current = u64::from_le_bytes(old.unwrap().try_into().unwrap());
+                let bytes: [u8; 8] = old?.try_into().ok()?;
+                let current = u64::from_le_bytes(bytes);
                 Some((current + 1).to_le_bytes().to_vec())
             })?
-            .unwrap();
-        Ok(u64::from_le_bytes(old.as_ref().try_into().unwrap()))
+            .ok_or(CoreError::CorruptValue { expected: 8, actual: 0 })?;
+        bytes_to_u64(old.as_ref())
     }
+}
+
+/// Convert a byte slice to a u64 term ID, returning an error on length mismatch.
+fn bytes_to_u64(bytes: &[u8]) -> Result<u64> {
+    let arr: [u8; 8] = bytes
+        .try_into()
+        .map_err(|_| CoreError::CorruptValue { expected: 8, actual: bytes.len() })?;
+    Ok(u64::from_le_bytes(arr))
 }
 
 /// Build a 24-byte prefix range for a single leading u64.
