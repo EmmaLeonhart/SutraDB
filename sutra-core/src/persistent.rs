@@ -130,9 +130,9 @@ impl PersistentStore {
                 Ok(existed)
             });
         let was_present = was_present.map_err(|e| match e {
-            sled::transaction::TransactionError::Abort(()) => CoreError::Storage(
-                std::io::Error::other("transaction aborted"),
-            ),
+            sled::transaction::TransactionError::Abort(()) => {
+                CoreError::Storage(std::io::Error::other("transaction aborted"))
+            }
             sled::transaction::TransactionError::Storage(e) => CoreError::Sled(e),
         })?;
 
