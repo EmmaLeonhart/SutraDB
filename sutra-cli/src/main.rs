@@ -165,6 +165,26 @@ async fn main() -> anyhow::Result<()> {
                 tracing::info!("Opening persistent store at {}", data_dir);
                 let ps = sutra_core::PersistentStore::open(&data_dir)?;
 
+                // Verify index consistency on startup and repair if needed
+                if !ps.verify_consistency() {
+                    tracing::warn!(
+                        "Index inconsistency detected (possible prior crash). Repairing..."
+                    );
+                    match ps.repair() {
+                        Ok(count) => {
+                            tracing::info!(
+                                "Repair complete: rebuilt {} triples in secondary indexes",
+                                count
+                            );
+                            ps.flush()?;
+                        }
+                        Err(e) => {
+                            tracing::error!("Repair failed: {}. Database may be corrupt.", e);
+                            return Err(e.into());
+                        }
+                    }
+                }
+
                 let mut dict = sutra_core::TermDictionary::new();
                 let mut store = sutra_core::TripleStore::new();
 
@@ -224,7 +244,7 @@ async fn main() -> anyhow::Result<()> {
                     store: RwLock::new(store),
                     dict: RwLock::new(dict),
                     vectors: RwLock::new(vectors),
-                    persistent: Some(ps),
+                    persistent: Some(RwLock::new(ps)),
                     passcode: passcode.clone(),
                     rate_limit_per_min: 0,
                     rate_counter: std::sync::atomic::AtomicU64::new(0),
@@ -660,6 +680,15 @@ SutraDB Agent Installer v0.1.0
 
                 // Actually start the server
                 let ps2 = sutra_core::PersistentStore::open(&data_dir)?;
+
+                // Verify index consistency on startup
+                if !ps2.verify_consistency() {
+                    println!("[WARN] Index inconsistency detected. Repairing...");
+                    let count = ps2.repair()?;
+                    ps2.flush()?;
+                    println!("[OK] Repair complete: rebuilt {} triples", count);
+                }
+
                 let mut dict = sutra_core::TermDictionary::new();
                 let mut store = sutra_core::TripleStore::new();
 
@@ -720,7 +749,7 @@ SutraDB Agent Installer v0.1.0
                     store: RwLock::new(store),
                     dict: RwLock::new(dict),
                     vectors: RwLock::new(vectors),
-                    persistent: Some(ps2),
+                    persistent: Some(RwLock::new(ps2)),
                     passcode,
                     rate_limit_per_min: 0,
                     rate_counter: std::sync::atomic::AtomicU64::new(0),

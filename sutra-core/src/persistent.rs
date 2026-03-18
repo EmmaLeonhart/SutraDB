@@ -10,6 +10,8 @@
 
 use std::path::Path;
 
+use sled::Transactional;
+
 use crate::error::{CoreError, Result};
 use crate::id::TermId;
 use crate::triple::Triple;
@@ -88,27 +90,52 @@ impl PersistentStore {
 
     /// Insert a triple atomically across all three indexes.
     /// Returns `Err(DuplicateTriple)` if already present.
-    /// sled's LSM-tree provides crash safety per-tree; we insert
-    /// to all three indexes and flush for durability.
+    /// Uses sled's multi-tree transaction to ensure SPO/POS/OSP are
+    /// always consistent — either all three are written or none are.
     pub fn insert(&self, triple: Triple) -> Result<()> {
         let spo_key = triple.spo_key();
-        if self.spo.contains_key(spo_key)? {
-            return Err(CoreError::DuplicateTriple);
-        }
-        // Insert to all three indexes
-        self.spo.insert(spo_key, &[])?;
-        self.pos.insert(triple.pos_key(), &[])?;
-        self.osp.insert(triple.osp_key(), &[])?;
-        Ok(())
+        let pos_key = triple.pos_key();
+        let osp_key = triple.osp_key();
+
+        (&self.spo, &self.pos, &self.osp)
+            .transaction(|(spo, pos, osp)| {
+                if spo.get(spo_key)?.is_some() {
+                    return sled::transaction::abort(());
+                }
+                spo.insert(spo_key.as_ref(), &[] as &[u8])?;
+                pos.insert(pos_key.as_ref(), &[] as &[u8])?;
+                osp.insert(osp_key.as_ref(), &[] as &[u8])?;
+                Ok(())
+            })
+            .map_err(|e| match e {
+                sled::transaction::TransactionError::Abort(()) => CoreError::DuplicateTriple,
+                sled::transaction::TransactionError::Storage(e) => CoreError::Sled(e),
+            })
     }
 
-    /// Remove a triple. Returns true if it was present.
+    /// Remove a triple atomically across all three indexes.
+    /// Returns true if it was present.
     pub fn remove(&self, triple: &Triple) -> Result<bool> {
-        let was_present = self.spo.remove(triple.spo_key())?.is_some();
-        if was_present {
-            self.pos.remove(triple.pos_key())?;
-            self.osp.remove(triple.osp_key())?;
-        }
+        let spo_key = triple.spo_key();
+        let pos_key = triple.pos_key();
+        let osp_key = triple.osp_key();
+
+        let was_present: std::result::Result<bool, sled::transaction::TransactionError<()>> =
+            (&self.spo, &self.pos, &self.osp).transaction(|(spo, pos, osp)| {
+                let existed = spo.remove(spo_key.as_ref())?.is_some();
+                if existed {
+                    pos.remove(pos_key.as_ref())?;
+                    osp.remove(osp_key.as_ref())?;
+                }
+                Ok(existed)
+            });
+        let was_present = was_present.map_err(|e| match e {
+            sled::transaction::TransactionError::Abort(()) => CoreError::Storage(
+                std::io::Error::other("transaction aborted"),
+            ),
+            sled::transaction::TransactionError::Storage(e) => CoreError::Sled(e),
+        })?;
+
         Ok(was_present)
     }
 

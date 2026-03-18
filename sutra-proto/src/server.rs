@@ -38,10 +38,10 @@ pub struct AppState {
     pub store: RwLock<TripleStore>,
     pub dict: RwLock<TermDictionary>,
     pub vectors: RwLock<VectorRegistry>,
-    /// Optional persistent backing store. When present, all mutations
-    /// are written through to disk. On startup, in-memory stores are
-    /// hydrated from the persistent store.
-    pub persistent: Option<PersistentStore>,
+    /// Optional persistent backing store. Protected by RwLock to serialize
+    /// concurrent writes. When present, all mutations are written through
+    /// to disk atomically and flushed before returning success.
+    pub persistent: Option<RwLock<PersistentStore>>,
     /// Optional passcode for simple authentication (server mode only).
     /// When set, all requests (except /health) must include
     /// `Authorization: Bearer <passcode>` header.
@@ -494,21 +494,29 @@ fn execute_insert_data(
                 }
             }
 
-            if store
-                .insert(sutra_core::Triple::new(s_id, p_id, o_id))
-                .is_ok()
-            {
-                if let Some(ref ps) = state.persistent {
-                    let _ = ps.insert(sutra_core::Triple::new(s_id, p_id, o_id));
+            let triple = sutra_core::Triple::new(s_id, p_id, o_id);
+            if store.insert(triple).is_ok() {
+                if let Some(ref ps_lock) = state.persistent {
+                    let ps = ps_lock
+                        .write()
+                        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+                    ps.insert(triple)
+                        .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
                 }
                 inserted += 1;
             }
         }
     }
 
-    let mut row = std::collections::HashMap::new();
-    if let Some(id) = sutra_core::inline_integer(inserted) {
-        row.insert("mutationCount".to_string(), id);
+    // Flush persistent store to ensure durability
+    if let Some(ref ps_lock) = state.persistent {
+        if inserted > 0 {
+            let ps = ps_lock
+                .read()
+                .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+            ps.flush()
+                .map_err(|e| ProtoError::BadRequest(format!("flush: {}", e)))?;
+        }
     }
 
     Ok(Json(SparqlResults {
@@ -551,12 +559,28 @@ fn execute_delete_data(
             let p_id = resolve_term_to_id(predicate, &mut dict, &query.prefixes)?;
             let o_id = resolve_term_to_id(object, &mut dict, &query.prefixes)?;
 
-            if store.remove(&sutra_core::Triple::new(s_id, p_id, o_id)) {
-                if let Some(ref ps) = state.persistent {
-                    let _ = ps.remove(&sutra_core::Triple::new(s_id, p_id, o_id));
+            let triple = sutra_core::Triple::new(s_id, p_id, o_id);
+            if store.remove(&triple) {
+                if let Some(ref ps_lock) = state.persistent {
+                    let ps = ps_lock
+                        .write()
+                        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+                    ps.remove(&triple)
+                        .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
                 }
                 deleted += 1;
             }
+        }
+    }
+
+    // Flush persistent store to ensure durability
+    if let Some(ref ps_lock) = state.persistent {
+        if deleted > 0 {
+            let ps = ps_lock
+                .read()
+                .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+            ps.flush()
+                .map_err(|e| ProtoError::BadRequest(format!("flush: {}", e)))?;
         }
     }
 
@@ -848,15 +872,33 @@ async fn insert_triples(
         match store.insert(triple) {
             Ok(()) => {
                 // Write through to persistent store
-                if let Some(ref ps) = state.persistent {
-                    let _ = ps.intern(&subj_str);
-                    let _ = ps.intern(&pred_str);
-                    let _ = ps.intern(&obj_str);
-                    let _ = ps.insert(triple);
+                if let Some(ref ps_lock) = state.persistent {
+                    let ps = ps_lock
+                        .write()
+                        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+                    ps.intern(&subj_str)
+                        .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
+                    ps.intern(&pred_str)
+                        .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
+                    ps.intern(&obj_str)
+                        .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
+                    ps.insert(triple)
+                        .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
                 }
                 inserted += 1;
             }
             Err(e) => errors.push(format!("line {}: {}", line_no + 1, e)),
+        }
+    }
+
+    // Flush persistent store to ensure durability
+    if let Some(ref ps_lock) = state.persistent {
+        if inserted > 0 {
+            let ps = ps_lock
+                .read()
+                .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+            ps.flush()
+                .map_err(|e| ProtoError::BadRequest(format!("flush: {}", e)))?;
         }
     }
 
@@ -998,6 +1040,10 @@ async fn insert_vector(
     State(state): State<Arc<AppState>>,
     Json(req): Json<InsertVectorRequest>,
 ) -> Result<Json<InsertVectorResponse>, ProtoError> {
+    // Build the literal string before acquiring locks
+    let vec_str: Vec<String> = req.vector.iter().map(|f| format!("{:.6}", f)).collect();
+    let literal = format!("\"{}\"^^<http://sutra.dev/f32vec>", vec_str.join(" "));
+
     let (predicate_id, subject_id, object_id) = {
         let mut dict = state
             .dict
@@ -1005,42 +1051,48 @@ async fn insert_vector(
             .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
         let p = dict.intern(&req.predicate);
         let s = dict.intern(&req.subject);
-        // The vector literal is the object — it's a primitive value in the graph
-        let vec_str: Vec<String> = req.vector.iter().map(|f| format!("{:.6}", f)).collect();
-        let literal = format!("\"{}\"^^<http://sutra.dev/f32vec>", vec_str.join(" "));
         let o = dict.intern(&literal);
         (p, s, o)
     };
 
-    // Insert the triple: <subject> <predicate> <vector_literal>
+    // Hold both store and vectors locks together to ensure atomicity:
+    // a reader will never see a triple without its HNSW entry or vice versa.
     {
         let mut store = state
             .store
             .write()
             .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
+        let mut vectors = state
+            .vectors
+            .write()
+            .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
+
         let triple = sutra_core::Triple::new(subject_id, predicate_id, object_id);
         // Ignore duplicate triple errors (allows multiple subjects to point to same vector)
         let _ = store.insert(triple);
 
-        // Write through to persistent store
-        if let Some(ref ps) = state.persistent {
-            let vec_str: Vec<String> = req.vector.iter().map(|f| format!("{:.6}", f)).collect();
-            let literal = format!("\"{}\"^^<http://sutra.dev/f32vec>", vec_str.join(" "));
-            let _ = ps.intern(&req.predicate);
-            let _ = ps.intern(&req.subject);
-            let _ = ps.intern(&literal);
-            let _ = ps.insert(triple);
+        // Insert into HNSW index, keyed by the object_id (the vector literal's identity).
+        // If this vector was already inserted (another subject pointing to same vector),
+        // the HNSW insert may error — that's fine, the vector is already indexed.
+        let _ = vectors.insert(predicate_id, req.vector, object_id);
+
+        // Write through to persistent store and flush for durability
+        if let Some(ref ps_lock) = state.persistent {
+            let ps = ps_lock
+                .write()
+                .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+            ps.intern(&req.predicate)
+                .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
+            ps.intern(&req.subject)
+                .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
+            ps.intern(&literal)
+                .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
+            ps.insert(triple)
+                .map_err(|e| ProtoError::BadRequest(format!("persist: {}", e)))?;
+            ps.flush()
+                .map_err(|e| ProtoError::BadRequest(format!("flush: {}", e)))?;
         }
     }
-
-    // Insert into HNSW index, keyed by the object_id (the vector literal's identity).
-    // If this vector was already inserted (another subject pointing to same vector),
-    // the HNSW insert may error — that's fine, the vector is already indexed.
-    let mut vectors = state
-        .vectors
-        .write()
-        .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
-    let _ = vectors.insert(predicate_id, req.vector, object_id);
 
     Ok(Json(InsertVectorResponse {
         status: "ok".to_string(),
