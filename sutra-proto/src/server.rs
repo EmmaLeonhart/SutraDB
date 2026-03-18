@@ -242,7 +242,6 @@ fn sparql_delimited(
     content_type: &'static str,
 ) -> Result<impl IntoResponse, ProtoError> {
     let mut query = sutra_sparql::parse(query_str)?;
-    sutra_sparql::optimize(&mut query);
 
     let store = state
         .store
@@ -256,6 +255,10 @@ fn sparql_delimited(
         .vectors
         .read()
         .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+
+    // Optimize with full cost model: store cardinality + dictionary IRI resolution
+    sutra_sparql::optimize_full(&mut query, Some(&store), Some(&dict));
+
     let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &vectors)?;
 
     let mut output = String::new();
@@ -312,7 +315,6 @@ async fn sparql_xml_post(
 
 fn sparql_xml(query_str: &str, state: &AppState) -> Result<impl IntoResponse, ProtoError> {
     let mut query = sutra_sparql::parse(query_str)?;
-    sutra_sparql::optimize(&mut query);
 
     let store = state
         .store
@@ -326,6 +328,9 @@ fn sparql_xml(query_str: &str, state: &AppState) -> Result<impl IntoResponse, Pr
         .vectors
         .read()
         .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+
+    sutra_sparql::optimize_full(&mut query, Some(&store), Some(&dict));
+
     let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &vectors)?;
 
     let mut xml = String::from(
@@ -385,8 +390,6 @@ fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResult
         return execute_delete_data(&query, state);
     }
 
-    sutra_sparql::optimize(&mut query);
-
     // Read locks: concurrent SPARQL queries don't block each other
     let store = state
         .store
@@ -400,6 +403,10 @@ fn execute_sparql(query_str: &str, state: &AppState) -> Result<Json<SparqlResult
         .vectors
         .read()
         .map_err(|e| ProtoError::BadRequest(format!("lock poisoned: {}", e)))?;
+
+    // Optimize with full cost model: store cardinality + dictionary IRI resolution
+    sutra_sparql::optimize_full(&mut query, Some(&store), Some(&dict));
+
     let result = sutra_sparql::execute_with_vectors(&query, &store, &dict, &vectors)?;
 
     let bindings: Vec<serde_json::Value> = result

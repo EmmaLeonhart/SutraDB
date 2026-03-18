@@ -625,20 +625,28 @@ SutraDB Agent Installer v0.1.0
             println!("[OK] Notes written to {}", notes_file);
 
             if launch_studio {
-                println!("Launching Sutra Studio...");
-                #[cfg(target_os = "windows")]
-                {
-                    let _ = std::process::Command::new("cmd")
+                // Check if sutra-studio directory exists relative to the binary
+                let studio_dir = std::path::Path::new("sutra-studio");
+                if !studio_dir.exists() {
+                    eprintln!("[WARN] sutra-studio/ directory not found in current directory.");
+                    eprintln!("       Run install-agent from the SutraDB repository root,");
+                    eprintln!("       or launch Sutra Studio manually: cd sutra-studio && flutter run");
+                } else {
+                    println!("Launching Sutra Studio...");
+                    #[cfg(target_os = "windows")]
+                    let result = std::process::Command::new("cmd")
                         .args(["/c", "start", "", "flutter", "run", "-d", "windows"])
-                        .current_dir("sutra-studio")
+                        .current_dir(studio_dir)
                         .spawn();
-                }
-                #[cfg(not(target_os = "windows"))]
-                {
-                    let _ = std::process::Command::new("flutter")
+                    #[cfg(not(target_os = "windows"))]
+                    let result = std::process::Command::new("flutter")
                         .args(["run", "-d", "linux"])
-                        .current_dir("sutra-studio")
+                        .current_dir(studio_dir)
                         .spawn();
+                    if let Err(e) = result {
+                        eprintln!("[WARN] Could not launch Sutra Studio: {}", e);
+                        eprintln!("       Ensure Flutter is installed: https://flutter.dev/docs/get-started/install");
+                    }
                 }
             }
 
@@ -652,15 +660,61 @@ SutraDB Agent Installer v0.1.0
                 let ps2 = sutra_core::PersistentStore::open(&data_dir)?;
                 let mut dict = sutra_core::TermDictionary::new();
                 let mut store = sutra_core::TripleStore::new();
-                ps2.load_terms_into(&mut dict);
+
+                let term_count = ps2.load_terms_into(&mut dict);
+                let mut triple_count = 0usize;
                 for triple in ps2.iter() {
                     let _ = store.insert(triple);
+                    triple_count += 1;
+                }
+                if triple_count > 0 {
+                    println!("[OK] Loaded {} terms, {} triples from disk", term_count, triple_count);
+                }
+
+                // Rebuild HNSW indexes from stored vector triples
+                let mut vectors = sutra_hnsw::VectorRegistry::new();
+                let mut vec_count = 0usize;
+                let f32vec_suffix = "^^<http://sutra.dev/f32vec>";
+                for triple in store.iter() {
+                    if let Some(obj_str) = dict.resolve(triple.object) {
+                        if obj_str.contains(f32vec_suffix) {
+                            if let Some(start) = obj_str.find('"') {
+                                let end = obj_str[start + 1..].find('"').map(|p| p + start + 1);
+                                if let Some(end) = end {
+                                    let vec_str = &obj_str[start + 1..end];
+                                    let floats: Vec<f32> = vec_str
+                                        .split_whitespace()
+                                        .filter_map(|s| s.parse::<f32>().ok())
+                                        .collect();
+                                    if !floats.is_empty() {
+                                        let dims = floats.len();
+                                        if !vectors.has_index(triple.predicate) {
+                                            let config = sutra_hnsw::VectorPredicateConfig {
+                                                predicate_id: triple.predicate,
+                                                dimensions: dims,
+                                                m: 16,
+                                                ef_construction: 200,
+                                                metric: sutra_hnsw::DistanceMetric::Cosine,
+                                            };
+                                            let _ = vectors.declare(config);
+                                        }
+                                        let _ =
+                                            vectors.insert(triple.predicate, floats, triple.object);
+                                        vec_count += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if vec_count > 0 {
+                    println!("[OK] Rebuilt {} vectors in HNSW indexes", vec_count);
                 }
 
                 let state = Arc::new(sutra_proto::AppState {
                     store: RwLock::new(store),
                     dict: RwLock::new(dict),
-                    vectors: RwLock::new(sutra_hnsw::VectorRegistry::new()),
+                    vectors: RwLock::new(vectors),
                     persistent: Some(ps2),
                     passcode,
                     rate_limit_per_min: 0,
@@ -669,7 +723,7 @@ SutraDB Agent Installer v0.1.0
 
                 let app = sutra_proto::router(state);
                 let addr = format!("0.0.0.0:{}", port);
-                tracing::info!("SutraDB listening on {}", addr);
+                println!("[OK] SutraDB listening on http://{}", addr);
                 let listener = tokio::net::TcpListener::bind(&addr).await?;
                 axum::serve(listener, app).await?;
             }
