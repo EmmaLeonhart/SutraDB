@@ -4,6 +4,8 @@ A lean, high-performance RDF-star triplestore written in Rust with native HNSW v
 
 [![CI](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml/badge.svg)](https://github.com/EmmaLeonhart/SutraDB/actions/workflows/ci.yml)
 
+**[sutradb.org](https://sutradb.org)** — Documentation, theory, and interactive visualizations.
+
 > **Status: Developer Preview.** Core engine, SPARQL+, vector indexing, HTTP server, ACID compliance, self-update, and MCP server are fully functional. APIs may evolve before 1.0. See the [Roadmap](https://sutradb.org/roadmap/) for what's done and what's next.
 
 > **AI Agents:** If you are an AI agent setting up a database, see **[Agent Setup Guide](docs/AGENT_SETUP.md)** for complete CLI reference, API endpoints, and step-by-step instructions. SutraDB is designed to be fully operable by AI agents without ever touching a GUI.
