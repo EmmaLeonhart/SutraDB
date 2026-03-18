@@ -1,6 +1,6 @@
 # SutraDB — TODO
 
-**Status: 196 of 223 items complete (88%)**
+**Status: 202 of 223 items complete (91%)**
 
 ---
 
@@ -257,6 +257,14 @@ Deferred until paying customers.
 - [x] 439 Wikidata BFS import (16K triples), 435 Japanese embeddings
 - [x] Benchmark suite: <1ms queries, 20K inserts/sec, 40ms full export
 - [x] Storage benchmark baseline (sled), IRI encoding evaluation
+
+### ACID Compliance
+- [x] Atomicity: sled multi-tree transactions for SPO/POS/OSP insert and remove
+- [x] Consistency: startup verification (verify_consistency + repair) on persistent store open
+- [x] Isolation: PersistentStore wrapped in RwLock; vector inserts hold store+vectors locks together
+- [x] Durability: explicit flush() after all server mutation endpoints before returning success
+- [x] Error propagation: all persistent write errors reported to caller (no silent `let _ =`)
+- [x] GSP DELETE clears persistent store and flushes
 
 ### Documentation
 - [x] Agent setup guide, SDK publishing/accounts guides, session notes

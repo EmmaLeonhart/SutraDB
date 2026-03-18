@@ -130,9 +130,9 @@ impl PersistentStore {
                 Ok(existed)
             });
         let was_present = was_present.map_err(|e| match e {
-            sled::transaction::TransactionError::Abort(()) => CoreError::Storage(
-                std::io::Error::other("transaction aborted"),
-            ),
+            sled::transaction::TransactionError::Abort(()) => {
+                CoreError::Storage(std::io::Error::other("transaction aborted"))
+            }
             sled::transaction::TransactionError::Storage(e) => CoreError::Sled(e),
         })?;
 
@@ -259,6 +259,15 @@ impl PersistentStore {
             .filter_map(|r| r.ok())
             .map(|(k, _)| Triple::from_pos_key(&key_to_array(&k)))
             .collect()
+    }
+
+    /// Clear all triples from the store (all three indexes).
+    /// Does not clear the term dictionary.
+    pub fn clear(&self) -> Result<()> {
+        self.spo.clear()?;
+        self.pos.clear()?;
+        self.osp.clear()?;
+        Ok(())
     }
 
     /// Verify index consistency: check that SPO/POS/OSP have the same count.
