@@ -1,5 +1,7 @@
 //! SutraDB CLI: server, query, import, export.
 
+mod mcp;
+
 use std::io::{BufRead, Write};
 use std::sync::{Arc, RwLock};
 
@@ -142,6 +144,25 @@ enum Commands {
         #[arg(long)]
         launch_studio: bool,
     },
+    /// Start the MCP (Model Context Protocol) server for AI agents.
+    ///
+    /// Runs a JSON-RPC server over stdin/stdout that exposes database
+    /// maintenance and query tools to AI agents (Claude, GPT, etc.).
+    /// Supports both server mode (HTTP) and serverless mode (direct .sdb).
+    Mcp {
+        /// SutraDB HTTP endpoint (server mode).
+        #[arg(long, default_value = "http://localhost:3030")]
+        url: String,
+
+        /// Data directory for serverless mode (direct .sdb access).
+        /// When set, ignores --url and operates directly on disk.
+        #[arg(long)]
+        data_dir: Option<String>,
+
+        /// Passcode for authenticated server connections.
+        #[arg(long)]
+        passcode: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -152,6 +173,13 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Update { check } => {
             return handle_update(check).await;
+        }
+        Commands::Mcp {
+            url,
+            data_dir,
+            passcode,
+        } => {
+            return mcp::run_mcp_server(url, data_dir, passcode).await;
         }
         Commands::Serve {
             port,

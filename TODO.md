@@ -1,6 +1,6 @@
 # SutraDB — TODO
 
-**Status: 219 of 241 items complete (91%)**
+**Status: 220 of 241 items complete (91%)**
 
 ---
 
@@ -203,6 +203,11 @@ Deferred until paying customers.
 - [x] Durability: explicit flush() after all server mutation endpoints before returning success
 - [x] Error propagation: all persistent write errors reported to caller (no silent `let _ =`)
 - [x] GSP DELETE clears persistent store and flushes
+
+### Native MCP Server
+- [x] `sutra mcp` command: native Rust MCP server built into the binary (no Python needed)
+- [x] Dual-mode: `--url` for server mode, `--data-dir` for serverless mode
+- [x] 8 tools: health_report, rebuild_hnsw, verify_consistency, database_info, sparql_query, insert_triples, backup, vector_search
 
 ### Documentation
 - [x] Agent setup guide, SDK publishing/accounts guides, session notes
