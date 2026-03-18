@@ -1318,11 +1318,7 @@ fn mine_depth2_paths(store: &TripleStore) -> Vec<SubgraphPattern> {
         for path in all_paths {
             let count = roots
                 .iter()
-                .filter(|&&root| {
-                    node_paths
-                        .get(&root)
-                        .is_some_and(|ps| ps.contains(path))
-                })
+                .filter(|&&root| node_paths.get(&root).is_some_and(|ps| ps.contains(path)))
                 .count();
             let cov = count as f64 / roots.len() as f64;
             path_coverage.push((path.clone(), cov));
@@ -1471,13 +1467,7 @@ fn materialize_subgraph_table(
         included.iter().map(|&i| pattern.paths[i].clone()).collect();
     let included_coverage: Vec<f64> = included
         .iter()
-        .map(|&i| {
-            path_coverage
-                .iter()
-                .find(|(idx, _)| *idx == i)
-                .unwrap()
-                .1
-        })
+        .map(|&i| path_coverage.iter().find(|(idx, _)| *idx == i).unwrap().1)
         .collect();
 
     // Sort root nodes by first column value for tighter zonemaps.
@@ -2223,19 +2213,37 @@ mod tests {
             let pop = 700 + i;
 
             // Country triples
-            store.insert(Triple::new(country, rdf_type, country_type)).unwrap();
-            store.insert(Triple::new(country, has_name, country_name)).unwrap();
-            store.insert(Triple::new(country, has_population, pop)).unwrap();
-            store.insert(Triple::new(country, has_capital, capital)).unwrap();
+            store
+                .insert(Triple::new(country, rdf_type, country_type))
+                .unwrap();
+            store
+                .insert(Triple::new(country, has_name, country_name))
+                .unwrap();
+            store
+                .insert(Triple::new(country, has_population, pop))
+                .unwrap();
+            store
+                .insert(Triple::new(country, has_capital, capital))
+                .unwrap();
 
             // Capital triples
-            store.insert(Triple::new(capital, rdf_type, city_type)).unwrap();
-            store.insert(Triple::new(capital, has_name, capital_name)).unwrap();
-            store.insert(Triple::new(capital, has_mayor, mayor)).unwrap();
+            store
+                .insert(Triple::new(capital, rdf_type, city_type))
+                .unwrap();
+            store
+                .insert(Triple::new(capital, has_name, capital_name))
+                .unwrap();
+            store
+                .insert(Triple::new(capital, has_mayor, mayor))
+                .unwrap();
 
             // Mayor triples
-            store.insert(Triple::new(mayor, rdf_type, person_type)).unwrap();
-            store.insert(Triple::new(mayor, has_name, mayor_name)).unwrap();
+            store
+                .insert(Triple::new(mayor, rdf_type, person_type))
+                .unwrap();
+            store
+                .insert(Triple::new(mayor, has_name, mayor_name))
+                .unwrap();
         }
 
         store
@@ -2265,8 +2273,12 @@ mod tests {
         for i in 0..60u64 {
             let student = 100 + i;
             let univ = 50 + (i % 3);
-            store.insert(Triple::new(student, rdf_type, student_type)).unwrap();
-            store.insert(Triple::new(student, has_name, 200 + i)).unwrap();
+            store
+                .insert(Triple::new(student, rdf_type, student_type))
+                .unwrap();
+            store
+                .insert(Triple::new(student, has_name, 200 + i))
+                .unwrap();
             store.insert(Triple::new(student, attends, univ)).unwrap();
         }
 
@@ -2378,9 +2390,9 @@ mod tests {
         );
 
         // At least one pattern should have roots among the country nodes (100-149).
-        let has_country_pattern = patterns.iter().any(|p| {
-            p.root_nodes.iter().any(|&r| (100..150).contains(&r))
-        });
+        let has_country_pattern = patterns
+            .iter()
+            .any(|p| p.root_nodes.iter().any(|&r| (100..150).contains(&r)));
         assert!(
             has_country_pattern,
             "Should find pattern rooted at country nodes"
@@ -2479,10 +2491,7 @@ mod tests {
             // If it wasn't filtered, the fan-in must have been below threshold
             // (possible if the pattern decomposed differently).
             for table in &student_tables {
-                assert!(
-                    table.total_rows > 0,
-                    "If materialized, should have rows"
-                );
+                assert!(table.total_rows > 0, "If materialized, should have rows");
             }
         }
     }
