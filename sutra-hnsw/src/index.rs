@@ -332,6 +332,78 @@ impl HnswIndex {
         Ok(results)
     }
 
+    /// Search with an explicit distance metric override.
+    ///
+    /// The HNSW graph traversal uses the index's native metric (since the
+    /// neighbor links were built with it), but the final scoring and ranking
+    /// uses the requested metric. This allows queries to choose how similarity
+    /// is measured at search time without rebuilding the index.
+    pub fn search_with_metric(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef_search: usize,
+        metric: DistanceMetric,
+    ) -> Result<Vec<SearchResult>> {
+        if query.len() != self.config.dimensions {
+            return Err(HnswError::DimensionMismatch {
+                expected: self.config.dimensions,
+                got: query.len(),
+            });
+        }
+
+        let ep = self.entry_point.ok_or(HnswError::EmptyIndex)?;
+
+        // Preprocess query with the OVERRIDE metric (e.g., normalize for cosine).
+        let mut query_vec = query.to_vec();
+        metric.preprocess(&mut query_vec);
+
+        // Traverse the HNSW graph using the native metric's neighbor links.
+        // The graph structure is fixed — we can't change how neighbors are connected.
+        // But we CAN re-score with the requested metric afterward.
+        let mut best_ep = ep;
+        let mut best_score = self.score_vec_node(&query_vec, ep);
+
+        for &extra_ep in &self.extra_entry_points {
+            if !self.nodes[extra_ep as usize].deleted {
+                let score = self.score_vec_node(&query_vec, extra_ep);
+                if score > best_score {
+                    best_score = score;
+                    best_ep = extra_ep;
+                }
+            }
+        }
+
+        let mut current_ep = best_ep;
+        for layer in (1..=self.max_layer as usize).rev() {
+            current_ep = self.greedy_closest_by_vec(&query_vec, current_ep, layer as u8);
+        }
+
+        let candidates = self.search_layer_by_vec(&query_vec, current_ep, ef_search, 0);
+
+        // Re-score candidates using the override metric.
+        let mut results: Vec<SearchResult> = candidates
+            .into_iter()
+            .filter(|(_, idx)| !self.nodes[*idx as usize].deleted)
+            .map(|(_, idx)| {
+                let node = &self.nodes[idx as usize];
+                let score = metric.score(&query_vec, &node.vector);
+                SearchResult {
+                    score,
+                    triple_id: node.triple_id,
+                }
+            })
+            .collect();
+
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        results.truncate(k);
+        Ok(results)
+    }
+
     /// Mark a node as deleted by its triple ID. O(1) via HashMap lookup.
     pub fn delete(&mut self, triple_id: TermId) -> bool {
         if let Some(&node_idx) = self.triple_to_node.get(&triple_id) {

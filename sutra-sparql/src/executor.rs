@@ -21,7 +21,7 @@ use sutra_hnsw::VectorRegistry;
 use crate::error::{Result, SparqlError};
 use crate::parser::{
     Aggregate, AggregateArg, AggregateFunction, FilterExpr, PathModifier, Pattern, Query,
-    QueryType, Term,
+    QueryType, SearchMetric, Term,
 };
 
 /// A single row of variable bindings.
@@ -87,10 +87,12 @@ fn execute_query_with_ctx(query: &Query, ctx: &mut ExecutionContext<'_>) -> Resu
     // LIMIT push-down: only safe when no ORDER BY, DISTINCT, or VECTOR_SIMILAR.
     // If there's a vector pattern, early truncation would discard candidates
     // that the vector search needs to match against.
-    let has_vector_pattern = query
-        .patterns
-        .iter()
-        .any(|p| matches!(p, Pattern::VectorSimilar { .. }));
+    let has_vector_pattern = query.patterns.iter().any(|p| {
+        matches!(
+            p,
+            Pattern::VectorSimilar { .. } | Pattern::MetricSearch { .. }
+        )
+    });
     let pushable_limit = if query.order_by.is_empty() && !query.distinct && !has_vector_pattern {
         query.limit.map(|l| l + query.offset.unwrap_or(0))
     } else {
@@ -487,10 +489,38 @@ fn evaluate_pattern(
             *threshold,
             *ef_search,
             *top_k,
+            None, // use index's native metric
             current,
             current_scores,
             ctx,
         ),
+        Pattern::MetricSearch {
+            subject,
+            predicate,
+            query_vector,
+            threshold,
+            ef_search,
+            top_k,
+            metric,
+        } => {
+            let hnsw_metric = match metric {
+                SearchMetric::Cosine => sutra_hnsw::DistanceMetric::Cosine,
+                SearchMetric::Euclidean => sutra_hnsw::DistanceMetric::Euclidean,
+                SearchMetric::DotProduct => sutra_hnsw::DistanceMetric::DotProduct,
+            };
+            evaluate_vector_similar(
+                subject,
+                predicate,
+                query_vector,
+                *threshold,
+                *ef_search,
+                *top_k,
+                Some(hnsw_metric),
+                current,
+                current_scores,
+                ctx,
+            )
+        }
         Pattern::Union(branches) => {
             let mut result = Vec::new();
             let mut result_scores = Vec::new();
@@ -597,6 +627,7 @@ fn evaluate_vector_similar(
     threshold: f32,
     ef_search: Option<usize>,
     top_k: Option<usize>,
+    metric_override: Option<sutra_hnsw::DistanceMetric>,
     current: &[Bindings],
     current_scores: &[HashMap<String, f32>],
     ctx: &mut ExecutionContext<'_>,
@@ -632,11 +663,16 @@ fn evaluate_vector_similar(
         _ => None,
     };
 
-    // Run HNSW search once — results are vector object IDs
-    let search_results = ctx
-        .vectors
-        .search(pred_id, query_vector, k, ef)
-        .map_err(SparqlError::Hnsw)?;
+    // Run HNSW search — use metric override if specified, otherwise native metric.
+    let search_results = if let Some(metric) = metric_override {
+        ctx.vectors
+            .search_with_metric(pred_id, query_vector, k, ef, metric)
+            .map_err(SparqlError::Hnsw)?
+    } else {
+        ctx.vectors
+            .search(pred_id, query_vector, k, ef)
+            .map_err(SparqlError::Hnsw)?
+    };
 
     for (i, row) in current.iter().enumerate() {
         let subject_bound = subject_var

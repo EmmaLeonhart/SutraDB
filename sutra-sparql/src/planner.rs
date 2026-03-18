@@ -226,7 +226,7 @@ fn pattern_weight(pattern: &Pattern, bound: &HashSet<String>) -> u32 {
         // VECTOR_SIMILAR: when subject is unbound, the HNSW index is the
         // primary access path — it's very selective (returns top-k).
         // When subject is bound, it's a filter operation over bound candidates.
-        Pattern::VectorSimilar { subject, .. } => {
+        Pattern::VectorSimilar { subject, .. } | Pattern::MetricSearch { subject, .. } => {
             if is_bound(subject, bound) {
                 WEIGHT_VECTOR_BOUND
             } else {
@@ -516,7 +516,7 @@ fn collect_variables(pattern: &Pattern, vars: &mut HashSet<String>) {
                 vars.insert(name.clone());
             }
         }
-        Pattern::VectorSimilar { subject, .. } => {
+        Pattern::VectorSimilar { subject, .. } | Pattern::MetricSearch { subject, .. } => {
             if let Term::Variable(name) = subject {
                 vars.insert(name.clone());
             }

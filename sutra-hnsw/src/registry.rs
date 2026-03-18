@@ -118,6 +118,26 @@ impl VectorRegistry {
         index.search(query, k, ef_search)
     }
 
+    /// Search with an explicit distance metric override.
+    ///
+    /// The HNSW graph traversal still uses the index's native metric for
+    /// neighbor selection, but results are re-scored and ranked using the
+    /// requested metric.
+    pub fn search_with_metric(
+        &self,
+        predicate_id: TermId,
+        query: &[f32],
+        k: usize,
+        ef_search: usize,
+        metric: crate::vector::DistanceMetric,
+    ) -> Result<Vec<SearchResult>> {
+        let index = self
+            .indexes
+            .get(&predicate_id)
+            .ok_or(HnswError::NoIndexForPredicate(predicate_id))?;
+        index.search_with_metric(query, k, ef_search, metric)
+    }
+
     /// Delete a vector by triple ID from a predicate's index.
     ///
     /// Returns `false` if the predicate has no index or the triple ID was

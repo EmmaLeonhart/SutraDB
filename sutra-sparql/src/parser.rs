@@ -114,6 +114,24 @@ pub enum Pattern {
         ef_search: Option<usize>,
         top_k: Option<usize>,
     },
+    /// Metric-specific vector search operators.
+    ///
+    /// COSINE_SEARCH(?var predicate "vector"^^sutra:f32vec, threshold)
+    /// EUCLID_SEARCH(?var predicate "vector"^^sutra:f32vec, threshold)
+    /// DOTPRODUCT_SEARCH(?var predicate "vector"^^sutra:f32vec, threshold)
+    ///
+    /// These are explicit-metric variants of VECTOR_SIMILAR. They override the
+    /// distance metric declared at predicate registration time, allowing queries
+    /// to choose how similarity is measured at search time.
+    MetricSearch {
+        subject: Term,
+        predicate: Term,
+        query_vector: Vec<f32>,
+        threshold: f32,
+        ef_search: Option<usize>,
+        top_k: Option<usize>,
+        metric: SearchMetric,
+    },
     /// UNION { ... } { ... }
     Union(Vec<Vec<Pattern>>),
     /// BIND(expr AS ?var)
@@ -122,6 +140,17 @@ pub enum Pattern {
     Values { variable: String, values: Vec<Term> },
     /// Subquery: { SELECT ... WHERE { ... } }
     Subquery(Box<Query>),
+}
+
+/// Distance metric for metric-specific search operators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchMetric {
+    /// Cosine similarity (vectors normalized, then dot product).
+    Cosine,
+    /// Euclidean distance (L2 distance, negated for similarity ordering).
+    Euclidean,
+    /// Raw dot product (no normalization).
+    DotProduct,
 }
 
 /// A term in a triple pattern.
@@ -543,6 +572,27 @@ impl<'a> Parser<'a> {
                 if self.peek_char() == Some('.') {
                     self.pos += 1;
                 }
+            } else if self.peek_keyword("COSINE_SEARCH") {
+                let ms = self.parse_metric_search("COSINE_SEARCH", SearchMetric::Cosine)?;
+                patterns.push(ms);
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
+            } else if self.peek_keyword("EUCLID_SEARCH") {
+                let ms = self.parse_metric_search("EUCLID_SEARCH", SearchMetric::Euclidean)?;
+                patterns.push(ms);
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
+            } else if self.peek_keyword("DOTPRODUCT_SEARCH") {
+                let ms = self.parse_metric_search("DOTPRODUCT_SEARCH", SearchMetric::DotProduct)?;
+                patterns.push(ms);
+                self.skip_whitespace();
+                if self.peek_char() == Some('.') {
+                    self.pos += 1;
+                }
             } else if self.peek_keyword("BIND") {
                 self.expect_keyword("BIND")?;
                 self.expect_char('(')?;
@@ -733,6 +783,63 @@ impl<'a> Parser<'a> {
             threshold,
             ef_search,
             top_k,
+        })
+    }
+
+    /// Parse a metric-specific search operator.
+    ///
+    /// Grammar: KEYWORD(?subject predicate "vector"^^sutra:f32vec, threshold [, ef:=N] [, k:=N])
+    ///
+    /// Same syntax as VECTOR_SIMILAR, but with the distance metric specified by the keyword.
+    fn parse_metric_search(&mut self, keyword: &str, metric: SearchMetric) -> Result<Pattern> {
+        self.expect_keyword(keyword)?;
+        self.expect_char('(')?;
+
+        let subject = self.parse_term()?;
+        self.skip_whitespace();
+        let predicate = self.parse_term()?;
+        self.skip_whitespace();
+
+        let query_vector = self.parse_vector_literal_value()?;
+        self.skip_whitespace();
+
+        self.expect_char(',')?;
+        self.skip_whitespace();
+
+        let threshold = self.parse_float()?;
+
+        let mut ef_search = None;
+        let mut top_k = None;
+        self.skip_whitespace();
+        while self.peek_char() == Some(',') {
+            self.pos += 1;
+            self.skip_whitespace();
+            if self.peek_keyword("ef") {
+                self.expect_keyword("ef")?;
+                self.expect_char(':')?;
+                self.expect_char('=')?;
+                ef_search = Some(self.parse_integer()? as usize);
+            } else if self.peek_keyword("k") {
+                self.expect_keyword("k")?;
+                self.expect_char(':')?;
+                self.expect_char('=')?;
+                top_k = Some(self.parse_integer()? as usize);
+            } else {
+                return Err(self.error(&format!("expected 'ef' or 'k' hint in {}", keyword)));
+            }
+            self.skip_whitespace();
+        }
+
+        self.expect_char(')')?;
+
+        Ok(Pattern::MetricSearch {
+            subject,
+            predicate,
+            query_vector,
+            threshold,
+            ef_search,
+            top_k,
+            metric,
         })
     }
 
@@ -1784,6 +1891,76 @@ mod tests {
                 assert!(ef_search.is_none());
             }
             _ => panic!("expected VectorSimilar pattern"),
+        }
+    }
+
+    #[test]
+    fn parse_cosine_search() {
+        let q = parse(
+            r#"SELECT ?doc WHERE { COSINE_SEARCH(?doc :hasEmbedding "0.1 0.2 0.3"^^<http://sutra.dev/f32vec>, 0.85) }"#,
+        )
+        .unwrap();
+        match &q.patterns[0] {
+            Pattern::MetricSearch {
+                query_vector,
+                threshold,
+                metric,
+                ..
+            } => {
+                assert_eq!(query_vector.len(), 3);
+                assert!((threshold - 0.85).abs() < 0.001);
+                assert_eq!(*metric, SearchMetric::Cosine);
+            }
+            _ => panic!("expected MetricSearch pattern"),
+        }
+    }
+
+    #[test]
+    fn parse_euclid_search() {
+        let q = parse(
+            r#"SELECT ?doc WHERE { EUCLID_SEARCH(?doc :hasEmbedding "0.1 0.2"^^<http://sutra.dev/f32vec>, 0.9) }"#,
+        )
+        .unwrap();
+        match &q.patterns[0] {
+            Pattern::MetricSearch { metric, .. } => {
+                assert_eq!(*metric, SearchMetric::Euclidean);
+            }
+            _ => panic!("expected MetricSearch pattern"),
+        }
+    }
+
+    #[test]
+    fn parse_dotproduct_search() {
+        let q = parse(
+            r#"SELECT ?doc WHERE { DOTPRODUCT_SEARCH(?doc :hasEmbedding "0.5 0.5"^^<http://sutra.dev/f32vec>, 0.7) }"#,
+        )
+        .unwrap();
+        match &q.patterns[0] {
+            Pattern::MetricSearch { metric, .. } => {
+                assert_eq!(*metric, SearchMetric::DotProduct);
+            }
+            _ => panic!("expected MetricSearch pattern"),
+        }
+    }
+
+    #[test]
+    fn parse_cosine_search_with_hints() {
+        let q = parse(
+            r#"SELECT ?doc WHERE { COSINE_SEARCH(?doc :hasEmbedding "0.1 0.2"^^<http://sutra.dev/f32vec>, 0.9, ef:=200, k:=10) }"#,
+        )
+        .unwrap();
+        match &q.patterns[0] {
+            Pattern::MetricSearch {
+                ef_search,
+                top_k,
+                metric,
+                ..
+            } => {
+                assert_eq!(*ef_search, Some(200));
+                assert_eq!(*top_k, Some(10));
+                assert_eq!(*metric, SearchMetric::Cosine);
+            }
+            _ => panic!("expected MetricSearch pattern"),
         }
     }
 
