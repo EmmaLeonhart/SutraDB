@@ -1060,3 +1060,66 @@ test sparql_vector_search/docs/500 ... bench:     3022395 ns/iter (+/- 25304)
 test sparql_vector_search/docs/1000 ... bench:     1557063 ns/iter (+/- 8051)
 ```
 
+
+## 2026-03-18 22:22 UTC — `383805f` Update benchmark results [skip ci]
+
+### sutra-core (triple store)
+```
+test triple_insert_single ... bench:         119 ns/iter (+/- 1)
+test triple_bulk_insert/triples/100 ... bench:       33477 ns/iter (+/- 182)
+test triple_bulk_insert/triples/1000 ... bench:      446181 ns/iter (+/- 3416)
+test triple_bulk_insert/triples/10000 ... bench:     5488550 ns/iter (+/- 20755)
+test triple_lookup_subject/graph_size/1000 ... bench:          86 ns/iter (+/- 1)
+test triple_lookup_subject/graph_size/10000 ... bench:          96 ns/iter (+/- 1)
+test triple_lookup_predicate_5k ... bench:        6488 ns/iter (+/- 53)
+test triple_contains_10k ... bench:          54 ns/iter (+/- 0)
+test triple_remove_single ... bench:       44965 ns/iter (+/- 209002)
+test adjacency_star_500 ... bench:          14 ns/iter (+/- 0)
+test term_dictionary_intern_10k ... bench:     2536625 ns/iter (+/- 7082)
+```
+
+### sutra-hnsw (vector index)
+```
+test hnsw_insert/128d/100 ... bench:     3501138 ns/iter (+/- 75067)
+test hnsw_insert/128d/1000 ... bench:    99824983 ns/iter (+/- 582851)
+test hnsw_insert/128d/5000 ... bench:   850267676 ns/iter (+/- 5625548)
+test hnsw_insert/384d/1000 ... bench:   153800086 ns/iter (+/- 914143)
+test hnsw_search/n1000_128d_ef50/k10 ... bench:       59844 ns/iter (+/- 2749)
+test hnsw_search/n1000_128d_ef100/k10 ... bench:       89645 ns/iter (+/- 510)
+test hnsw_search/n1000_128d_ef200/k10 ... bench:      150397 ns/iter (+/- 478)
+test hnsw_search/n5000_128d_ef100/k10 ... bench:      153768 ns/iter (+/- 810)
+test hnsw_search/n1000_384d_ef100/k10 ... bench:      124489 ns/iter (+/- 443)
+test hnsw_search_k/5k_128d/1 ... bench:      152933 ns/iter (+/- 877)
+test hnsw_search_k/5k_128d/5 ... bench:      155028 ns/iter (+/- 854)
+test hnsw_search_k/5k_128d/10 ... bench:      156489 ns/iter (+/- 660)
+test hnsw_search_k/5k_128d/25 ... bench:      155337 ns/iter (+/- 855)
+test hnsw_search_k/5k_128d/50 ... bench:      155944 ns/iter (+/- 883)
+test hnsw_search_k/5k_128d/100 ... bench:      152819 ns/iter (+/- 1930)
+test hnsw_delete_then_search/1k_128d/10pct_deleted ... bench:      197326 ns/iter (+/- 7371)
+test hnsw_delete_then_search/1k_128d/25pct_deleted ... bench:      196565 ns/iter (+/- 5536)
+test hnsw_delete_then_search/1k_128d/50pct_deleted ... bench:      196319 ns/iter (+/- 7237)
+test hnsw_bulk_insert/128d/100 ... bench:     3609387 ns/iter (+/- 11675)
+test hnsw_bulk_insert/128d/500 ... bench:    37909973 ns/iter (+/- 129415)
+test hnsw_bulk_insert/128d/1000 ... bench:    98192742 ns/iter (+/- 316808)
+test hnsw_metrics/1k_128d/Cosine ... bench:       89536 ns/iter (+/- 449)
+test hnsw_metrics/1k_128d/Euclidean ... bench:       95181 ns/iter (+/- 387)
+test hnsw_metrics/1k_128d/DotProduct ... bench:       53896 ns/iter (+/- 1262)
+```
+
+### sutra-sparql (query engine)
+```
+test sparql_parse/simple_select ... bench:         625 ns/iter (+/- 7)
+test sparql_parse/complex_with_filter ... bench:        1464 ns/iter (+/- 6)
+test sparql_parse/vector_similar ... bench:        1070 ns/iter (+/- 8)
+test sparql_chain_traversal/500_nodes/2_hops ... bench:       74590 ns/iter (+/- 2807)
+test sparql_chain_traversal/1000_nodes/2_hops ... bench:       76132 ns/iter (+/- 503)
+test sparql_chain_traversal/500_nodes/3_hops ... bench:      145655 ns/iter (+/- 642)
+test sparql_chain_traversal/200_nodes/4_hops ... bench:      215973 ns/iter (+/- 709)
+test sparql_star_join/1000_leaves/10_cats ... bench:      329372 ns/iter (+/- 1667)
+test sparql_star_join/5000_leaves/20_cats ... bench:      361169 ns/iter (+/- 1831)
+test sparql_star_join/1000_leaves/5_cats ... bench:      336724 ns/iter (+/- 1250)
+test sparql_vector_search/docs/100 ... bench:      243263 ns/iter (+/- 1141)
+test sparql_vector_search/docs/500 ... bench:     2978250 ns/iter (+/- 50179)
+test sparql_vector_search/docs/1000 ... bench:     1548812 ns/iter (+/- 50100)
+```
+
