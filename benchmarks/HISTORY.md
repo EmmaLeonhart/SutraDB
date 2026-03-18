@@ -997,3 +997,66 @@ test sparql_vector_search/docs/500 ... bench:     2974024 ns/iter (+/- 22304)
 test sparql_vector_search/docs/1000 ... bench:     1530575 ns/iter (+/- 8653)
 ```
 
+
+## 2026-03-18 22:17 UTC — `b509ef0` Update benchmark results [skip ci]
+
+### sutra-core (triple store)
+```
+test triple_insert_single ... bench:         123 ns/iter (+/- 2)
+test triple_bulk_insert/triples/100 ... bench:       32058 ns/iter (+/- 209)
+test triple_bulk_insert/triples/1000 ... bench:      437019 ns/iter (+/- 11778)
+test triple_bulk_insert/triples/10000 ... bench:     5425466 ns/iter (+/- 153989)
+test triple_lookup_subject/graph_size/1000 ... bench:          85 ns/iter (+/- 0)
+test triple_lookup_subject/graph_size/10000 ... bench:          96 ns/iter (+/- 0)
+test triple_lookup_predicate_5k ... bench:        6939 ns/iter (+/- 153)
+test triple_contains_10k ... bench:          48 ns/iter (+/- 0)
+test triple_remove_single ... bench:       48427 ns/iter (+/- 86481)
+test adjacency_star_500 ... bench:          14 ns/iter (+/- 0)
+test term_dictionary_intern_10k ... bench:     2607454 ns/iter (+/- 16765)
+```
+
+### sutra-hnsw (vector index)
+```
+test hnsw_insert/128d/100 ... bench:     3481987 ns/iter (+/- 99864)
+test hnsw_insert/128d/1000 ... bench:    99186416 ns/iter (+/- 494392)
+test hnsw_insert/128d/5000 ... bench:   860290377 ns/iter (+/- 14238236)
+test hnsw_insert/384d/1000 ... bench:   153888143 ns/iter (+/- 902383)
+test hnsw_search/n1000_128d_ef50/k10 ... bench:       59162 ns/iter (+/- 481)
+test hnsw_search/n1000_128d_ef100/k10 ... bench:       90854 ns/iter (+/- 948)
+test hnsw_search/n1000_128d_ef200/k10 ... bench:      151017 ns/iter (+/- 1136)
+test hnsw_search/n5000_128d_ef100/k10 ... bench:      156678 ns/iter (+/- 887)
+test hnsw_search/n1000_384d_ef100/k10 ... bench:      125228 ns/iter (+/- 921)
+test hnsw_search_k/5k_128d/1 ... bench:      154290 ns/iter (+/- 1420)
+test hnsw_search_k/5k_128d/5 ... bench:      155559 ns/iter (+/- 1064)
+test hnsw_search_k/5k_128d/10 ... bench:      155535 ns/iter (+/- 1503)
+test hnsw_search_k/5k_128d/25 ... bench:      154962 ns/iter (+/- 1656)
+test hnsw_search_k/5k_128d/50 ... bench:      155116 ns/iter (+/- 864)
+test hnsw_search_k/5k_128d/100 ... bench:      155304 ns/iter (+/- 911)
+test hnsw_delete_then_search/1k_128d/10pct_deleted ... bench:      200875 ns/iter (+/- 8113)
+test hnsw_delete_then_search/1k_128d/25pct_deleted ... bench:      199988 ns/iter (+/- 6235)
+test hnsw_delete_then_search/1k_128d/50pct_deleted ... bench:      197748 ns/iter (+/- 7139)
+test hnsw_bulk_insert/128d/100 ... bench:     3564411 ns/iter (+/- 10636)
+test hnsw_bulk_insert/128d/500 ... bench:    37330672 ns/iter (+/- 89979)
+test hnsw_bulk_insert/128d/1000 ... bench:    96681822 ns/iter (+/- 445057)
+test hnsw_metrics/1k_128d/Cosine ... bench:       90744 ns/iter (+/- 1557)
+test hnsw_metrics/1k_128d/Euclidean ... bench:       95894 ns/iter (+/- 553)
+test hnsw_metrics/1k_128d/DotProduct ... bench:       53093 ns/iter (+/- 326)
+```
+
+### sutra-sparql (query engine)
+```
+test sparql_parse/simple_select ... bench:         622 ns/iter (+/- 10)
+test sparql_parse/complex_with_filter ... bench:        1434 ns/iter (+/- 8)
+test sparql_parse/vector_similar ... bench:        1064 ns/iter (+/- 8)
+test sparql_chain_traversal/500_nodes/2_hops ... bench:       73216 ns/iter (+/- 315)
+test sparql_chain_traversal/1000_nodes/2_hops ... bench:       75374 ns/iter (+/- 586)
+test sparql_chain_traversal/500_nodes/3_hops ... bench:      145308 ns/iter (+/- 707)
+test sparql_chain_traversal/200_nodes/4_hops ... bench:      214363 ns/iter (+/- 1552)
+test sparql_star_join/1000_leaves/10_cats ... bench:      330545 ns/iter (+/- 1424)
+test sparql_star_join/5000_leaves/20_cats ... bench:      363279 ns/iter (+/- 1740)
+test sparql_star_join/1000_leaves/5_cats ... bench:      336019 ns/iter (+/- 1410)
+test sparql_vector_search/docs/100 ... bench:      246421 ns/iter (+/- 1311)
+test sparql_vector_search/docs/500 ... bench:     3022395 ns/iter (+/- 25304)
+test sparql_vector_search/docs/1000 ... bench:     1557063 ns/iter (+/- 8051)
+```
+
