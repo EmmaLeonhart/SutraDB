@@ -97,13 +97,20 @@ jobs:
             echo "" >> "$OUT"
           done
 
-      # Commit results back to repo
+      # Commit results back to repo (handles concurrent benchmark runs)
       - name: Commit benchmark results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout main
-          git pull origin main
           git add benchmarks/HISTORY.md benchmarks/LATEST.md
-          git diff --staged --quiet || git commit -m "Update benchmark results [skip ci]"
-          git push origin main
+          git diff --staged --quiet && exit 0
+          git commit -m "Update benchmark results [skip ci]"
+          # Retry loop: pull --rebase then push, handles race with other runs
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push origin main && exit 0
+            echo "Push attempt $i failed, retrying..."
+            sleep 5
+          done
+          echo "Failed to push after 3 attempts"
+          exit 1
