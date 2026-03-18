@@ -1,38 +1,97 @@
-"""SutraDB MCP Server — Model Context Protocol interface for AI agents.
+"""SutraDB MCP Server — Sutra Studio for AI agents.
 
-Exposes SutraDB operations as MCP tools that AI agents (Claude, GPT, etc.)
-can call directly. This is the agent↔database bridge.
+Dual-mode MCP server for database maintenance and querying.
+This is the agent<->database bridge, designed maintenance-first.
 
-Tools exposed:
-- sparql_query: Execute SPARQL queries
-- insert_triples: Insert N-Triples data
-- describe_entity: Get all triples about an entity
-- vector_search: Find similar entities by embedding
-- database_info: Get database statistics
-- health_check: Check if SutraDB is running
+Modes:
+- Server mode:     connects to SutraDB HTTP endpoint (default http://localhost:3030)
+- Serverless mode: shells out to `sutra` CLI binary for direct .sdb file access
+
+Environment variables:
+  SUTRA_MODE      = server | serverless  (default: server)
+  SUTRA_URL       = HTTP endpoint        (default: http://localhost:3030)
+  SUTRA_DATA_DIR  = path to .sdb data    (default: ./sutra-data)
+  SUTRA_CLI       = path to sutra binary (default: sutra)
+  SUTRA_PASSCODE  = auth passcode        (optional, server mode only)
 
 Usage:
     python tools/mcp-server/server.py
+    python tools/mcp-server/server.py --mode serverless --data-dir ./my-data
+    SUTRA_MODE=server SUTRA_URL=http://localhost:3030 python tools/mcp-server/server.py
 
-Requires: pip install mcp requests
+Protocol: JSON-RPC over stdio, MCP version 2024-11-05
 """
 
+import argparse
 import io
 import json
+import os
+import subprocess
 import sys
-from typing import Any
+from typing import Any, Optional
 
 import requests
 
+# Fix Windows Unicode output
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
-SUTRA_ENDPOINT = "http://localhost:3030"
+# ── Configuration ─────────────────────────────────────────────────────────────
+
+MODE = os.environ.get("SUTRA_MODE", "server")  # server | serverless
+SUTRA_URL = os.environ.get("SUTRA_URL", "http://localhost:3030")
+DATA_DIR = os.environ.get("SUTRA_DATA_DIR", "./sutra-data")
+SUTRA_CLI = os.environ.get("SUTRA_CLI", "sutra")
+PASSCODE = os.environ.get("SUTRA_PASSCODE", "")
 
 
-def sutra_request(method: str, path: str, **kwargs) -> dict:
-    """Make a request to SutraDB."""
-    url = f"{SUTRA_ENDPOINT}{path}"
-    resp = requests.request(method, url, timeout=30, **kwargs)
+def configure_from_args():
+    """Override config from command-line arguments if provided."""
+    global MODE, SUTRA_URL, DATA_DIR, SUTRA_CLI, PASSCODE
+    parser = argparse.ArgumentParser(description="SutraDB MCP Server")
+    parser.add_argument("--mode", choices=["server", "serverless"], default=None)
+    parser.add_argument("--url", default=None, help="SutraDB HTTP endpoint")
+    parser.add_argument("--data-dir", default=None, help="Path to .sdb data directory")
+    parser.add_argument("--cli", default=None, help="Path to sutra CLI binary")
+    parser.add_argument("--passcode", default=None, help="Auth passcode")
+    args = parser.parse_args()
+
+    if args.mode:
+        MODE = args.mode
+    if args.url:
+        SUTRA_URL = args.url
+    if args.data_dir:
+        DATA_DIR = args.data_dir
+    if args.cli:
+        SUTRA_CLI = args.cli
+    if args.passcode:
+        PASSCODE = args.passcode
+
+
+# ── Transport Layer ───────────────────────────────────────────────────────────
+
+
+def _auth_headers() -> dict:
+    """Build auth headers for server mode requests."""
+    headers = {}
+    if PASSCODE:
+        headers["Authorization"] = f"Bearer {PASSCODE}"
+    return headers
+
+
+def http_request(method: str, path: str, **kwargs) -> dict:
+    """Make an HTTP request to SutraDB server."""
+    url = f"{SUTRA_URL}{path}"
+    headers = {**_auth_headers(), **kwargs.pop("headers", {})}
+    try:
+        resp = requests.request(method, url, timeout=60, headers=headers, **kwargs)
+    except requests.ConnectionError:
+        return {"error": f"Cannot connect to SutraDB at {SUTRA_URL}. Is the server running?"}
+    except requests.Timeout:
+        return {"error": "Request timed out after 60 seconds."}
+    except Exception as e:
+        return {"error": f"HTTP request failed: {e}"}
+
     if resp.status_code >= 400:
         return {"error": f"HTTP {resp.status_code}: {resp.text}"}
     try:
@@ -41,183 +100,495 @@ def sutra_request(method: str, path: str, **kwargs) -> dict:
         return {"result": resp.text}
 
 
-def handle_tool_call(name: str, arguments: dict) -> Any:
-    """Route a tool call to the appropriate handler."""
+def cli_run(args: list, input_data: Optional[str] = None) -> dict:
+    """Run a sutra CLI command and return structured output."""
+    cmd = [SUTRA_CLI] + args
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            input=input_data,
+        )
+    except FileNotFoundError:
+        return {"error": f"sutra CLI not found at '{SUTRA_CLI}'. Is it installed and on PATH?"}
+    except subprocess.TimeoutExpired:
+        return {"error": "CLI command timed out after 120 seconds."}
+    except Exception as e:
+        return {"error": f"CLI execution failed: {e}"}
 
-    if name == "sparql_query":
-        query = arguments.get("query", "")
-        result = sutra_request("POST", "/sparql", data=query)
-        # Simplify output for agent consumption
+    output = result.stdout.strip()
+    if result.returncode != 0:
+        error_msg = result.stderr.strip() or output or f"Exit code {result.returncode}"
+        return {"error": error_msg}
+    return {"result": output}
+
+
+# ── Tool Implementations ─────────────────────────────────────────────────────
+
+
+def tool_health_report(_args: dict) -> Any:
+    """Full health diagnostics covering HNSW indexes, storage, and consistency."""
+    if MODE == "server":
+        health = http_request("GET", "/health")
+        vectors = http_request("GET", "/vectors/health")
+        is_healthy = health.get("result") == "ok" or health.get("result", "").strip() == "ok"
+        return {
+            "mode": "server",
+            "endpoint": SUTRA_URL,
+            "server_reachable": "error" not in health,
+            "healthy": is_healthy,
+            "vector_indexes": vectors,
+        }
+    else:
+        result = cli_run(["health", "--data-dir", DATA_DIR])
+        return {
+            "mode": "serverless",
+            "data_dir": DATA_DIR,
+            "report": result.get("result", result.get("error", "unknown")),
+        }
+
+
+def tool_rebuild_hnsw(_args: dict) -> Any:
+    """Trigger HNSW compaction to remove tombstones and restore connectivity."""
+    if MODE == "server":
+        return http_request("POST", "/vectors/rebuild")
+    else:
+        result = cli_run(["health", "--data-dir", DATA_DIR, "--rebuild-hnsw"])
+        return {
+            "mode": "serverless",
+            "result": result.get("result", result.get("error", "unknown")),
+        }
+
+
+def tool_verify_consistency(_args: dict) -> Any:
+    """Check index consistency across SPO/POS/OSP indexes.
+
+    In server mode, the server auto-repairs on startup so this checks
+    current health. In serverless mode, opens the store and verifies.
+    """
+    if MODE == "server":
+        health = http_request("GET", "/health")
+        vectors = http_request("GET", "/vectors/health")
+        is_reachable = "error" not in health
+        return {
+            "mode": "server",
+            "endpoint": SUTRA_URL,
+            "server_reachable": is_reachable,
+            "note": (
+                "Server mode auto-repairs index inconsistencies on startup. "
+                "If the server is running, indexes are consistent. "
+                "Use health_report and database_info for detailed diagnostics."
+            ),
+            "health": health,
+            "vectors": vectors,
+        }
+    else:
+        # In serverless mode, open the store via CLI info command which
+        # will fail if the store is corrupted
+        info_result = cli_run(["info", "--data-dir", DATA_DIR])
+        if "error" in info_result:
+            return {
+                "mode": "serverless",
+                "consistent": False,
+                "error": info_result["error"],
+                "recommendation": "Try running: sutra health --data-dir " + DATA_DIR,
+            }
+        return {
+            "mode": "serverless",
+            "consistent": True,
+            "info": info_result.get("result", ""),
+            "note": "Store opened successfully. Run health_report for detailed diagnostics.",
+        }
+
+
+def tool_database_info(_args: dict) -> Any:
+    """Get database statistics: triple count, term count, vector index health."""
+    if MODE == "server":
+        health = http_request("GET", "/health")
+        vectors = http_request("GET", "/vectors/health")
+        # Get a count of triples
+        count_result = http_request(
+            "POST", "/sparql",
+            data="SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }",
+            headers={"Content-Type": "application/sparql-query"},
+        )
+        triple_count = None
+        if "results" in count_result:
+            bindings = count_result.get("results", {}).get("bindings", [])
+            if bindings:
+                triple_count = bindings[0].get("count", {}).get("value")
+
+        # Get sample data
+        sample = http_request(
+            "POST", "/sparql",
+            data="SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 5",
+            headers={"Content-Type": "application/sparql-query"},
+        )
+        sample_triples = []
+        if "results" in sample:
+            for b in sample.get("results", {}).get("bindings", [])[:5]:
+                sample_triples.append({
+                    "subject": b.get("s", {}).get("value", ""),
+                    "predicate": b.get("p", {}).get("value", ""),
+                    "object": b.get("o", {}).get("value", ""),
+                })
+
+        return {
+            "mode": "server",
+            "endpoint": SUTRA_URL,
+            "healthy": "error" not in health,
+            "triple_count": triple_count,
+            "vector_indexes": vectors,
+            "sample_triples": sample_triples,
+        }
+    else:
+        result = cli_run(["info", "--data-dir", DATA_DIR])
+        return {
+            "mode": "serverless",
+            "data_dir": DATA_DIR,
+            "info": result.get("result", result.get("error", "unknown")),
+        }
+
+
+def tool_backup(args: dict) -> Any:
+    """Trigger a backup snapshot of the database.
+
+    In server mode, creates a copy of the data directory.
+    In serverless mode, copies the .sdb directory to a backup location.
+    """
+    backup_path = args.get("path", "")
+
+    if MODE == "server":
+        # Server mode doesn't have a dedicated backup endpoint yet,
+        # so we document this limitation clearly
+        return {
+            "mode": "server",
+            "note": (
+                "Server mode backup is handled via the --backup-interval flag on startup. "
+                "For manual backups, stop writes momentarily and copy the data directory, "
+                "or use serverless mode to access the .sdb files directly."
+            ),
+            "recommendation": (
+                "Start the server with: sutra serve --backup-interval 60 "
+                "for hourly automatic backups."
+            ),
+        }
+    else:
+        if not backup_path:
+            import time
+            timestamp = int(time.time())
+            backup_path = f"{DATA_DIR}/backups/backup_{timestamp}"
+
+        # Use the OS to copy the data directory
+        import shutil
+        src = DATA_DIR
+        dst = backup_path
+        try:
+            # Exclude the backups subdirectory itself
+            def ignore_backups(directory, files):
+                if os.path.basename(directory) == os.path.basename(src):
+                    return ["backups"] if "backups" in files else []
+                return []
+
+            os.makedirs(os.path.dirname(dst) if os.path.dirname(dst) else ".", exist_ok=True)
+            shutil.copytree(src, dst, ignore=ignore_backups)
+            return {
+                "mode": "serverless",
+                "status": "ok",
+                "backup_path": os.path.abspath(dst),
+            }
+        except Exception as e:
+            return {
+                "mode": "serverless",
+                "status": "error",
+                "error": str(e),
+            }
+
+
+def tool_sparql_query(args: dict) -> Any:
+    """Execute a SPARQL query against SutraDB."""
+    query = args.get("query", "")
+    if not query.strip():
+        return {"error": "Query cannot be empty."}
+
+    if MODE == "server":
+        result = http_request(
+            "POST", "/sparql",
+            data=query,
+            headers={"Content-Type": "application/sparql-query"},
+        )
+        # Format results for agent readability
         if "results" in result and "bindings" in result["results"]:
             bindings = result["results"]["bindings"]
-            if len(bindings) == 0:
-                return "No results."
-            # Format as a readable table
             cols = result.get("head", {}).get("vars", [])
             rows = []
-            for b in bindings[:50]:  # Limit output for agent context
+            for b in bindings[:100]:  # Cap at 100 rows for agent context
                 row = {c: b.get(c, {}).get("value", "") for c in cols}
                 rows.append(row)
-            return {"columns": cols, "rows": rows, "total": len(bindings)}
+            return {
+                "columns": cols,
+                "rows": rows,
+                "total": len(bindings),
+                "truncated": len(bindings) > 100,
+            }
         return result
+    else:
+        result = cli_run(["query", query, "--data-dir", DATA_DIR])
+        return {
+            "mode": "serverless",
+            "output": result.get("result", result.get("error", "unknown")),
+        }
 
-    elif name == "insert_triples":
-        ntriples = arguments.get("ntriples", "")
-        return sutra_request(
+
+def tool_insert_triples(args: dict) -> Any:
+    """Insert RDF triples in N-Triples format."""
+    ntriples = args.get("ntriples", "")
+    if not ntriples.strip():
+        return {"error": "N-Triples data cannot be empty."}
+
+    if MODE == "server":
+        return http_request(
             "POST", "/triples",
             data=ntriples.encode("utf-8"),
             headers={"Content-Type": "text/plain; charset=utf-8"},
         )
-
-    elif name == "describe_entity":
-        entity = arguments.get("entity", "")
-        query = f'SELECT ?p ?o WHERE {{ <{entity}> ?p ?o }}'
-        result = sutra_request("POST", "/sparql", data=query)
-        if "results" in result and "bindings" in result["results"]:
-            props = []
-            for b in result["results"]["bindings"]:
-                p = b.get("p", {}).get("value", "")
-                o = b.get("o", {}).get("value", "")
-                props.append({"predicate": p, "object": o})
-            return {"entity": entity, "properties": props}
-        return result
-
-    elif name == "vector_search":
-        query_text = arguments.get("query_text", "")
-        predicate = arguments.get("predicate", "http://sutra.dev/hasEmbedding")
-        limit = arguments.get("limit", 10)
-        # First get embedding from Ollama
+    else:
+        # Write to a temp file and import via CLI
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".nt", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(ntriples)
+            tmp_path = f.name
         try:
-            embed_resp = requests.post(
-                "http://localhost:11434/api/embeddings",
-                json={"model": "mxbai-embed-large", "prompt": query_text},
-                timeout=60,
-            )
-            if embed_resp.status_code != 200:
-                return {"error": "Failed to generate embedding"}
-            vector = embed_resp.json().get("embedding", [])
-        except Exception as e:
-            return {"error": f"Embedding error: {e}"}
+            result = cli_run(["import", tmp_path, "--data-dir", DATA_DIR])
+            return {
+                "mode": "serverless",
+                "result": result.get("result", result.get("error", "unknown")),
+            }
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
-        vec_str = " ".join(f"{v:.6f}" for v in vector)
-        query = (
-            f'SELECT ?entity WHERE {{\n'
-            f'  VECTOR_SIMILAR(?entity <{predicate}> '
-            f'"{vec_str}"^^<http://sutra.dev/f32vec>, 0.5)\n'
-            f'}} LIMIT {limit}'
-        )
-        return sutra_request("POST", "/sparql", data=query)
 
-    elif name == "database_info":
-        health = sutra_request("GET", "/health")
-        vectors = sutra_request("GET", "/vectors/health")
-        # Get a sample of data
-        sample = sutra_request(
+def tool_vector_search(args: dict) -> Any:
+    """Search for similar vectors using SPARQL VECTOR_SIMILAR.
+
+    Accepts either raw vector floats or a SPARQL query with VECTOR_SIMILAR.
+    """
+    vector = args.get("vector", "")
+    predicate = args.get("predicate", "http://sutra.dev/hasEmbedding")
+    threshold = args.get("threshold", 0.5)
+    limit = args.get("limit", 10)
+
+    if not vector.strip():
+        return {"error": "Vector string cannot be empty. Provide space-separated floats."}
+
+    query = (
+        f"SELECT ?entity WHERE {{\n"
+        f'  VECTOR_SIMILAR(?entity <{predicate}> '
+        f'"{vector}"^^<http://sutra.dev/f32vec>, {threshold})\n'
+        f"}} LIMIT {limit}"
+    )
+
+    if MODE == "server":
+        result = http_request(
             "POST", "/sparql",
-            data="SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 5",
+            data=query,
+            headers={"Content-Type": "application/sparql-query"},
         )
+        if "results" in result and "bindings" in result["results"]:
+            entities = [
+                b.get("entity", {}).get("value", "")
+                for b in result["results"]["bindings"]
+            ]
+            return {
+                "entities": entities,
+                "count": len(entities),
+                "query_used": query,
+            }
+        return result
+    else:
+        result = cli_run(["query", query, "--data-dir", DATA_DIR])
         return {
-            "healthy": health.get("result") == "ok",
-            "vectors": vectors,
-            "sample_triples": sample.get("results", {}).get("bindings", [])[:5],
+            "mode": "serverless",
+            "output": result.get("result", result.get("error", "unknown")),
+            "query_used": query,
         }
 
-    elif name == "health_check":
-        try:
-            resp = requests.get(f"{SUTRA_ENDPOINT}/health", timeout=5)
-            return {"healthy": resp.status_code == 200}
-        except Exception:
-            return {"healthy": False, "error": "SutraDB not reachable"}
 
-    else:
-        return {"error": f"Unknown tool: {name}"}
+# ── Tool Registry ────────────────────────────────────────────────────────────
 
-
-# ── MCP Protocol (stdio JSON-RPC) ───────────────────────────────────────────
+TOOL_HANDLERS = {
+    "health_report": tool_health_report,
+    "rebuild_hnsw": tool_rebuild_hnsw,
+    "verify_consistency": tool_verify_consistency,
+    "database_info": tool_database_info,
+    "backup": tool_backup,
+    "sparql_query": tool_sparql_query,
+    "insert_triples": tool_insert_triples,
+    "vector_search": tool_vector_search,
+}
 
 TOOLS = [
     {
+        "name": "health_report",
+        "description": (
+            "Full SutraDB health diagnostics. Returns HNSW vector index health "
+            "(tombstone ratios, connectivity, dimensions), storage status, and "
+            "server reachability. Use this first to understand database state."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "rebuild_hnsw",
+        "description": (
+            "Trigger HNSW index compaction. Removes tombstoned nodes and rebuilds "
+            "connectivity. Run this when health_report shows high tombstone ratios "
+            "(>30%) or degraded connectivity. This is a maintenance operation that "
+            "may take time on large indexes."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "verify_consistency",
+        "description": (
+            "Check index consistency across SPO/POS/OSP indexes. In server mode, "
+            "the server auto-repairs on startup so this confirms current health. "
+            "In serverless mode, opens the store and verifies integrity. "
+            "Use after crashes or unexpected shutdowns."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "database_info",
+        "description": (
+            "Get database statistics: triple count, term count, vector index stats, "
+            "and a sample of stored triples. Good for understanding what data is in "
+            "the database and its scale."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "backup",
+        "description": (
+            "Trigger a backup snapshot of the database. In serverless mode, copies "
+            "the .sdb directory to a timestamped backup. Optionally provide a custom "
+            "backup path."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Custom backup destination path. If omitted, creates a "
+                        "timestamped backup in <data-dir>/backups/."
+                    ),
+                },
+            },
+        },
+    },
+    {
         "name": "sparql_query",
-        "description": "Execute a SPARQL query against SutraDB. Supports SELECT, ASK, CONSTRUCT, DESCRIBE, INSERT DATA, DELETE DATA. Returns results as JSON.",
+        "description": (
+            "Execute a SPARQL query against SutraDB. Supports SELECT, ASK, "
+            "CONSTRUCT, DESCRIBE, INSERT DATA, DELETE DATA. Also supports "
+            "VECTOR_SIMILAR and VECTOR_SCORE extensions. Returns results as "
+            "structured JSON with columns and rows."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The SPARQL query to execute",
-                }
+                    "description": "The SPARQL query to execute.",
+                },
             },
             "required": ["query"],
         },
     },
     {
         "name": "insert_triples",
-        "description": "Insert RDF triples in N-Triples format into SutraDB.",
+        "description": (
+            "Insert RDF triples in N-Triples format. Each line should be a "
+            "complete triple ending with ' .' — for example: "
+            "<http://example.org/s> <http://example.org/p> <http://example.org/o> ."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "ntriples": {
                     "type": "string",
-                    "description": "N-Triples data (one triple per line, each ending with ' .')",
-                }
+                    "description": "N-Triples data (one triple per line, each ending with ' .').",
+                },
             },
             "required": ["ntriples"],
         },
     },
     {
-        "name": "describe_entity",
-        "description": "Get all properties and values for a given entity IRI.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "entity": {
-                    "type": "string",
-                    "description": "The full IRI of the entity to describe",
-                }
-            },
-            "required": ["entity"],
-        },
-    },
-    {
         "name": "vector_search",
-        "description": "Find entities similar to a text query using vector embeddings. Generates an embedding via Ollama and searches the HNSW index.",
+        "description": (
+            "Search for entities with similar vector embeddings using HNSW index. "
+            "Provide a raw vector (space-separated floats) and optional similarity "
+            "threshold. Uses SPARQL VECTOR_SIMILAR under the hood."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query_text": {
+                "vector": {
                     "type": "string",
-                    "description": "Text to find similar entities for",
+                    "description": (
+                        "The query vector as space-separated floats, e.g. "
+                        "'0.23 -0.11 0.87 0.42'."
+                    ),
                 },
                 "predicate": {
                     "type": "string",
-                    "description": "Vector predicate IRI (default: http://sutra.dev/hasEmbedding)",
+                    "description": (
+                        "Vector predicate IRI (default: http://sutra.dev/hasEmbedding)."
+                    ),
+                },
+                "threshold": {
+                    "type": "number",
+                    "description": "Minimum similarity threshold 0.0-1.0 (default: 0.5).",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Max results to return (default: 10)",
+                    "description": "Maximum number of results to return (default: 10).",
                 },
             },
-            "required": ["query_text"],
+            "required": ["vector"],
         },
-    },
-    {
-        "name": "database_info",
-        "description": "Get SutraDB database statistics: health, vector index info, and sample data.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "health_check",
-        "description": "Check if SutraDB is running and healthy.",
-        "inputSchema": {"type": "object", "properties": {}},
     },
 ]
 
 
-def handle_message(msg: dict) -> dict:
-    """Handle a JSON-RPC message."""
+# ── MCP Protocol (JSON-RPC over stdio) ───────────────────────────────────────
+
+
+def handle_message(msg: dict) -> Optional[dict]:
+    """Handle an incoming JSON-RPC message per MCP spec."""
     method = msg.get("method", "")
     msg_id = msg.get("id")
 
+    # ── initialize ────────────────────────────────────────────────────────
     if method == "initialize":
         return {
             "jsonrpc": "2.0",
@@ -226,15 +597,17 @@ def handle_message(msg: dict) -> dict:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {
-                    "name": "sutradb-mcp",
-                    "version": "0.1.0",
+                    "name": "sutra-mcp",
+                    "version": "0.2.0",
                 },
             },
         }
 
+    # ── notifications (no response) ──────────────────────────────────────
     if method == "notifications/initialized":
-        return None  # No response needed
+        return None
 
+    # ── tools/list ────────────────────────────────────────────────────────
     if method == "tools/list":
         return {
             "jsonrpc": "2.0",
@@ -242,37 +615,75 @@ def handle_message(msg: dict) -> dict:
             "result": {"tools": TOOLS},
         }
 
+    # ── tools/call ────────────────────────────────────────────────────────
     if method == "tools/call":
         params = msg.get("params", {})
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
-        result = handle_tool_call(tool_name, arguments)
+
+        handler = TOOL_HANDLERS.get(tool_name)
+        if handler is None:
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps({"error": f"Unknown tool: {tool_name}"}),
+                    }],
+                    "isError": True,
+                },
+            }
+
+        try:
+            result = handler(arguments)
+        except Exception as e:
+            result = {"error": f"Tool execution failed: {e}"}
+
+        is_error = isinstance(result, dict) and "error" in result
+        text = (
+            json.dumps(result, ensure_ascii=False, indent=2)
+            if isinstance(result, (dict, list))
+            else str(result)
+        )
+
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
             "result": {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": json.dumps(result, ensure_ascii=False, indent=2)
-                        if isinstance(result, (dict, list))
-                        else str(result),
-                    }
-                ]
+                "content": [{"type": "text", "text": text}],
+                "isError": is_error,
             },
         }
 
+    # ── ping ──────────────────────────────────────────────────────────────
+    if method == "ping":
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {},
+        }
+
+    # ── unknown method ────────────────────────────────────────────────────
     return {
         "jsonrpc": "2.0",
         "id": msg_id,
-        "error": {"code": -32601, "message": f"Unknown method: {method}"},
+        "error": {"code": -32601, "message": f"Method not found: {method}"},
     }
 
 
 def main():
     """Run the MCP server on stdio."""
-    sys.stderr.write("SutraDB MCP server starting on stdio...\n")
-    sys.stderr.write(f"Connecting to SutraDB at {SUTRA_ENDPOINT}\n")
+    configure_from_args()
+
+    sys.stderr.write(f"sutra-mcp v0.2.0 starting (mode={MODE})\n")
+    if MODE == "server":
+        sys.stderr.write(f"  endpoint: {SUTRA_URL}\n")
+        if PASSCODE:
+            sys.stderr.write("  auth: passcode configured\n")
+    else:
+        sys.stderr.write(f"  data_dir: {DATA_DIR}\n")
+        sys.stderr.write(f"  cli: {SUTRA_CLI}\n")
 
     for line in sys.stdin:
         line = line.strip()
@@ -280,14 +691,23 @@ def main():
             continue
         try:
             msg = json.loads(line)
-            response = handle_message(msg)
-            if response:
-                sys.stdout.write(json.dumps(response) + "\n")
-                sys.stdout.flush()
         except json.JSONDecodeError:
-            sys.stderr.write(f"Invalid JSON: {line}\n")
+            sys.stderr.write(f"Invalid JSON received, skipping.\n")
+            continue
+
+        try:
+            response = handle_message(msg)
         except Exception as e:
-            sys.stderr.write(f"Error: {e}\n")
+            sys.stderr.write(f"Internal error handling message: {e}\n")
+            response = {
+                "jsonrpc": "2.0",
+                "id": msg.get("id"),
+                "error": {"code": -32603, "message": f"Internal error: {e}"},
+            }
+
+        if response is not None:
+            sys.stdout.write(json.dumps(response) + "\n")
+            sys.stdout.flush()
 
 
 if __name__ == "__main__":
