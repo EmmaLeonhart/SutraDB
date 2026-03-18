@@ -1,6 +1,6 @@
 # SutraDB — TODO
 
-**Status: 202 of 232 items complete (87%)**
+**Status: 206 of 232 items complete (89%)**
 
 ---
 
@@ -9,10 +9,10 @@
 ### Self-Update & Version Management (Priority)
 The binary needs to know its own version, check for updates, and update itself from GitHub releases.
 
-- [ ] `--version` / `-V` flag on CLI binary
-- [ ] `sutra update` command: download latest release binary from GitHub, replace self
-- [ ] Startup version check: on `sutra serve`, check GitHub releases API once daily, log if update available
-- [ ] HNSW rebuild HTTP endpoint (`POST /vectors/rebuild`) for agent access
+- [x] `--version` / `-V` flag on CLI binary
+- [x] `sutra update` command: download latest release binary from GitHub, replace self
+- [x] Startup version check: on `sutra serve`, check GitHub releases API once daily, log if update available
+- [x] HNSW rebuild HTTP endpoint (`POST /vectors/rebuild`) for agent access
 
 ### MCP Server — Agent Studio (Priority)
 The MCP server is Sutra Studio for AI agents. Like Sutra Studio works in both serverless and server mode, the MCP server must support both: direct `.sdb` file access (serverless) and HTTP connection (server mode). Focus on database maintenance, not just querying.

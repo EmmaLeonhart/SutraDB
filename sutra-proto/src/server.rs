@@ -66,6 +66,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/health", get(health))
         .route("/graph-store", get(gsp_get).put(gsp_put).delete(gsp_delete))
         .route("/vectors/health", get(vectors_health))
+        .route("/vectors/rebuild", post(rebuild_hnsw))
         .route("/.well-known/void", get(service_description))
         .route("/service-description", get(service_description))
         .layer(middleware::from_fn_with_state(
@@ -1190,6 +1191,39 @@ async fn vectors_health(
         "index_count": indexes.len(),
         "total_edge_count": vectors.total_edge_count(),
         "indexes": indexes,
+    })))
+}
+
+/// POST /vectors/rebuild — compact and rebuild all HNSW indexes.
+/// Removes tombstones and restores connectivity. This is the HTTP equivalent
+/// of `sutra health --rebuild-hnsw`, accessible to AI agents via API.
+async fn rebuild_hnsw(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, ProtoError> {
+    let mut vectors = state
+        .vectors
+        .write()
+        .map_err(|e| ProtoError::BadRequest(format!("lock: {}", e)))?;
+
+    let mut results = Vec::new();
+    for pred_id in vectors.predicates() {
+        if let Some(index) = vectors.get_mut(pred_id) {
+            let before = index.len();
+            let removed = index.compact();
+            let after = index.active_count();
+            results.push(serde_json::json!({
+                "predicate_id": pred_id,
+                "tombstones_removed": removed,
+                "nodes_before": before,
+                "active_after": after,
+            }));
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "indexes_rebuilt": results.len(),
+        "details": results,
     })))
 }
 

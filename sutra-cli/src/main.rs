@@ -8,7 +8,8 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "sutra",
-    about = "SutraDB — RDF-star triplestore with HNSW vector indexing"
+    about = "SutraDB — RDF-star triplestore with HNSW vector indexing",
+    version = env!("CARGO_PKG_VERSION"),
 )]
 struct Cli {
     #[command(subcommand)]
@@ -103,6 +104,12 @@ enum Commands {
         #[arg(long)]
         refresh: bool,
     },
+    /// Check for updates and self-update the binary from GitHub releases.
+    Update {
+        /// Just check for updates without installing.
+        #[arg(long)]
+        check: bool,
+    },
     /// Agent-first installer: outputs structured config for AI agents.
     /// Generates a markdown notes file documenting the database setup.
     #[command(name = "install-agent")]
@@ -143,6 +150,9 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Update { check } => {
+            return handle_update(check).await;
+        }
         Commands::Serve {
             port,
             data_dir,
@@ -150,6 +160,19 @@ async fn main() -> anyhow::Result<()> {
             passcode,
             backup_interval,
         } => {
+            // Background version check (non-blocking, best-effort)
+            tokio::spawn(async {
+                if let Some(latest) = check_latest_version().await {
+                    let current = env!("CARGO_PKG_VERSION");
+                    if latest != current {
+                        tracing::info!(
+                            "Update available: v{} → v{} (run `sutra update` to install)",
+                            current,
+                            latest
+                        );
+                    }
+                }
+            });
             let state = if memory_only {
                 tracing::info!("Running in-memory only (no persistence)");
                 Arc::new(sutra_proto::AppState {
@@ -790,6 +813,198 @@ fn resolve_object_persistent(id: sutra_core::TermId, ps: &sutra_core::Persistent
         .ok()
         .flatten()
         .unwrap_or_else(|| format!("_:id{}", id))
+}
+
+// ─── Self-Update ─────────────────────────────────────────────────────────────
+
+const GITHUB_REPO: &str = "EmmaLeonhart/SutraDB";
+
+/// Check the latest release version from GitHub.
+async fn check_latest_version() -> Option<String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", format!("sutra/{}", env!("CARGO_PKG_VERSION")))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let json: serde_json::Value = resp.json().await.ok()?;
+    let tag = json["tag_name"].as_str()?;
+    // Strip leading 'v' from tag name
+    Some(tag.strip_prefix('v').unwrap_or(tag).to_string())
+}
+
+/// Get the download URL for the current platform from a GitHub release.
+fn get_asset_url(assets: &[serde_json::Value]) -> Option<String> {
+    let target = if cfg!(target_os = "windows") {
+        "windows-x64"
+    } else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "macos-arm64"
+        } else {
+            "macos-x64"
+        }
+    } else {
+        "linux-x64"
+    };
+
+    for asset in assets {
+        if let Some(name) = asset["name"].as_str() {
+            if name.contains(target) {
+                return asset["browser_download_url"]
+                    .as_str()
+                    .map(|s| s.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Handle the `sutra update` command.
+async fn handle_update(check_only: bool) -> anyhow::Result<()> {
+    let current = env!("CARGO_PKG_VERSION");
+    println!("SutraDB v{}", current);
+    println!("Checking for updates...");
+
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", format!("sutra/{}", current))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        println!("Could not check for updates (HTTP {})", resp.status());
+        return Ok(());
+    }
+
+    let json: serde_json::Value = resp.json().await?;
+    let tag = json["tag_name"].as_str().unwrap_or("unknown");
+    let latest = tag.strip_prefix('v').unwrap_or(tag);
+
+    if latest == current {
+        println!("Already up to date (v{}).", current);
+        return Ok(());
+    }
+
+    println!("New version available: v{} → v{}", current, latest);
+
+    if check_only {
+        if let Some(body) = json["body"].as_str() {
+            let summary: String = body.lines().take(10).collect::<Vec<_>>().join("\n");
+            println!("\nRelease notes:\n{}", summary);
+        }
+        println!("\nRun `sutra update` to install.");
+        return Ok(());
+    }
+
+    // Find the right binary for this platform
+    let assets = json["assets"].as_array().cloned().unwrap_or_default();
+    let asset_url = match get_asset_url(&assets) {
+        Some(url) => url,
+        None => {
+            println!("No pre-built binary found for this platform.");
+            println!(
+                "Update manually: cargo install --git https://github.com/{} sutra-cli",
+                GITHUB_REPO
+            );
+            return Ok(());
+        }
+    };
+
+    println!("Downloading {}...", asset_url);
+    let archive_resp = client
+        .get(&asset_url)
+        .header("User-Agent", format!("sutra/{}", current))
+        .send()
+        .await?;
+
+    if !archive_resp.status().is_success() {
+        anyhow::bail!("Download failed (HTTP {})", archive_resp.status());
+    }
+
+    let bytes = archive_resp.bytes().await?;
+
+    // Get current executable path
+    let current_exe = std::env::current_exe()?;
+    let backup_path = current_exe.with_extension("old");
+
+    // Extract binary from archive
+    let binary_name = if cfg!(target_os = "windows") {
+        "sutra.exe"
+    } else {
+        "sutra"
+    };
+
+    let extracted = if asset_url.ends_with(".zip") {
+        extract_from_zip(&bytes, binary_name)?
+    } else {
+        extract_from_tar_gz(&bytes, binary_name)?
+    };
+
+    // Replace current binary: rename current → .old, write new
+    println!("Installing to {}...", current_exe.display());
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path).ok();
+    }
+    std::fs::rename(&current_exe, &backup_path)?;
+    std::fs::write(&current_exe, &extracted)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&current_exe, std::fs::Permissions::from_mode(0o755))?;
+    }
+
+    println!(
+        "Updated to v{}. Old binary saved as {}",
+        latest,
+        backup_path.display()
+    );
+    Ok(())
+}
+
+/// Extract a file from a zip archive in memory.
+fn extract_from_zip(data: &[u8], file_name: &str) -> anyhow::Result<Vec<u8>> {
+    let cursor = std::io::Cursor::new(data);
+    let mut archive = zip::ZipArchive::new(cursor)?;
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        if file.name().ends_with(file_name) {
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut file, &mut buf)?;
+            return Ok(buf);
+        }
+    }
+    anyhow::bail!("Binary '{}' not found in archive", file_name)
+}
+
+/// Extract a file from a tar.gz archive in memory.
+fn extract_from_tar_gz(data: &[u8], file_name: &str) -> anyhow::Result<Vec<u8>> {
+    let cursor = std::io::Cursor::new(data);
+    let gz = flate2::read::GzDecoder::new(cursor);
+    let mut archive = tar::Archive::new(gz);
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.to_path_buf();
+        if path.file_name().and_then(|n| n.to_str()) == Some(file_name) {
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut buf)?;
+            return Ok(buf);
+        }
+    }
+    anyhow::bail!("Binary '{}' not found in archive", file_name)
 }
 
 /// Recursively copy a directory (for backups).
