@@ -306,10 +306,7 @@ fn estimate_triple_cardinality(
 /// resolved to their interned IDs, enabling much tighter cardinality
 /// estimates. Without the dictionary, only integer literals (which carry
 /// inline IDs) contribute to the estimate.
-fn term_to_constant_id(
-    term: &Term,
-    dict: Option<&TermDictionary>,
-) -> Option<sutra_core::TermId> {
+fn term_to_constant_id(term: &Term, dict: Option<&TermDictionary>) -> Option<sutra_core::TermId> {
     match term {
         // Variables are always unbound from the estimator's perspective.
         Term::Variable(_) => None,
@@ -318,9 +315,7 @@ fn term_to_constant_id(
         // IRIs can be resolved via the dictionary if available.
         Term::Iri(iri) => dict.and_then(|d| d.lookup(iri)),
         // rdf:type shorthand
-        Term::A => dict.and_then(|d| {
-            d.lookup("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-        }),
+        Term::A => dict.and_then(|d| d.lookup("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")),
         // Prefixed names would need prefix expansion which we don't have
         // at the planner level. Return None (conservative).
         Term::PrefixedName { .. } => None,

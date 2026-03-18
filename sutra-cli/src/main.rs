@@ -630,7 +630,9 @@ SutraDB Agent Installer v0.1.0
                 if !studio_dir.exists() {
                     eprintln!("[WARN] sutra-studio/ directory not found in current directory.");
                     eprintln!("       Run install-agent from the SutraDB repository root,");
-                    eprintln!("       or launch Sutra Studio manually: cd sutra-studio && flutter run");
+                    eprintln!(
+                        "       or launch Sutra Studio manually: cd sutra-studio && flutter run"
+                    );
                 } else {
                     println!("Launching Sutra Studio...");
                     #[cfg(target_os = "windows")]
@@ -668,7 +670,10 @@ SutraDB Agent Installer v0.1.0
                     triple_count += 1;
                 }
                 if triple_count > 0 {
-                    println!("[OK] Loaded {} terms, {} triples from disk", term_count, triple_count);
+                    println!(
+                        "[OK] Loaded {} terms, {} triples from disk",
+                        term_count, triple_count
+                    );
                 }
 
                 // Rebuild HNSW indexes from stored vector triples

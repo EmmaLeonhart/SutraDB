@@ -281,16 +281,20 @@ impl PersistentStore {
                 let current = u64::from_le_bytes(bytes);
                 Some((current + 1).to_le_bytes().to_vec())
             })?
-            .ok_or(CoreError::CorruptValue { expected: 8, actual: 0 })?;
+            .ok_or(CoreError::CorruptValue {
+                expected: 8,
+                actual: 0,
+            })?;
         bytes_to_u64(old.as_ref())
     }
 }
 
 /// Convert a byte slice to a u64 term ID, returning an error on length mismatch.
 fn bytes_to_u64(bytes: &[u8]) -> Result<u64> {
-    let arr: [u8; 8] = bytes
-        .try_into()
-        .map_err(|_| CoreError::CorruptValue { expected: 8, actual: bytes.len() })?;
+    let arr: [u8; 8] = bytes.try_into().map_err(|_| CoreError::CorruptValue {
+        expected: 8,
+        actual: bytes.len(),
+    })?;
     Ok(u64::from_le_bytes(arr))
 }
 
