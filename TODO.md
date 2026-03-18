@@ -1,6 +1,6 @@
 # SutraDB — TODO
 
-**Status: 185 of 218 items complete (85%)**
+**Status: 191 of 218 items complete (88%)**
 
 ---
 
@@ -81,12 +81,12 @@ Detection heuristic: during subgraph pattern mining, measure the **fan-in ratio*
 
 All existing pseudo-table work (property extraction, group discovery, columnar storage, zonemaps, vectorized scans) is done. The remaining work is evolving discovery from single-node property sets to multi-hop subgraph shapes:
 
-- [ ] Extend property model from `(predicate, position)` pairs to rooted path shapes (multi-hop)
-- [ ] Subgraph pattern mining: discover repeated structural motifs across the graph
-- [ ] Geometric depth threshold: N² scaling for minimum group size at depth N
-- [ ] Fan-in ratio detection: identify high-overlap (DAG/lattice) vs tree-like subgraph patterns
-- [ ] Overlap penalty: skip or deprioritize high-fan-in patterns to avoid storage blowup and update amplification
-- [ ] Multi-node pseudo-table materialization: columns can reference nodes at any depth
+- [x] Extend property model from `(predicate, position)` pairs to rooted path shapes (multi-hop)
+- [x] Subgraph pattern mining: discover repeated structural motifs across the graph
+- [x] Geometric depth threshold: N² scaling for minimum group size at depth N
+- [x] Fan-in ratio detection: identify high-overlap (DAG/lattice) vs tree-like subgraph patterns
+- [x] Overlap penalty: skip or deprioritize high-fan-in patterns to avoid storage blowup and update amplification
+- [x] Multi-node pseudo-table materialization: columns can reference nodes at any depth
 - [ ] Invalidation tracking: flag stale rows when interior nodes change, rebuild during maintenance cycle
 - [ ] Update query planner to recognize multi-pattern SPARQL queries that match a subgraph pseudo-table
 

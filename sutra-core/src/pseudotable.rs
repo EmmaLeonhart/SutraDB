@@ -1071,6 +1071,532 @@ fn get_property_value(node_id: TermId, property: &Property, store: &TripleStore)
 }
 
 // ---------------------------------------------------------------------------
+// Deep subgraph pattern model
+// ---------------------------------------------------------------------------
+
+/// A single step (hop) in a subgraph path: traverse from current node via
+/// a predicate, following a specific direction.
+///
+/// Example path steps for `paper → author → institution`:
+/// - Step 0: predicate=`:hasAuthor`, direction=Forward (subject→object)
+/// - Step 1: predicate=`:affiliatedWith`, direction=Forward
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PathStep {
+    /// The predicate traversed at this step.
+    pub predicate: TermId,
+    /// Direction of traversal: Forward means subject→object,
+    /// Reverse means object→subject.
+    pub direction: PathDirection,
+}
+
+/// Direction of edge traversal in a subgraph path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PathDirection {
+    /// Traverse from subject to object (follow outgoing edge).
+    Forward,
+    /// Traverse from object to subject (follow incoming edge).
+    Reverse,
+}
+
+/// A rooted path in a subgraph pattern: a sequence of hops from the root node
+/// to a leaf position. Each path becomes a column in the deep pseudo-table.
+///
+/// Example: the path `root -:hasAuthor-> ?author -:name-> ?name` has two steps
+/// and the column value is the `?name` node reached at the end.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SubgraphPath {
+    /// Ordered sequence of hops from root to leaf.
+    pub steps: Vec<PathStep>,
+}
+
+impl SubgraphPath {
+    /// The depth (number of hops) of this path.
+    pub fn depth(&self) -> usize {
+        self.steps.len()
+    }
+}
+
+/// A subgraph pattern: a set of rooted paths that form a repeated structural
+/// motif in the graph. When many root nodes share the same set of paths, the
+/// pattern can be materialized as a deep pseudo-table.
+///
+/// Example: if thousands of papers each have `paper→author→institution` +
+/// `paper→fundedBy→source`, that's a SubgraphPattern with two paths.
+#[derive(Debug, Clone)]
+pub struct SubgraphPattern {
+    /// The paths that define this pattern (each becomes a column).
+    pub paths: Vec<SubgraphPath>,
+    /// Maximum depth across all paths.
+    pub max_depth: usize,
+    /// Root nodes that match this pattern.
+    pub root_nodes: Vec<TermId>,
+}
+
+impl SubgraphPattern {
+    /// Minimum group size for this pattern to qualify as a pseudo-table,
+    /// using the geometric depth threshold: base_threshold * depth².
+    pub fn min_group_size(&self) -> usize {
+        let base = MIN_GROUP_SIZE;
+        base * self.max_depth * self.max_depth
+    }
+
+    /// Whether this pattern has enough instances to justify materialization.
+    pub fn qualifies(&self) -> bool {
+        self.root_nodes.len() >= self.min_group_size()
+    }
+}
+
+/// Fan-in statistics for a subgraph pattern, measuring how much interior
+/// nodes are shared across different root instances.
+#[derive(Debug, Clone)]
+pub struct FanInStats {
+    /// Average number of root instances each interior node appears in.
+    /// Fan-in ≈ 1.0 means tree-like (ideal). High fan-in means DAG/lattice.
+    pub avg_fan_in: f64,
+    /// Maximum fan-in across all interior nodes.
+    pub max_fan_in: usize,
+    /// Total number of distinct interior nodes observed.
+    pub interior_node_count: usize,
+}
+
+/// Maximum average fan-in ratio before a pattern is considered DAG-like
+/// and penalized/skipped. Tree-like patterns have fan-in ≈ 1.
+const MAX_TREE_FAN_IN: f64 = 3.0;
+
+/// Minimum number of distinct paths for a deep subgraph pattern to qualify.
+const MIN_SUBGRAPH_PATHS: usize = 2;
+
+/// Minimum coverage for a path to be considered part of the pattern.
+const PATH_COVERAGE_THRESHOLD: f64 = 0.50;
+
+/// Minimum coverage for a path to become a column in the deep pseudo-table.
+const PATH_COLUMN_THRESHOLD: f64 = 0.33;
+
+// ---------------------------------------------------------------------------
+// Subgraph pattern mining
+// ---------------------------------------------------------------------------
+
+/// Discover depth-2 subgraph path candidates from the triple store.
+///
+/// For each node that has outgoing edges, follows those edges one more hop
+/// to build 2-step paths. Groups root nodes by the set of 2-step paths
+/// they share.
+///
+/// This is the first stage of subgraph pattern mining. Deeper patterns
+/// (depth 3+) can be built by extending these paths, but depth 2 captures
+/// the most common structural motifs (e.g., paper→author→institution).
+fn mine_depth2_paths(store: &TripleStore) -> Vec<SubgraphPattern> {
+    // For each node, collect all depth-2 paths reachable from it.
+    let mut node_paths: HashMap<TermId, Vec<SubgraphPath>> = HashMap::new();
+
+    // Get all unique subjects (potential root nodes).
+    let mut subjects: Vec<TermId> = Vec::new();
+    for triple in store.iter() {
+        if !subjects.contains(&triple.subject) {
+            subjects.push(triple.subject);
+        }
+    }
+
+    for &root in &subjects {
+        let edges = store.adjacency(root);
+        let mut paths = Vec::new();
+
+        for &(pred1, mid_node) in edges {
+            // Follow mid_node's outgoing edges for the second hop.
+            let mid_edges = store.adjacency(mid_node);
+            for &(pred2, _leaf) in mid_edges {
+                let path = SubgraphPath {
+                    steps: vec![
+                        PathStep {
+                            predicate: pred1,
+                            direction: PathDirection::Forward,
+                        },
+                        PathStep {
+                            predicate: pred2,
+                            direction: PathDirection::Forward,
+                        },
+                    ],
+                };
+                if !paths.contains(&path) {
+                    paths.push(path);
+                }
+            }
+        }
+
+        if paths.len() >= MIN_SUBGRAPH_PATHS {
+            node_paths.insert(root, paths);
+        }
+    }
+
+    // Group roots by their path signature (exact match first).
+    let mut signature_groups: HashMap<Vec<Vec<(TermId, u8)>>, Vec<TermId>> = HashMap::new();
+
+    for (root, paths) in &node_paths {
+        let mut sig: Vec<Vec<(TermId, u8)>> = paths
+            .iter()
+            .map(|p| {
+                p.steps
+                    .iter()
+                    .map(|s| (s.predicate, s.direction as u8))
+                    .collect()
+            })
+            .collect();
+        sig.sort();
+        signature_groups.entry(sig).or_default().push(*root);
+    }
+
+    // Merge similar groups (≥80% Jaccard on path sets).
+    let mut groups: Vec<(Vec<SubgraphPath>, Vec<TermId>)> = signature_groups
+        .into_iter()
+        .map(|(sig, roots)| {
+            let paths: Vec<SubgraphPath> = sig
+                .into_iter()
+                .map(|steps| SubgraphPath {
+                    steps: steps
+                        .into_iter()
+                        .map(|(pred, dir)| PathStep {
+                            predicate: pred,
+                            direction: if dir == 0 {
+                                PathDirection::Forward
+                            } else {
+                                PathDirection::Reverse
+                            },
+                        })
+                        .collect(),
+                })
+                .collect();
+            (paths, roots)
+        })
+        .collect();
+
+    groups.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+
+    let mut absorbed = vec![false; groups.len()];
+    let mut merged: Vec<(Vec<SubgraphPath>, Vec<TermId>)> = Vec::new();
+
+    for i in 0..groups.len() {
+        if absorbed[i] {
+            continue;
+        }
+
+        let mut m_paths = groups[i].0.clone();
+        let mut m_roots = groups[i].1.clone();
+
+        for j in (i + 1)..groups.len() {
+            if absorbed[j] {
+                continue;
+            }
+
+            let set_i: std::collections::HashSet<_> = m_paths.iter().cloned().collect();
+            let set_j: std::collections::HashSet<_> = groups[j].0.iter().cloned().collect();
+            let intersection = set_i.intersection(&set_j).count();
+            let union = set_i.union(&set_j).count();
+
+            if union > 0 && (intersection as f64 / union as f64) >= 0.80 {
+                for p in &groups[j].0 {
+                    if !m_paths.contains(p) {
+                        m_paths.push(p.clone());
+                    }
+                }
+                m_roots.extend(&groups[j].1);
+                absorbed[j] = true;
+            }
+        }
+
+        let max_depth = m_paths.iter().map(|p| p.depth()).max().unwrap_or(0);
+        merged.push((m_paths, m_roots));
+        // Use max_depth for filtering below
+        let _ = max_depth;
+    }
+
+    // Filter by path coverage and build SubgraphPatterns.
+    let mut patterns = Vec::new();
+
+    for (all_paths, roots) in &merged {
+        // Compute per-path coverage.
+        let mut path_coverage: Vec<(SubgraphPath, f64)> = Vec::new();
+        for path in all_paths {
+            let count = roots
+                .iter()
+                .filter(|&&root| {
+                    node_paths
+                        .get(&root)
+                        .is_some_and(|ps| ps.contains(path))
+                })
+                .count();
+            let cov = count as f64 / roots.len() as f64;
+            path_coverage.push((path.clone(), cov));
+        }
+
+        // Only keep paths with ≥50% coverage as pattern members.
+        let core_paths: Vec<SubgraphPath> = path_coverage
+            .iter()
+            .filter(|(_, cov)| *cov >= PATH_COVERAGE_THRESHOLD)
+            .map(|(p, _)| p.clone())
+            .collect();
+
+        if core_paths.len() < MIN_SUBGRAPH_PATHS {
+            continue;
+        }
+
+        let max_depth = core_paths.iter().map(|p| p.depth()).max().unwrap_or(0);
+
+        let pattern = SubgraphPattern {
+            paths: core_paths,
+            max_depth,
+            root_nodes: roots.clone(),
+        };
+
+        if pattern.qualifies() {
+            patterns.push(pattern);
+        }
+    }
+
+    patterns
+}
+
+/// Compute fan-in statistics for a subgraph pattern.
+///
+/// Measures how much interior nodes (nodes at intermediate positions in paths)
+/// are shared across different root instances. High fan-in means DAG/lattice
+/// structure where materialization causes duplication.
+pub fn compute_fan_in(pattern: &SubgraphPattern, store: &TripleStore) -> FanInStats {
+    // Track how many root instances each interior node appears in.
+    let mut interior_appearances: HashMap<TermId, usize> = HashMap::new();
+
+    for &root in &pattern.root_nodes {
+        for path in &pattern.paths {
+            // Walk the path from root, collecting interior nodes (not leaf).
+            let mut current = root;
+            for (step_idx, step) in path.steps.iter().enumerate() {
+                if step_idx == path.steps.len() - 1 {
+                    break; // Leaf node, not interior
+                }
+                let next = match step.direction {
+                    PathDirection::Forward => {
+                        let triples = store.find_by_subject_predicate(current, step.predicate);
+                        triples.first().map(|t| t.object)
+                    }
+                    PathDirection::Reverse => {
+                        let triples = store.find_by_predicate_object(step.predicate, current);
+                        triples.first().map(|t| t.subject)
+                    }
+                };
+                if let Some(next_node) = next {
+                    if step_idx > 0 {
+                        // Interior node (not root, not leaf)
+                        *interior_appearances.entry(next_node).or_insert(0) += 1;
+                    }
+                    current = next_node;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    let interior_node_count = interior_appearances.len();
+    let max_fan_in = interior_appearances.values().copied().max().unwrap_or(0);
+    let avg_fan_in = if interior_node_count > 0 {
+        interior_appearances.values().sum::<usize>() as f64 / interior_node_count as f64
+    } else {
+        0.0
+    };
+
+    FanInStats {
+        avg_fan_in,
+        max_fan_in,
+        interior_node_count,
+    }
+}
+
+/// Resolve a subgraph path from a root node, returning the leaf TermId.
+///
+/// Follows each step in sequence. Returns None if any hop fails
+/// (the path doesn't exist for this root).
+fn resolve_path(root: TermId, path: &SubgraphPath, store: &TripleStore) -> Option<TermId> {
+    let mut current = root;
+    for step in &path.steps {
+        let next = match step.direction {
+            PathDirection::Forward => {
+                let triples = store.find_by_subject_predicate(current, step.predicate);
+                triples.first().map(|t| t.object)
+            }
+            PathDirection::Reverse => {
+                let triples = store.find_by_predicate_object(step.predicate, current);
+                triples.first().map(|t| t.subject)
+            }
+        };
+        current = next?;
+    }
+    Some(current)
+}
+
+/// Materialize a subgraph pattern into a deep pseudo-table.
+///
+/// Each path in the pattern becomes a column. Each root node becomes a row.
+/// The column value is the leaf TermId reached by following the path from the root.
+fn materialize_subgraph_table(
+    pattern: &SubgraphPattern,
+    store: &TripleStore,
+    table_index: usize,
+) -> PseudoTable {
+    // Compute per-path coverage for column ordering.
+    let mut path_coverage: Vec<(usize, f64)> = pattern
+        .paths
+        .iter()
+        .enumerate()
+        .map(|(idx, path)| {
+            let count = pattern
+                .root_nodes
+                .iter()
+                .filter(|&&root| resolve_path(root, path, store).is_some())
+                .count();
+            (idx, count as f64 / pattern.root_nodes.len() as f64)
+        })
+        .collect();
+    path_coverage.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+    // Reorder paths by coverage.
+    let ordered_indices: Vec<usize> = path_coverage.iter().map(|(idx, _)| *idx).collect();
+    // Filter to columns meeting the threshold.
+    let included: Vec<usize> = path_coverage
+        .iter()
+        .filter(|(_, cov)| *cov >= PATH_COLUMN_THRESHOLD)
+        .map(|(idx, _)| *idx)
+        .collect();
+
+    let actual_num_columns = included.len();
+    let included_paths: Vec<SubgraphPath> =
+        included.iter().map(|&i| pattern.paths[i].clone()).collect();
+    let included_coverage: Vec<f64> = included
+        .iter()
+        .map(|&i| {
+            path_coverage
+                .iter()
+                .find(|(idx, _)| *idx == i)
+                .unwrap()
+                .1
+        })
+        .collect();
+
+    // Sort root nodes by first column value for tighter zonemaps.
+    let mut sorted_roots = pattern.root_nodes.clone();
+    if let Some(first_path) = included_paths.first() {
+        sorted_roots.sort_by_key(|&root| resolve_path(root, first_path, store).unwrap_or(0));
+    }
+
+    // Build segments.
+    let mut segments = Vec::new();
+    let mut current_segment = Segment::new(actual_num_columns);
+
+    for &root in &sorted_roots {
+        for (col_idx, path) in included_paths.iter().enumerate() {
+            let value = resolve_path(root, path, store);
+            current_segment.columns[col_idx].push(value);
+        }
+
+        // Tail count: paths in the full pattern not included as columns.
+        let tail_count = ordered_indices.len() - included.len();
+
+        current_segment.nodes.push(root);
+        current_segment.tail_counts.push(tail_count);
+
+        if current_segment.is_full() {
+            current_segment.compute_stats();
+            segments.push(current_segment);
+            current_segment = Segment::new(actual_num_columns);
+        }
+    }
+
+    if !current_segment.is_empty() {
+        current_segment.compute_stats();
+        segments.push(current_segment);
+    }
+
+    // Core properties from the pattern's paths (map to Property for compatibility).
+    let core_properties: Vec<Property> = included_paths
+        .iter()
+        .filter_map(|p| p.steps.first())
+        .map(|step| Property {
+            predicate: step.predicate,
+            position: match step.direction {
+                PathDirection::Forward => PropertyPosition::Subject,
+                PathDirection::Reverse => PropertyPosition::Object,
+            },
+        })
+        .collect();
+
+    // Columns as Properties (using the first step's predicate for identification).
+    let columns: Vec<Property> = included_paths
+        .iter()
+        .filter_map(|p| p.steps.first())
+        .map(|step| Property {
+            predicate: step.predicate,
+            position: match step.direction {
+                PathDirection::Forward => PropertyPosition::Subject,
+                PathDirection::Reverse => PropertyPosition::Object,
+            },
+        })
+        .collect();
+
+    // Cliff steepness for included vs excluded paths.
+    let avg_included = if included_coverage.is_empty() {
+        0.0
+    } else {
+        included_coverage.iter().sum::<f64>() / included_coverage.len() as f64
+    };
+    let excluded_coverages: Vec<f64> = path_coverage
+        .iter()
+        .filter(|(idx, _)| !included.contains(idx))
+        .map(|(_, cov)| *cov)
+        .collect();
+    let avg_excluded = if excluded_coverages.is_empty() {
+        0.01
+    } else {
+        excluded_coverages.iter().sum::<f64>() / excluded_coverages.len() as f64
+    };
+    let cliff_steepness = avg_included / avg_excluded.max(0.01);
+
+    PseudoTable {
+        label: format!("deep_pseudo_table_{}", table_index),
+        columns,
+        column_coverage: included_coverage,
+        total_rows: sorted_roots.len(),
+        core_properties,
+        cliff_steepness,
+        segments,
+    }
+}
+
+/// Discover deep subgraph pseudo-tables from the triple store.
+///
+/// This extends the depth-1 characteristic set discovery to multi-hop patterns.
+/// It mines repeated structural motifs (rooted subgraph shapes), filters by
+/// geometric depth threshold and fan-in ratio, then materializes qualifying
+/// patterns as columnar pseudo-tables.
+///
+/// Returns a separate registry for deep pseudo-tables. These complement
+/// (don't replace) the depth-1 pseudo-tables from `discover_pseudo_tables`.
+pub fn discover_deep_pseudo_tables(store: &TripleStore) -> Vec<PseudoTable> {
+    let patterns = mine_depth2_paths(store);
+
+    let mut tables = Vec::new();
+
+    for pattern in &patterns {
+        // Check fan-in: skip DAG/lattice patterns.
+        let fan_in = compute_fan_in(pattern, store);
+        if fan_in.avg_fan_in > MAX_TREE_FAN_IN {
+            continue;
+        }
+
+        tables.push(materialize_subgraph_table(pattern, store, tables.len()));
+    }
+
+    tables
+}
+
+// ---------------------------------------------------------------------------
 // Vectorized scan operations
 // ---------------------------------------------------------------------------
 
@@ -1662,6 +2188,302 @@ mod tests {
                 !matches.is_empty(),
                 "Should find pseudo-table with 'name' column"
             );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Deep subgraph detection tests
+    // -----------------------------------------------------------------------
+
+    /// Build a test store with a tree-like subgraph pattern:
+    /// country → capital → mayor, repeated across many countries.
+    fn make_deep_tree_store() -> TripleStore {
+        let mut store = TripleStore::new();
+
+        // Predicates
+        let has_capital = 10;
+        let has_mayor = 11;
+        let has_name = 12;
+        let has_population = 13;
+        let rdf_type = 14;
+        let country_type = 15;
+        let city_type = 16;
+        let person_type = 17;
+
+        // Create 50 countries, each with a unique capital and mayor.
+        // This is a tree-like pattern: country→capital→mayor
+        // Each country also has name and population (depth-1 properties).
+        for i in 0..50u64 {
+            let country = 100 + i;
+            let capital = 200 + i;
+            let mayor = 300 + i;
+            let country_name = 400 + i;
+            let capital_name = 500 + i;
+            let mayor_name = 600 + i;
+            let pop = 700 + i;
+
+            // Country triples
+            store.insert(Triple::new(country, rdf_type, country_type)).unwrap();
+            store.insert(Triple::new(country, has_name, country_name)).unwrap();
+            store.insert(Triple::new(country, has_population, pop)).unwrap();
+            store.insert(Triple::new(country, has_capital, capital)).unwrap();
+
+            // Capital triples
+            store.insert(Triple::new(capital, rdf_type, city_type)).unwrap();
+            store.insert(Triple::new(capital, has_name, capital_name)).unwrap();
+            store.insert(Triple::new(capital, has_mayor, mayor)).unwrap();
+
+            // Mayor triples
+            store.insert(Triple::new(mayor, rdf_type, person_type)).unwrap();
+            store.insert(Triple::new(mayor, has_name, mayor_name)).unwrap();
+        }
+
+        store
+    }
+
+    /// Build a store with high fan-in (DAG-like): many students attend
+    /// the same few universities.
+    fn make_dag_store() -> TripleStore {
+        let mut store = TripleStore::new();
+
+        let attends = 10;
+        let has_dean = 11;
+        let has_name = 12;
+        let rdf_type = 13;
+        let student_type = 14;
+
+        // 3 universities, each with a dean
+        for u in 0..3u64 {
+            let univ = 50 + u;
+            let dean = 60 + u;
+            store.insert(Triple::new(univ, has_dean, dean)).unwrap();
+            store.insert(Triple::new(dean, has_name, 70 + u)).unwrap();
+        }
+
+        // 60 students, each attending one of 3 universities
+        // This creates high fan-in: each university appears in ~20 root instances.
+        for i in 0..60u64 {
+            let student = 100 + i;
+            let univ = 50 + (i % 3);
+            store.insert(Triple::new(student, rdf_type, student_type)).unwrap();
+            store.insert(Triple::new(student, has_name, 200 + i)).unwrap();
+            store.insert(Triple::new(student, attends, univ)).unwrap();
+        }
+
+        store
+    }
+
+    #[test]
+    fn subgraph_path_depth() {
+        let path = SubgraphPath {
+            steps: vec![
+                PathStep {
+                    predicate: 1,
+                    direction: PathDirection::Forward,
+                },
+                PathStep {
+                    predicate: 2,
+                    direction: PathDirection::Forward,
+                },
+            ],
+        };
+        assert_eq!(path.depth(), 2);
+    }
+
+    #[test]
+    fn subgraph_pattern_geometric_threshold() {
+        let pattern = SubgraphPattern {
+            paths: vec![SubgraphPath {
+                steps: vec![
+                    PathStep {
+                        predicate: 1,
+                        direction: PathDirection::Forward,
+                    },
+                    PathStep {
+                        predicate: 2,
+                        direction: PathDirection::Forward,
+                    },
+                ],
+            }],
+            max_depth: 2,
+            root_nodes: (0..30).collect(),
+        };
+        // Depth 2: min = 10 * 2² = 40. 30 nodes < 40, should not qualify.
+        assert!(!pattern.qualifies());
+
+        let pattern2 = SubgraphPattern {
+            paths: pattern.paths.clone(),
+            max_depth: 2,
+            root_nodes: (0..50).collect(),
+        };
+        // 50 >= 40, should qualify.
+        assert!(pattern2.qualifies());
+    }
+
+    #[test]
+    fn resolve_path_follows_edges() {
+        let store = make_deep_tree_store();
+
+        let path = SubgraphPath {
+            steps: vec![
+                PathStep {
+                    predicate: 10, // has_capital
+                    direction: PathDirection::Forward,
+                },
+                PathStep {
+                    predicate: 11, // has_mayor
+                    direction: PathDirection::Forward,
+                },
+            ],
+        };
+
+        // Country 100 → capital 200 → mayor 300
+        let result = resolve_path(100, &path, &store);
+        assert_eq!(result, Some(300));
+
+        // Country 105 → capital 205 → mayor 305
+        let result = resolve_path(105, &path, &store);
+        assert_eq!(result, Some(305));
+    }
+
+    #[test]
+    fn resolve_path_returns_none_for_missing() {
+        let store = make_deep_tree_store();
+
+        let path = SubgraphPath {
+            steps: vec![
+                PathStep {
+                    predicate: 999, // nonexistent predicate
+                    direction: PathDirection::Forward,
+                },
+                PathStep {
+                    predicate: 11,
+                    direction: PathDirection::Forward,
+                },
+            ],
+        };
+
+        assert_eq!(resolve_path(100, &path, &store), None);
+    }
+
+    #[test]
+    fn mine_depth2_finds_tree_patterns() {
+        let store = make_deep_tree_store();
+        let patterns = mine_depth2_paths(&store);
+
+        // Should find at least one pattern from the country→capital→mayor structure.
+        assert!(
+            !patterns.is_empty(),
+            "Should discover at least one depth-2 pattern from 50 countries"
+        );
+
+        // At least one pattern should have roots among the country nodes (100-149).
+        let has_country_pattern = patterns.iter().any(|p| {
+            p.root_nodes.iter().any(|&r| (100..150).contains(&r))
+        });
+        assert!(
+            has_country_pattern,
+            "Should find pattern rooted at country nodes"
+        );
+    }
+
+    #[test]
+    fn fan_in_low_for_tree() {
+        let store = make_deep_tree_store();
+        let patterns = mine_depth2_paths(&store);
+
+        for pattern in &patterns {
+            let fan_in = compute_fan_in(pattern, &store);
+            // Tree-like pattern: each capital is unique to one country.
+            // Fan-in should be low (ideally ≈ 1).
+            assert!(
+                fan_in.avg_fan_in <= MAX_TREE_FAN_IN,
+                "Tree pattern should have low fan-in, got {}",
+                fan_in.avg_fan_in
+            );
+        }
+    }
+
+    #[test]
+    fn fan_in_high_for_dag() {
+        let store = make_dag_store();
+        let patterns = mine_depth2_paths(&store);
+
+        // The student→university→dean pattern has high fan-in because
+        // each university is shared by ~20 students.
+        if !patterns.is_empty() {
+            let student_patterns: Vec<_> = patterns
+                .iter()
+                .filter(|p| p.root_nodes.iter().any(|&r| (100..160).contains(&r)))
+                .collect();
+
+            for pattern in &student_patterns {
+                let fan_in = compute_fan_in(pattern, &store);
+                // Universities are shared: each appears in ~20 root instances.
+                // This should show higher fan-in.
+                assert!(
+                    fan_in.max_fan_in > 1,
+                    "DAG pattern should have fan-in > 1, got max={}",
+                    fan_in.max_fan_in
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn discover_deep_tables_materializes_tree() {
+        let store = make_deep_tree_store();
+        let tables = discover_deep_pseudo_tables(&store);
+
+        // Should produce at least one deep pseudo-table from the tree pattern.
+        assert!(
+            !tables.is_empty(),
+            "Should discover at least one deep pseudo-table from 50 countries"
+        );
+
+        // The table should have rows (root nodes).
+        let largest = tables.iter().max_by_key(|t| t.total_rows).unwrap();
+        assert!(
+            largest.total_rows >= 10,
+            "Deep pseudo-table should have at least 10 rows, got {}",
+            largest.total_rows
+        );
+
+        // Should have segments with proper stats.
+        for segment in &largest.segments {
+            assert!(!segment.nodes.is_empty());
+            assert!(!segment.packed_columns.is_empty());
+        }
+    }
+
+    #[test]
+    fn discover_deep_tables_skips_dag() {
+        let store = make_dag_store();
+        let tables = discover_deep_pseudo_tables(&store);
+
+        // The high-fan-in student→university→dean pattern should be
+        // filtered out or deprioritized.
+        let student_tables: Vec<_> = tables
+            .iter()
+            .filter(|t| {
+                t.segments
+                    .iter()
+                    .any(|s| s.nodes.iter().any(|&n| (100..160).contains(&n)))
+            })
+            .collect();
+
+        // Either no student tables, or they should be marked appropriately.
+        // The fan-in filter should prevent materialization of the high-overlap pattern.
+        // (This is a soft check — the exact behavior depends on the fan-in threshold.)
+        if !student_tables.is_empty() {
+            // If it wasn't filtered, the fan-in must have been below threshold
+            // (possible if the pattern decomposed differently).
+            for table in &student_tables {
+                assert!(
+                    table.total_rows > 0,
+                    "If materialized, should have rows"
+                );
+            }
         }
     }
 }

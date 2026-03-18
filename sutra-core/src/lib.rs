@@ -22,9 +22,10 @@ pub use jsonld::parse_jsonld;
 pub use ntriples::{parse_nquads_line, parse_ntriples_line};
 pub use persistent::PersistentStore;
 pub use pseudotable::{
-    discover_pseudo_tables, extract_node_properties, intersect_scan_results, scan_column_eq,
-    scan_column_not_null, scan_column_range, ColumnStats, Property, PropertyPosition, PropertySet,
-    PseudoTable, PseudoTableRegistry, ScanResult, Segment,
+    compute_fan_in, discover_deep_pseudo_tables, discover_pseudo_tables, extract_node_properties,
+    intersect_scan_results, scan_column_eq, scan_column_not_null, scan_column_range, ColumnStats,
+    FanInStats, PathDirection, PathStep, Property, PropertyPosition, PropertySet, PseudoTable,
+    PseudoTableRegistry, ScanResult, Segment, SubgraphPath, SubgraphPattern,
 };
 pub use rdfxml::parse_rdfxml;
 pub use store::TripleStore;
