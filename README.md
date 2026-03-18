@@ -89,14 +89,14 @@ sutra info                      # Show database stats
 
 ## SDKs
 
-| Language | Path |
-|----------|------|
-| Python | `sdks/python/` |
-| TypeScript | `sdks/typescript/` |
-| Go | `sdks/go/` |
-| Rust | `sdks/rust/` |
-| Java | `sdks/java/` |
-| .NET | `sdks/dotnet/` |
+| Language | Package | Install |
+|----------|---------|---------|
+| Python | [`sutradb`](https://pypi.org/project/sutradb/) | `pip install sutradb` |
+| TypeScript | [`sutradb`](https://www.npmjs.com/package/sutradb) | `npm install sutradb` |
+| Go | [`sutradb`](sdks/go/) | `go get github.com/EmmaLeonhart/SutraDB/sdks/go` |
+| Rust | [`sutradb`](sdks/rust/) | `cargo add sutradb` |
+| Java | [`sutradb-java`](sdks/java/) | Maven dependency |
+| .NET | [`SutraDB.Client`](sdks/dotnet/) | `dotnet add package SutraDB.Client` |
 
 ## Sutra Studio
 
