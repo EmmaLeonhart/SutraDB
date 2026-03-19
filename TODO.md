@@ -1,6 +1,6 @@
 # SutraDB — TODO
 
-**Status: 220 of 241 items complete (91%)**
+**Status: 228 of 249 items complete (92%)**
 
 ---
 
@@ -9,7 +9,7 @@
 Merge the Gradle migration (local) and MCP agentic UX work (claude.ai remote session) then cut v0.3.1.
 
 ### Release Checklist
-- [ ] Merge claude.ai remote branch (MCP agentic UX work) into main
+- [x] Merge claude.ai remote branch (MCP agentic UX work) into main
 - [ ] Merge Gradle migration + Maven Central publishing setup (local commits)
 - [ ] Bump version to 0.3.1 in `sdks/java/build.gradle.kts` and all other SDK configs
 - [ ] Set up Maven Central secrets: `MAVEN_USERNAME`, `MAVEN_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
@@ -220,7 +220,14 @@ Deferred until paying customers.
 ### Native MCP Server
 - [x] `sutra mcp` command: native Rust MCP server built into the binary (no Python needed)
 - [x] Dual-mode: `--url` for server mode, `--data-dir` for serverless mode
-- [x] 8 tools: health_report, rebuild_hnsw, verify_consistency, database_info, sparql_query, insert_triples, backup, vector_search
+- [x] 10 tools: health_report, rebuild_hnsw, verify_consistency, database_info, sparql_query, insert_triples, backup, vector_search, check_update, decline_update
+- [x] Auto-update on MCP startup with 2-minute decline window (`--no-auto-update` to disable)
+- [x] Direct library calls in serverless mode (no PATH dependency on `sutra` binary)
+- [x] MCP resources: sutra://connection, sutra://version, sutra://schema
+- [x] MCP prompts: explore_graph, find_similar, count_by_type query templates
+- [x] MCP notifications: notifications/message for update progress, HNSW rebuild progress
+- [x] Async stdin loop with tokio::select! for concurrent notification delivery
+- [x] Backup works in server mode (exports via /graph endpoint)
 
 ### Documentation
 - [x] Agent setup guide, SDK publishing/accounts guides, session notes
