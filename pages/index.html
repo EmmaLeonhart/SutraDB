@@ -291,10 +291,10 @@
         <span class="badge badge-rust">Written in Rust</span>
         <span class="badge badge-license">Apache 2.0</span>
         <span class="badge badge-superset">Superset of W3C Standards</span>
-        <span class="badge badge-preview">Developer Preview</span>
+        <span class="badge badge-preview" id="version-badge">Developer Preview</span>
     </div>
     <div class="cta">
-        <a href="https://github.com/EmmaLeonhart/SutraDB/releases/latest" class="btn btn-primary">Download Latest</a>
+        <a href="https://github.com/EmmaLeonhart/SutraDB/releases/latest" class="btn btn-primary" id="download-btn">Download Latest</a>
         <a href="https://github.com/EmmaLeonhart/SutraDB" class="btn btn-secondary">View on GitHub</a>
     </div>
 
@@ -439,6 +439,21 @@
     </p>
 </footer>
 
+<script>
+(function() {
+    fetch('https://api.github.com/repos/EmmaLeonhart/SutraDB/releases/latest')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var tag = data.tag_name;
+            if (!tag) return;
+            var badge = document.getElementById('version-badge');
+            if (badge) badge.textContent = tag;
+            var btn = document.getElementById('download-btn');
+            if (btn) btn.textContent = 'Download ' + tag;
+        })
+        .catch(function() {});
+})();
+</script>
 
 </body>
 </html>
