@@ -4,21 +4,34 @@
 
 ---
 
-## Next Release (v0.3.0) — Java SDK & Fuseki Migration
+## Next Release (v0.3.1) — Gradle Migration, MCP Agentic UX, Maven Central
 
-The Java SDK is the priority for v0.3.0. The semantic web community (Apache Jena, RDF4J, Fuseki users) is heavily Java-based. Making the Java SDK production-ready and publishing to Maven Central is the fastest path to adoption from that audience.
+Merge the Gradle migration (local) and MCP agentic UX work (claude.ai remote session) then cut v0.3.1.
 
-### Java SDK — Maven Central Ready
-The SDK is functionally complete (3 classes, ~400 LOC) but needs tests, OWL validation, and the new endpoints.
+### Release Checklist
+- [ ] Merge claude.ai remote branch (MCP agentic UX work) into main
+- [ ] Merge Gradle migration + Maven Central publishing setup (local commits)
+- [ ] Bump version to 0.3.1 in `sdks/java/build.gradle.kts` and all other SDK configs
+- [ ] Set up Maven Central secrets: `MAVEN_USERNAME`, `MAVEN_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
+- [ ] Generate GPG key and upload public key to keyserver
+- [ ] Tag `v0.3.1` and push to trigger publish workflow
+- [ ] Verify `io.github.emmaleonhart:sutradb:0.3.1` appears on Maven Central
+
+### Java/Kotlin SDK — Maven Central Ready
+The SDK is functionally complete (3 classes, ~400 LOC). Build migrated from Maven to Gradle (Kotlin DSL).
 
 - [x] JUnit 5 test suite: 24 unit tests with HTTP mocking for all SutraClient methods
 - [x] Add `rebuildHnsw()` method (calls `POST /vectors/rebuild`)
 - [x] Add `healthReport()` method (calls `GET /health` + `GET /vectors/health`)
 - [x] Bump version to 0.3.0 (match main project)
+- [x] Migrate from Maven (pom.xml) to Gradle (Kotlin DSL)
+- [x] Switch to Sonatype Central Portal (`central-publishing-maven-plugin` → Gradle `maven-publish`)
+- [x] In-memory GPG signing (no GPG binary needed in CI)
+- [x] GroupId: `io.github.emmaleonhart`, artifact: `sutradb`
 - [ ] Integration test: start SutraDB, insert triples, query, verify round-trip
 - [ ] OWL validation (match Python SDK: domain/range/subclass/disjoint/equivalent)
 - [ ] Connection retry logic with configurable timeouts
-- [ ] Publish to Maven Central (Sonatype OSSRH — deferred, needs account setup)
+- [ ] First publish to Maven Central
 
 ---
 
