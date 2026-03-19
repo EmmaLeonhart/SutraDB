@@ -62,8 +62,8 @@
 
     <div class="meta" id="meta">Loading latest results...</div>
 
-    <h2>sutra-core &mdash; Triple Store</h2>
-    <p>The storage engine: how fast can we insert, look up, and scan triples? These benchmarks measure the SPO/POS/OSP index performance, IRI interning, pseudo-table discovery (auto-detected relational structure), and SIMD column scans. <strong>Lower is better</strong> &mdash; all values are nanoseconds per operation.</p>
+    <h2>sutra-core &mdash; Triple Store &mdash; <strong style="color:#3fb950;">Lower is better</strong></h2>
+    <p>The storage engine: how fast can we insert, look up, and scan triples? These benchmarks measure the SPO/POS/OSP index performance, IRI interning, pseudo-table discovery (auto-detected relational structure), and SIMD column scans. All values are nanoseconds per operation.</p>
     <div class="chart-container"><canvas id="chart-core"></canvas></div>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
@@ -83,8 +83,8 @@
     </details>
     <table id="table-core"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
 
-    <h2>sutra-hnsw &mdash; Vector Index</h2>
-    <p>The HNSW approximate nearest neighbor index: how fast can we insert vectors, search for similar ones, and how does it handle deletions and high dimensions? These are the numbers that matter if you're storing embeddings. <strong>Lower is better</strong> for latency benchmarks below.</p>
+    <h2>sutra-hnsw &mdash; Vector Index &mdash; <strong style="color:#3fb950;">Lower is better</strong></h2>
+    <p>The HNSW approximate nearest neighbor index: how fast can we insert vectors, search for similar ones, and how does it handle deletions and high dimensions? These are the numbers that matter if you're storing embeddings.</p>
     <div class="chart-container"><canvas id="chart-hnsw"></canvas></div>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
@@ -106,8 +106,8 @@
     <p>Recall measures how many of the true nearest neighbors HNSW actually finds, compared to brute-force. 1.0 = perfect, meaning all 10 true nearest neighbors were returned.</p>
     <table id="table-hnsw-quality"><thead><tr><th>Benchmark</th><th class="num">Recall@10</th></tr></thead><tbody></tbody></table>
 
-    <h2>sutra-sparql &mdash; Query Engine</h2>
-    <p>End-to-end SPARQL query performance: parsing, planning, and execution. Includes pure graph traversal, vector similarity search, and the combined graph+vector queries that are SutraDB's core differentiator. <strong>Lower is better</strong> &mdash; all values are nanoseconds per query.</p>
+    <h2>sutra-sparql &mdash; Query Engine &mdash; <strong style="color:#3fb950;">Lower is better</strong></h2>
+    <p>End-to-end SPARQL query performance: parsing, planning, and execution. Includes pure graph traversal, vector similarity search, and the combined graph+vector queries that are SutraDB's core differentiator. All values are nanoseconds per query.</p>
     <div class="chart-container"><canvas id="chart-sparql"></canvas></div>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
