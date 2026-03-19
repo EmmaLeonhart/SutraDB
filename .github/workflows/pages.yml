@@ -23,6 +23,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Update sitemap lastmod dates
+        run: |
+          python3 - <<'SCRIPT'
+          import re, subprocess, sys
+
+          sitemap = "pages/sitemap.xml"
+          with open(sitemap, "r") as f:
+              content = f.read()
+
+          def get_lastmod(filepath):
+              """Get the last commit date for a file in YYYY-MM-DD format."""
+              try:
+                  result = subprocess.run(
+                      ["git", "log", "-1", "--format=%aI", "--", filepath],
+                      capture_output=True, text=True, check=True
+                  )
+                  date = result.stdout.strip()
+                  if date:
+                      return date[:10]  # YYYY-MM-DD
+              except subprocess.CalledProcessError:
+                  pass
+              return None
+
+          # Match each <url> block and update its <lastmod>
+          def update_block(match):
+              block = match.group(0)
+              loc_match = re.search(r"<loc>https://sutradb\.org(/[^<]*)</loc>", block)
+              if not loc_match:
+                  return block
+              path = loc_match.group(1)
+              # Map URL path to file path
+              if path == "/" or path == "":
+                  filepath = "pages/index.html"
+              else:
+                  filepath = "pages" + path.rstrip("/") + "/index.html"
+              date = get_lastmod(filepath)
+              if date:
+                  block = re.sub(r"<lastmod>[^<]+</lastmod>", f"<lastmod>{date}</lastmod>", block)
+              return block
+
+          content = re.sub(r"<url>.*?</url>", update_block, content, flags=re.DOTALL)
+          with open(sitemap, "w") as f:
+              f.write(content)
+          print("Sitemap lastmod dates updated from git history")
+          SCRIPT
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
