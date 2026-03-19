@@ -4,15 +4,35 @@
 //! and query tools. Supports two modes:
 //! - **Server mode**: connects to a running SutraDB HTTP endpoint
 //! - **Serverless mode**: opens a `.sdb` file directly (no server needed)
+//!
+//! On startup, checks for updates from GitHub releases. If an update is
+//! available, it will auto-install after 2 minutes unless the agent calls
+//! the `decline_update` tool or `--no-auto-update` is passed.
 
 use serde_json::{json, Value};
-use std::io::{self, BufRead, Write};
+use std::sync::Arc;
+use tokio::io::AsyncBufReadExt;
+use tokio::sync::Mutex;
+
+const GITHUB_REPO: &str = "EmmaLeonhart/SutraDB";
+const AUTO_UPDATE_DELAY_SECS: u64 = 120;
+
+/// Pending update state shared between the main loop and the background timer.
+struct PendingUpdate {
+    /// Latest version string (e.g. "0.4.0").
+    latest_version: String,
+    /// Whether the agent has declined this update.
+    declined: bool,
+    /// Whether the update has already been applied.
+    applied: bool,
+}
 
 /// Run the MCP server, reading JSON-RPC from stdin, writing to stdout.
 pub async fn run_mcp_server(
     url: String,
     data_dir: Option<String>,
     passcode: Option<String>,
+    auto_update: bool,
 ) -> anyhow::Result<()> {
     let mode = if data_dir.is_some() {
         "serverless"
@@ -20,22 +40,29 @@ pub async fn run_mcp_server(
         "server"
     };
 
-    let ctx = McpContext {
+    let ctx = Arc::new(McpContext {
         url,
         data_dir,
         passcode,
         mode: mode.to_string(),
-    };
+    });
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
+    let pending_update: Arc<Mutex<Option<PendingUpdate>>> = Arc::new(Mutex::new(None));
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
+    // Kick off background update check
+    if auto_update {
+        let pending = Arc::clone(&pending_update);
+        tokio::spawn(async move {
+            startup_update_check(pending).await;
+        });
+    }
+
+    let stdout = Arc::new(Mutex::new(tokio::io::stdout()));
+    let stdin = tokio::io::stdin();
+    let reader = tokio::io::BufReader::new(stdin);
+    let mut lines = reader.lines();
+
+    while let Ok(Some(line)) = lines.next_line().await {
         let line = line.trim().to_string();
         if line.is_empty() {
             continue;
@@ -49,8 +76,7 @@ pub async fn run_mcp_server(
                     "id": null,
                     "error": {"code": -32700, "message": format!("Parse error: {}", e)}
                 });
-                writeln!(out, "{}", err)?;
-                out.flush()?;
+                write_response(&stdout, &err).await;
                 continue;
             }
         };
@@ -61,9 +87,22 @@ pub async fn run_mcp_server(
         let response = match method {
             "initialize" => handle_initialize(&id),
             "notifications/initialized" => continue, // no response needed
+            "notifications/cancelled" => continue,   // acknowledged, no response
             "ping" => json!({"jsonrpc": "2.0", "id": id, "result": {}}),
             "tools/list" => handle_tools_list(&id),
-            "tools/call" => handle_tools_call(&id, &request["params"], &ctx).await,
+            "tools/call" => {
+                handle_tools_call(&id, &request["params"], &ctx, &pending_update).await
+            }
+            "resources/list" => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"resources": []}
+            }),
+            "prompts/list" => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"prompts": []}
+            }),
             _ => json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -71,11 +110,18 @@ pub async fn run_mcp_server(
             }),
         };
 
-        writeln!(out, "{}", response)?;
-        out.flush()?;
+        write_response(&stdout, &response).await;
     }
 
     Ok(())
+}
+
+async fn write_response(stdout: &Arc<Mutex<tokio::io::Stdout>>, response: &Value) {
+    use tokio::io::AsyncWriteExt;
+    let mut out = stdout.lock().await;
+    let msg = format!("{}\n", response);
+    let _ = out.write_all(msg.as_bytes()).await;
+    let _ = out.flush().await;
 }
 
 struct McpContext {
@@ -166,13 +212,28 @@ fn handle_tools_list(id: &Value) -> Value {
                         },
                         "required": ["predicate", "vector"]
                     }
+                },
+                {
+                    "name": "check_update",
+                    "description": "Check if a SutraDB update is available. Returns current version, latest version, and whether an auto-update is pending.",
+                    "inputSchema": {"type": "object", "properties": {}}
+                },
+                {
+                    "name": "decline_update",
+                    "description": "Decline the pending auto-update. By default, SutraDB auto-updates 2 minutes after startup if a new version is available. Call this tool to cancel the pending update for this session.",
+                    "inputSchema": {"type": "object", "properties": {}}
                 }
             ]
         }
     })
 }
 
-async fn handle_tools_call(id: &Value, params: &Value, ctx: &McpContext) -> Value {
+async fn handle_tools_call(
+    id: &Value,
+    params: &Value,
+    ctx: &McpContext,
+    pending_update: &Arc<Mutex<Option<PendingUpdate>>>,
+) -> Value {
     let tool_name = params["name"].as_str().unwrap_or("");
     let args = &params["arguments"];
 
@@ -185,6 +246,8 @@ async fn handle_tools_call(id: &Value, params: &Value, ctx: &McpContext) -> Valu
         "insert_triples" => tool_insert_triples(ctx, args).await,
         "backup" => tool_backup(ctx).await,
         "vector_search" => tool_vector_search(ctx, args).await,
+        "check_update" => tool_check_update(pending_update).await,
+        "decline_update" => tool_decline_update(pending_update).await,
         _ => Err(format!("Unknown tool: {}", tool_name)),
     };
 
@@ -204,6 +267,297 @@ async fn handle_tools_call(id: &Value, params: &Value, ctx: &McpContext) -> Valu
                 "isError": true
             }
         }),
+    }
+}
+
+// ─── Auto-update ─────────────────────────────────────────────────────────────
+
+/// Background task: check for updates, then wait 2 minutes before auto-applying.
+/// The update proceeds unless `declined` is set to true via the `decline_update` tool.
+async fn startup_update_check(pending: Arc<Mutex<Option<PendingUpdate>>>) {
+    let current = env!("CARGO_PKG_VERSION");
+
+    // Check latest version from GitHub
+    let latest = match check_latest_version().await {
+        Some(v) => v,
+        None => return, // network error or no releases — skip silently
+    };
+
+    if latest == current {
+        return; // already up to date
+    }
+
+    // Store the pending update so the agent can see it via check_update
+    {
+        let mut lock = pending.lock().await;
+        *lock = Some(PendingUpdate {
+            latest_version: latest.clone(),
+            declined: false,
+            applied: false,
+        });
+    }
+
+    tracing::info!(
+        "Update available: v{} -> v{}. Auto-updating in {} seconds. \
+         Agent can call 'decline_update' tool to cancel.",
+        current,
+        latest,
+        AUTO_UPDATE_DELAY_SECS
+    );
+
+    // Wait the decline window
+    tokio::time::sleep(std::time::Duration::from_secs(AUTO_UPDATE_DELAY_SECS)).await;
+
+    // Check if declined
+    let should_update = {
+        let lock = pending.lock().await;
+        match lock.as_ref() {
+            Some(p) => !p.declined && !p.applied,
+            None => false,
+        }
+    };
+
+    if !should_update {
+        tracing::info!("Auto-update declined or already applied. Skipping.");
+        return;
+    }
+
+    // Perform the update
+    tracing::info!("Auto-update window expired. Updating to v{}...", latest);
+    match perform_update(&latest).await {
+        Ok(()) => {
+            let mut lock = pending.lock().await;
+            if let Some(p) = lock.as_mut() {
+                p.applied = true;
+            }
+            tracing::info!(
+                "Updated to v{}. Restart the MCP server to use the new version.",
+                latest
+            );
+        }
+        Err(e) => {
+            tracing::error!("Auto-update failed: {}. Continuing with v{}.", e, current);
+        }
+    }
+}
+
+/// Check the latest release version from GitHub.
+async fn check_latest_version() -> Option<String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", format!("sutra/{}", env!("CARGO_PKG_VERSION")))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let json: Value = resp.json().await.ok()?;
+    let tag = json["tag_name"].as_str()?;
+    Some(tag.strip_prefix('v').unwrap_or(tag).to_string())
+}
+
+/// Download and install the latest binary, replacing the current executable.
+async fn perform_update(latest: &str) -> Result<(), String> {
+    let current = env!("CARGO_PKG_VERSION");
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", format!("sutra/{}", current))
+        .send()
+        .await
+        .map_err(|e| format!("HTTP error: {}", e))?;
+    let json: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("JSON error: {}", e))?;
+
+    let assets = json["assets"].as_array().cloned().unwrap_or_default();
+    let asset_url = get_asset_url(&assets).ok_or_else(|| {
+        format!(
+            "No pre-built binary for this platform. Update manually: \
+             cargo install --git https://github.com/{} sutra-cli",
+            GITHUB_REPO
+        )
+    })?;
+
+    let archive_resp = client
+        .get(&asset_url)
+        .header("User-Agent", format!("sutra/{}", current))
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+    if !archive_resp.status().is_success() {
+        return Err(format!("Download failed (HTTP {})", archive_resp.status()));
+    }
+
+    let bytes = archive_resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Read error: {}", e))?;
+
+    let current_exe = std::env::current_exe().map_err(|e| format!("Cannot find exe: {}", e))?;
+    let backup_path = current_exe.with_extension("old");
+
+    let binary_name = if cfg!(target_os = "windows") {
+        "sutra.exe"
+    } else {
+        "sutra"
+    };
+
+    let extracted = if asset_url.ends_with(".zip") {
+        extract_from_zip(&bytes, binary_name)?
+    } else {
+        extract_from_tar_gz(&bytes, binary_name)?
+    };
+
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path).ok();
+    }
+    std::fs::rename(&current_exe, &backup_path)
+        .map_err(|e| format!("Backup current binary: {}", e))?;
+    std::fs::write(&current_exe, &extracted)
+        .map_err(|e| format!("Write new binary: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&current_exe, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("Set permissions: {}", e))?;
+    }
+
+    tracing::info!(
+        "Binary updated: v{} -> v{}. Old binary at {}",
+        current,
+        latest,
+        backup_path.display()
+    );
+    Ok(())
+}
+
+fn get_asset_url(assets: &[Value]) -> Option<String> {
+    let target = if cfg!(target_os = "windows") {
+        "windows-x64"
+    } else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "macos-arm64"
+        } else {
+            "macos-x64"
+        }
+    } else {
+        "linux-x64"
+    };
+    for asset in assets {
+        if let Some(name) = asset["name"].as_str() {
+            if name.contains(target) {
+                return asset["browser_download_url"]
+                    .as_str()
+                    .map(|s| s.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_from_zip(data: &[u8], file_name: &str) -> Result<Vec<u8>, String> {
+    let cursor = std::io::Cursor::new(data);
+    let mut archive =
+        zip::ZipArchive::new(cursor).map_err(|e| format!("Zip open error: {}", e))?;
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| format!("Zip read error: {}", e))?;
+        if file.name().ends_with(file_name) {
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut file, &mut buf)
+                .map_err(|e| format!("Zip extract error: {}", e))?;
+            return Ok(buf);
+        }
+    }
+    Err(format!("Binary '{}' not found in archive", file_name))
+}
+
+fn extract_from_tar_gz(data: &[u8], file_name: &str) -> Result<Vec<u8>, String> {
+    let cursor = std::io::Cursor::new(data);
+    let gz = flate2::read::GzDecoder::new(cursor);
+    let mut archive = tar::Archive::new(gz);
+    let entries = archive
+        .entries()
+        .map_err(|e| format!("Tar open error: {}", e))?;
+    for entry in entries {
+        let mut entry = entry.map_err(|e| format!("Tar read error: {}", e))?;
+        let path = entry
+            .path()
+            .map_err(|e| format!("Tar path error: {}", e))?
+            .to_path_buf();
+        if path.file_name().and_then(|n| n.to_str()) == Some(file_name) {
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut buf)
+                .map_err(|e| format!("Tar extract error: {}", e))?;
+            return Ok(buf);
+        }
+    }
+    Err(format!("Binary '{}' not found in archive", file_name))
+}
+
+// ─── Update tools ────────────────────────────────────────────────────────────
+
+async fn tool_check_update(
+    pending: &Arc<Mutex<Option<PendingUpdate>>>,
+) -> Result<String, String> {
+    let current = env!("CARGO_PKG_VERSION");
+    let lock = pending.lock().await;
+    match lock.as_ref() {
+        Some(p) => {
+            let status = if p.applied {
+                "applied (restart to use new version)"
+            } else if p.declined {
+                "declined for this session"
+            } else {
+                "pending (will auto-apply after 2-minute window)"
+            };
+            Ok(format!(
+                "Current version: v{}\nLatest version: v{}\nAuto-update status: {}",
+                current, p.latest_version, status
+            ))
+        }
+        None => {
+            // No pending update — either we're up to date or check hasn't completed
+            Ok(format!(
+                "Current version: v{}\nNo update pending. Either already up to date or auto-update is disabled.",
+                current
+            ))
+        }
+    }
+}
+
+async fn tool_decline_update(
+    pending: &Arc<Mutex<Option<PendingUpdate>>>,
+) -> Result<String, String> {
+    let mut lock = pending.lock().await;
+    match lock.as_mut() {
+        Some(p) if !p.applied => {
+            p.declined = true;
+            Ok(format!(
+                "Auto-update to v{} declined for this session. \
+                 Run `sutra update` manually to install later.",
+                p.latest_version
+            ))
+        }
+        Some(p) if p.applied => Ok(format!(
+            "Update to v{} has already been applied. Restart to use the new version.",
+            p.latest_version
+        )),
+        _ => Ok("No pending update to decline.".to_string()),
     }
 }
 
