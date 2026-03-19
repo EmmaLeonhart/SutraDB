@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:title" content="SutraDB Benchmarks">
+    <meta property="og:description" content="Live performance benchmarks for SutraDB: triple store, HNSW vector index, and SPARQL query engine.">
+    <meta name="description" content="Live performance benchmarks for SutraDB: triple store, HNSW vector index, and SPARQL query engine.">
+    <title>Benchmarks &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <style>
+        :root {
+            --bg: #0d1117; --surface: #161b22; --border: #30363d;
+            --text: #e6edf3; --text-muted: #8b949e; --accent: #58a6ff;
+            --accent-hover: #79c0ff; --green: #3fb950; --orange: #d29922;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+        .container { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+        h1 { font-size: 2em; margin: 40px 0 8px; }
+        h2 { font-size: 1.4em; margin: 32px 0 16px; color: var(--accent); }
+        h3 { font-size: 1.1em; margin: 24px 0 8px; }
+        p { color: var(--text-muted); margin-bottom: 16px; }
+
+        .meta { color: var(--text-muted); font-size: 0.9em; margin-bottom: 24px; }
+        .meta strong { color: var(--text); }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 0.9em; }
+        th { text-align: left; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); font-weight: 600; }
+        td { padding: 8px 12px; border: 1px solid var(--border); font-family: 'SFMono-Regular', Consolas, monospace; }
+        tr:hover td { background: rgba(88, 166, 255, 0.05); }
+        .num { text-align: right; }
+
+        .chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+        canvas { width: 100% !important; height: 300px !important; }
+
+        .source-link { display: inline-block; margin: 16px 0 40px; padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9em; }
+
+        footer { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 0.9em; border-top: 1px solid var(--border); }
+    </style>
+</head>
+<body>
+
+<nav style="padding:12px 24px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:24px;font-size:0.9em;">
+    <a href="../" style="font-weight:700;font-size:1.1em;color:#e6edf3;text-decoration:none;"><span style="color:#58a6ff;">Sutra</span>DB</a>
+    <a href="../#download" style="color:#8b949e;">Download</a>
+    <a href="../graph-vector/" style="color:#8b949e;">Graph+Vector</a>
+    <a href="../sdb-format/" style="color:#8b949e;">Architecture</a>
+    <a href="../theory/" style="color:#8b949e;">Theory</a>
+    <a href="./" style="color:#e6edf3;font-weight:600;">Benchmarks</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB" style="color:#8b949e;">GitHub</a>
+</nav>
+
+<div class="container">
+    <h1>Benchmarks</h1>
+    <p>Criterion benchmarks run automatically on every push to main. All numbers from GitHub Actions (ubuntu-latest).</p>
+
+    <div class="meta" id="meta">Loading latest results...</div>
+
+    <h2>sutra-core &mdash; Triple Store</h2>
+    <div class="chart-container"><canvas id="chart-core"></canvas></div>
+    <table id="table-core"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
+
+    <h2>sutra-hnsw &mdash; Vector Index</h2>
+    <div class="chart-container"><canvas id="chart-hnsw"></canvas></div>
+    <table id="table-hnsw"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
+
+    <h2>sutra-sparql &mdash; Query Engine</h2>
+    <div class="chart-container"><canvas id="chart-sparql"></canvas></div>
+    <table id="table-sparql"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
+
+    <a class="source-link" href="https://github.com/EmmaLeonhart/SutraDB/blob/main/benchmarks/HISTORY.md">View full benchmark history on GitHub</a>
+    <br>
+    <a class="source-link" href="https://github.com/EmmaLeonhart/SutraDB/blob/main/benchmarks/LATEST.md">View latest raw results</a>
+</div>
+
+<footer>
+    <p>SutraDB is open source under the Apache 2.0 license.</p>
+    <p style="margin-top:8px;">
+        <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a> &middot;
+        <a href="../">Home</a>
+    </p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+    var LATEST_URL = 'https://raw.githubusercontent.com/EmmaLeonhart/SutraDB/main/benchmarks/LATEST.md';
+    var HISTORY_URL = 'https://raw.githubusercontent.com/EmmaLeonhart/SutraDB/main/benchmarks/HISTORY.md';
+
+    // Parse LATEST.md into sections
+    function parseLatest(text) {
+        var meta = '';
+        var runMatch = text.match(/\*\*Run:\*\* (.+?) \| \*\*Commit:\*\* `(.+?)`/);
+        if (runMatch) meta = 'Last run: ' + runMatch[1] + ' &mdash; commit <strong>' + runMatch[2] + '</strong>';
+
+        var sections = {core: [], hnsw: [], sparql: []};
+        var current = null;
+        text.split('\n').forEach(function(line) {
+            if (line.indexOf('sutra-core') !== -1) current = 'core';
+            else if (line.indexOf('sutra-hnsw') !== -1) current = 'hnsw';
+            else if (line.indexOf('sutra-sparql') !== -1) current = 'sparql';
+            if (!current) return;
+            var m = line.match(/^\| (.+?) \| ([\d,]+) \| ([\d,]+) \|$/);
+            if (m && m[1].trim() !== 'Benchmark' && m[1].trim() !== '(no results)') {
+                sections[current].push({
+                    name: m[1].trim(),
+                    ns: parseInt(m[2].replace(/,/g, '')),
+                    variance: parseInt(m[3].replace(/,/g, ''))
+                });
+            }
+        });
+        return {meta: meta, sections: sections};
+    }
+
+    // Parse HISTORY.md into per-commit data for charts
+    function parseHistory(text) {
+        var entries = [];
+        var blocks = text.split(/^## /m).slice(1);
+        blocks.forEach(function(block) {
+            var header = block.split('\n')[0];
+            var dateMatch = header.match(/^(\d{4}-\d{2}-\d{2})/);
+            var commitMatch = header.match(/`([a-f0-9]+)`/);
+            if (!dateMatch) return;
+            var entry = {date: dateMatch[1], commit: commitMatch ? commitMatch[1] : '?', core: {}, hnsw: {}, sparql: {}};
+            var currentSuite = null;
+            block.split('\n').forEach(function(line) {
+                if (line.indexOf('sutra-core') !== -1) currentSuite = 'core';
+                else if (line.indexOf('sutra-hnsw') !== -1) currentSuite = 'hnsw';
+                else if (line.indexOf('sutra-sparql') !== -1) currentSuite = 'sparql';
+                if (!currentSuite) return;
+                var m = line.match(/^test (.+?) \.\.\. bench:\s+([\d,]+) ns\/iter/);
+                if (m) entry[currentSuite][m[1].trim()] = parseInt(m[2].replace(/,/g, ''));
+            });
+            entries.push(entry);
+        });
+        return entries;
+    }
+
+    function fillTable(tableId, rows) {
+        var tbody = document.querySelector('#' + tableId + ' tbody');
+        rows.forEach(function(r) {
+            var tr = document.createElement('tr');
+            tr.innerHTML = '<td>' + r.name + '</td><td class="num">' + r.ns.toLocaleString() + '</td><td class="num">' + r.variance.toLocaleString() + '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    function makeChart(canvasId, entries, suite, benchNames) {
+        // Pick up to 4 representative benchmarks to chart
+        var picks = benchNames.slice(0, 4);
+        var labels = entries.map(function(e) { return e.date + ' (' + e.commit + ')'; });
+        var colors = ['#58a6ff', '#3fb950', '#d29922', '#bc8cff'];
+        var datasets = picks.map(function(name, i) {
+            return {
+                label: name.replace(/.*\//, ''),
+                data: entries.map(function(e) { return e[suite][name] || null; }),
+                borderColor: colors[i % colors.length],
+                backgroundColor: 'transparent',
+                tension: 0.3,
+                pointRadius: 2,
+                spanGaps: true
+            };
+        });
+        new Chart(document.getElementById(canvasId), {
+            type: 'line',
+            data: {labels: labels, datasets: datasets},
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {labels: {color: '#8b949e', font: {size: 11}}},
+                    tooltip: {callbacks: {label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString() + ' ns/iter'; }}}
+                },
+                scales: {
+                    x: {ticks: {color: '#8b949e', maxTicksLimit: 10, font: {size: 10}}, grid: {color: '#21262d'}},
+                    y: {ticks: {color: '#8b949e', callback: function(v) { return v.toLocaleString(); }}, grid: {color: '#21262d'}, title: {display: true, text: 'ns/iter', color: '#8b949e'}}
+                }
+            }
+        });
+    }
+
+    // Fetch and render
+    Promise.all([
+        fetch(LATEST_URL).then(function(r) { return r.text(); }),
+        fetch(HISTORY_URL).then(function(r) { return r.text(); })
+    ]).then(function(results) {
+        var latest = parseLatest(results[0]);
+        var history = parseHistory(results[1]);
+
+        document.getElementById('meta').innerHTML = latest.meta;
+        fillTable('table-core', latest.sections.core);
+        fillTable('table-hnsw', latest.sections.hnsw);
+        fillTable('table-sparql', latest.sections.sparql);
+
+        // Chart representative benchmarks
+        var coreNames = latest.sections.core.map(function(r) { return r.name; });
+        var hnswNames = latest.sections.hnsw.map(function(r) { return r.name; });
+        var sparqlNames = latest.sections.sparql.map(function(r) { return r.name; });
+
+        // Pick interesting ones for each chart
+        var corePicks = ['triple_insert_single', 'triple_lookup_subject/graph_size/10000', 'triple_contains_10k', 'adjacency_star_500'];
+        var hnswPicks = ['hnsw_search/n1000_128d_ef100/k10', 'hnsw_search/n5000_128d_ef100/k10', 'hnsw_metrics/1k_128d/Cosine', 'hnsw_metrics/1k_128d/DotProduct'];
+        var sparqlPicks = ['sparql_parse/simple_select', 'sparql_chain_traversal/500_nodes/2_hops', 'sparql_chain_traversal/200_nodes/4_hops', 'sparql_star_join/1000_leaves/10_cats'];
+
+        makeChart('chart-core', history, 'core', corePicks.filter(function(n) { return coreNames.indexOf(n) !== -1; }));
+        makeChart('chart-hnsw', history, 'hnsw', hnswPicks.filter(function(n) { return hnswNames.indexOf(n) !== -1; }));
+        makeChart('chart-sparql', history, 'sparql', sparqlPicks.filter(function(n) { return sparqlNames.indexOf(n) !== -1; }));
+    }).catch(function(err) {
+        document.getElementById('meta').textContent = 'Failed to load benchmarks: ' + err;
+    });
+})();
+</script>
+
+</body>
+</html>
