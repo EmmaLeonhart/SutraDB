@@ -3,11 +3,14 @@
 **/*.rs.bk
 Cargo.lock
 
-# Java / Maven
+# Java / Maven / Gradle
 **/target/
+**/build/
 *.class
 *.jar
+!**/gradle-wrapper.jar
 !tools/protege-plugin/build-and-install.bat
+.gradle/
 
 # IDE
 .vscode/

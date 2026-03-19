@@ -28,15 +28,34 @@
 4. GitHub secret: `CRATES_IO_TOKEN`
 5. Test: `cd sdks/rust && cargo package --list`
 
-## Maven Central (Java)
+## Maven Central (Java — built with Gradle)
 
+Maven Central requires **4 GitHub secrets** — more than any other registry.
+
+### Account & Namespace
 1. Go to https://central.sonatype.com/ → Sign up
-2. You need to verify domain ownership for `dev.sutradb` group
-   - Easiest: add a TXT DNS record, OR
-   - Use `io.github.emmaleonhart` as group (auto-verified for GitHub users)
-3. Go to Account → Generate User Token
-4. GitHub secrets: `MAVEN_USERNAME` (token user), `MAVEN_PASSWORD` (token pass)
-5. Note: Maven Central requires GPG-signed artifacts. Run `gpg --gen-key` locally first.
+2. Claim the `dev.sutradb` namespace:
+   - **Option A:** Add a TXT DNS record to verify `sutradb.dev` domain ownership
+   - **Option B:** Use `io.github.emmaleonhart` as groupId (auto-verified for GitHub users)
+3. Go to **Account → Generate User Token** (NOT your login password!)
+4. GitHub secrets:
+   - `MAVEN_USERNAME` → token username
+   - `MAVEN_TOKEN` → token password
+
+### GPG Key (required — Maven Central rejects unsigned artifacts)
+5. Generate key: `gpg --full-generate-key` (RSA 4096, no expiry, set a passphrase)
+6. Upload public key: `gpg --keyserver keyserver.ubuntu.com --send-keys YOUR_KEY_ID`
+7. Export private key: `gpg --export-secret-keys --armor YOUR_KEY_ID`
+8. GitHub secrets:
+   - `GPG_PRIVATE_KEY` → the ASCII-armored output (Gradle reads it directly, no base64 needed)
+   - `GPG_PASSPHRASE` → the passphrase from step 5
+
+### Local build test
+```bash
+cd sdks/java && ./gradlew build
+```
+
+See `docs/SDK_PUBLISHING.md` for full publishing details.
 
 ## NuGet (.NET)
 

@@ -129,7 +129,8 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - run: mvn compile -q
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew build
 
   # ── C# / .NET SDK ────────────────────────────────────────────────────
 

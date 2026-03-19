@@ -75,23 +75,91 @@ cargo publish
 
 ---
 
-## Java → Maven Central (OSSRH)
+## Java → Maven Central (Central Portal)
 
-**Secret names:** `MAVEN_USERNAME`, `MAVEN_PASSWORD`
+**Build system:** Gradle (Kotlin DSL)
+**Secret names:** `MAVEN_USERNAME`, `MAVEN_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
 
-This is the most complex setup. Maven Central uses Sonatype OSSRH.
+Maven Central is the most complex setup — it requires GPG-signed artifacts and a Sonatype Central Portal account.
+
+### 1. Sonatype Central Portal Account
 
 1. Create account at https://central.sonatype.com/
-2. Claim the `dev.sutradb` group ID (requires domain verification or GitHub proof)
-3. Generate a user token at https://central.sonatype.com/account
-4. Add `MAVEN_USERNAME` (token username) and `MAVEN_PASSWORD` (token password) as GitHub secrets
+2. Claim the `dev.sutradb` namespace:
+   - **Option A (domain):** Add a TXT DNS record to `sutradb.dev` to prove ownership
+   - **Option B (GitHub):** Use `io.github.emmaleonhart` as groupId (auto-verified for GitHub users)
+3. Go to **Account → Generate User Token**
+4. You'll get a **token username** and **token password** — these are NOT your login credentials
+5. Add as GitHub secrets:
+   - `MAVEN_USERNAME` → token username
+   - `MAVEN_TOKEN` → token password
 
-**Additional setup needed in `sdks/java/pom.xml`:**
-- Add `<distributionManagement>` section pointing to OSSRH
-- Add `maven-gpg-plugin` for signing (Central requires signed artifacts)
-- Add `nexus-staging-maven-plugin` for automated release
+### 2. GPG Key for Artifact Signing
 
-**First publish is usually manual and requires GPG signing.**
+Maven Central requires ALL artifacts (.jar, .pom, -sources.jar, -javadoc.jar) to be GPG-signed.
+
+**Generate a GPG key:**
+```bash
+gpg --full-generate-key
+# Choose: RSA and RSA, 4096 bits, does not expire
+# Enter your name and email (use your GitHub email)
+# Set a passphrase (you'll need this as GPG_PASSPHRASE secret)
+```
+
+**Publish the public key to a keyserver** (Maven Central verifies signatures):
+```bash
+# List your keys to find the key ID
+gpg --list-keys --keyid-format long
+
+# Upload to Ubuntu keyserver (Maven Central checks this)
+gpg --keyserver keyserver.ubuntu.com --send-keys YOUR_KEY_ID
+
+# Also upload to keys.openpgp.org as backup
+gpg --keyserver keys.openpgp.org --send-keys YOUR_KEY_ID
+```
+
+**Export the private key for CI:**
+```bash
+# Export as ASCII-armored for safe storage in GitHub secrets
+gpg --export-secret-keys --armor YOUR_KEY_ID
+# Copy the output (including BEGIN/END lines) as the GPG_PRIVATE_KEY secret
+```
+
+**Add as GitHub secrets:**
+- `GPG_PRIVATE_KEY` → the ASCII-armored private key (Gradle's in-memory signing reads this directly)
+- `GPG_PASSPHRASE` → the passphrase you set during key generation
+
+### 3. How CI Publishing Works
+
+The `publish-sdks.yml` workflow:
+1. `gradle/actions/setup-gradle` caches Gradle dependencies
+2. GPG signing uses Gradle's in-memory PGP keys (from `GPG_PRIVATE_KEY` env var — no GPG binary needed)
+3. `./gradlew publishMavenJavaPublicationToCentralRepository` builds, signs, and uploads
+4. Credentials are read from `MAVEN_USERNAME` / `MAVEN_TOKEN` env vars
+
+### 4. Building Locally
+
+```bash
+cd sdks/java
+
+# Build + test (no GPG needed)
+./gradlew build
+
+# Publish (requires GPG key + Sonatype credentials as env vars)
+GPG_PRIVATE_KEY="$(gpg --export-secret-keys --armor YOUR_KEY_ID)" \
+GPG_PASSPHRASE="your-passphrase" \
+MAVEN_USERNAME="token-username" \
+MAVEN_TOKEN="token-password" \
+./gradlew publishMavenJavaPublicationToCentralRepository
+```
+
+### 5. First Publish Checklist
+
+- [ ] Sonatype Central Portal account created
+- [ ] `dev.sutradb` namespace claimed and verified
+- [ ] GPG key generated and public key uploaded to keyserver
+- [ ] GitHub secrets set: `MAVEN_USERNAME`, `MAVEN_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
+- [ ] Test locally: `./gradlew build` (compile + tests, no credentials needed)
 
 ---
 
@@ -134,7 +202,7 @@ When ready to release:
 # - sdks/python/pyproject.toml → version
 # - sdks/typescript/package.json → version
 # - sdks/rust/Cargo.toml → version
-# - sdks/java/pom.xml → version
+# - sdks/java/build.gradle.kts → version
 # - sdks/dotnet/SutraDB.Client.csproj → Version
 # - sdks/go/go.mod (module path stays the same)
 
@@ -152,7 +220,8 @@ git push --tags
 - [ ] Create PyPI account and token → `PYPI_TOKEN`
 - [ ] Create npm account and token → `NPM_TOKEN`
 - [ ] Create crates.io account and token → `CRATES_IO_TOKEN`
-- [ ] Create Sonatype account, claim group → `MAVEN_USERNAME`, `MAVEN_PASSWORD`
+- [ ] Create Sonatype account, claim group → `MAVEN_USERNAME`, `MAVEN_TOKEN`
+- [ ] Generate GPG key, upload to keyserver → `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
 - [ ] Create NuGet account and API key → `NUGET_TOKEN`
 - [ ] Update version numbers in all SDKs
 - [ ] Test manual publish for each SDK first

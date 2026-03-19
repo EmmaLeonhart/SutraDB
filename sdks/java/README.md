@@ -2,9 +2,21 @@
 
 Java client for [SutraDB](https://github.com/EmmaLeonhart/SutraDB) — an RDF-star triplestore with native HNSW vector indexing.
 
-Requires Java 11+. Uses `java.net.http.HttpClient` (no external HTTP dependencies).
+Requires Java 11+. Uses `java.net.http.HttpClient` (no external HTTP dependencies). Built with Gradle (Kotlin DSL).
 
 ## Installation
+
+### Gradle (Kotlin DSL)
+
+```kotlin
+implementation("dev.sutradb:sutradb-java:0.3.0")
+```
+
+### Gradle (Groovy DSL)
+
+```groovy
+implementation 'dev.sutradb:sutradb-java:0.3.0'
+```
 
 ### Maven
 
@@ -14,12 +26,6 @@ Requires Java 11+. Uses `java.net.http.HttpClient` (no external HTTP dependencie
     <artifactId>sutradb-java</artifactId>
     <version>0.3.0</version>
 </dependency>
-```
-
-### Gradle
-
-```groovy
-implementation 'dev.sutradb:sutradb-java:0.3.0'
 ```
 
 ## Usage

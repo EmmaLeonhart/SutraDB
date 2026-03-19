@@ -79,12 +79,15 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Deploy to Maven Central
-        if: env.MAVEN_PASSWORD != ''
-        run: mvn deploy -q
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Publish to Maven Central
+        if: env.MAVEN_TOKEN != ''
+        run: ./gradlew publishMavenJavaPublicationToCentralRepository
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_TOKEN: ${{ secrets.MAVEN_TOKEN }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
   # ── .NET → NuGet ────────────────────────────────────────────────
   publish-dotnet:
