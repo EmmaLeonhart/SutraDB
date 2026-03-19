@@ -4,7 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sutradb"
-version = "0.1.0"
+dynamic = ["version"]
+
+[tool.hatch.version]
+path = "sutradb/_version.py"
 description = "Python client for SutraDB — RDF-star triplestore with native vector indexing"
 readme = "README.md"
 license = "Apache-2.0"

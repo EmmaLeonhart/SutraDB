@@ -10,6 +10,7 @@ jobs:
   publish-python:
     name: Publish Python SDK to PyPI
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       id-token: write
     defaults:
@@ -20,6 +21,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Set version from git tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "__version__ = \"${VERSION}\"" > sutradb/_version.py
+          echo "Publishing sutradb ${VERSION}"
       - run: pip install build
       - run: python -m build
       - uses: pypa/gh-action-pypi-publish@release/v1
@@ -40,6 +46,11 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+      - name: Set version from git tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "${VERSION}" --no-git-tag-version --allow-same-version
+          echo "Publishing sutradb ${VERSION}"
       - run: npm install
       - run: npx tsc
       - name: Publish to npm
@@ -59,9 +70,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Set version from git tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version = .*/version = \"${VERSION}\"/" Cargo.toml
+          echo "Publishing sutradb ${VERSION}"
       - name: Publish to crates.io
         if: env.CARGO_REGISTRY_TOKEN != ''
-        run: cargo publish
+        run: cargo publish --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
@@ -80,6 +96,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Set version from git tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version = .*/version = \"${VERSION}\"/" build.gradle.kts
+          echo "Publishing sutradb ${VERSION}"
       - name: Publish to Maven Central
         if: env.MAVEN_TOKEN != ''
         run: ./gradlew publishMavenJavaPublicationToCentralRepository
@@ -102,6 +123,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Set version from git tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/<Version>.*<\/Version>/<Version>${VERSION}<\/Version>/" SutraDB.csproj
+          echo "Publishing SutraDB.Client ${VERSION}"
       - run: dotnet pack -c Release
       - name: Push to NuGet
         if: env.NUGET_TOKEN != ''
