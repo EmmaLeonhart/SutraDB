@@ -64,7 +64,6 @@
     <h2>sutra-core &mdash; Triple Store</h2>
     <p>The storage engine: how fast can we insert, look up, and scan triples? These benchmarks measure the SPO/POS/OSP index performance, IRI interning, pseudo-table discovery (auto-detected relational structure), and SIMD column scans.</p>
     <div class="chart-container"><canvas id="chart-core"></canvas></div>
-    <table id="table-core"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
         <dl style="margin-left:16px;">
@@ -81,11 +80,11 @@
             <dt><strong>reverse_lookup_10k</strong></dt><dd>Find all subjects that reference a specific object across 10K triples. Like a reverse foreign key lookup in SQL &mdash; uses the OSP index.</dd>
         </dl>
     </details>
+    <table id="table-core"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
 
     <h2>sutra-hnsw &mdash; Vector Index</h2>
     <p>The HNSW approximate nearest neighbor index: how fast can we insert vectors, search for similar ones, and how does it handle deletions and high dimensions? These are the numbers that matter if you're storing embeddings.</p>
     <div class="chart-container"><canvas id="chart-hnsw"></canvas></div>
-    <table id="table-hnsw"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
         <dl style="margin-left:16px;">
@@ -100,11 +99,11 @@
             <dt><strong>hnsw_recall_at_10/1k_128d</strong></dt><dd>Quality benchmark, not speed: what fraction of the true top-10 nearest neighbors does HNSW actually find? Computed by brute-force comparison. Measures search accuracy.</dd>
         </dl>
     </details>
+    <table id="table-hnsw"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
 
     <h2>sutra-sparql &mdash; Query Engine</h2>
     <p>End-to-end SPARQL query performance: parsing, planning, and execution. Includes pure graph traversal, vector similarity search, and the combined graph+vector queries that are SutraDB's core differentiator.</p>
     <div class="chart-container"><canvas id="chart-sparql"></canvas></div>
-    <table id="table-sparql"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
         <dl style="margin-left:16px;">
@@ -119,6 +118,7 @@
             <dt><strong>sparql_filter_gt_2k</strong></dt><dd>FILTER with integer comparison across 2K items. Like <code>WHERE score > 80</code> in SQL.</dd>
         </dl>
     </details>
+    <table id="table-sparql"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
 
     <a class="source-link" href="https://github.com/EmmaLeonhart/SutraDB/blob/main/benchmarks/HISTORY.md">View full benchmark history on GitHub</a>
     <br>
