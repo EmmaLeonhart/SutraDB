@@ -232,11 +232,157 @@ fn bench_vector_search(c: &mut Criterion) {
     group.finish();
 }
 
+/// Graph + vector combined: traverse the graph to find candidates,
+/// then filter by vector similarity. This is the core SutraDB use case.
+fn bench_graph_then_vector(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sparql_graph_vector");
+
+    for &n in &[200, 500] {
+        let mut dict = TermDictionary::new();
+        let mut store = TripleStore::new();
+        let rdf_type = dict.intern("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+        let has_embedding = dict.intern("http://example.org/hasEmbedding");
+        let cites = dict.intern("http://example.org/cites");
+        let paper_type = dict.intern("http://example.org/Paper");
+
+        let mut vectors = VectorRegistry::new();
+        vectors
+            .declare(VectorPredicateConfig {
+                predicate_id: has_embedding,
+                dimensions: 32,
+                m: 16,
+                ef_construction: 100,
+                metric: DistanceMetric::Cosine,
+            })
+            .unwrap();
+
+        // Build citation graph with embeddings
+        for i in 0..n {
+            let paper = dict.intern(&format!("http://example.org/paper/{}", i));
+            let vec_id = dict.intern(&format!("\"pvec_{}\"^^<http://sutra.dev/f32vec>", i));
+            store.insert(Triple::new(paper, rdf_type, paper_type)).unwrap();
+            store.insert(Triple::new(paper, has_embedding, vec_id)).unwrap();
+            // Citation chain
+            if i > 0 {
+                let prev = dict.intern(&format!("http://example.org/paper/{}", i - 1));
+                store.insert(Triple::new(paper, cites, prev)).unwrap();
+            }
+            let v: Vec<f32> = (0..32)
+                .map(|d| ((i * 7 + d * 3) % 100) as f32 / 100.0)
+                .collect();
+            vectors.insert(has_embedding, v, vec_id).unwrap();
+        }
+
+        // Query: find papers similar to a query that cite another paper
+        let sparql = "PREFIX ex: <http://example.org/> \
+                      SELECT ?paper WHERE { \
+                      VECTOR_SIMILAR(?paper ex:hasEmbedding \
+                      \"0.5 0.3 0.1 0.9 0.2 0.4 0.6 0.8 0.1 0.3 0.5 0.7 0.9 0.2 0.4 0.6 \
+                       0.8 0.1 0.3 0.5 0.7 0.9 0.2 0.4 0.6 0.8 0.1 0.3 0.5 0.7 0.9 0.2\"\
+                      ^^<http://sutra.dev/f32vec>, 0.3) \
+                      ?paper a ex:Paper . \
+                      ?paper ex:cites ?cited \
+                      } LIMIT 10";
+
+        let q = parse(sparql).unwrap();
+        group.bench_with_input(
+            criterion::BenchmarkId::new("cite_chain", n),
+            &(),
+            |b, _| {
+                b.iter(|| {
+                    let result =
+                        execute_with_vectors(black_box(&q), &store, &dict, &vectors).unwrap();
+                    black_box(result);
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+/// OPTIONAL pattern: left outer join semantics.
+/// Common in SPARQL for getting optional properties.
+fn bench_optional(c: &mut Criterion) {
+    let mut dict = TermDictionary::new();
+    let mut store = TripleStore::new();
+    let rdf_type = dict.intern("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+    let name = dict.intern("http://example.org/name");
+    let email = dict.intern("http://example.org/email");
+    let person = dict.intern("http://example.org/Person");
+
+    for i in 0..1_000 {
+        let s = dict.intern(&format!("http://example.org/person/{}", i));
+        store.insert(Triple::new(s, rdf_type, person)).unwrap();
+        let name_val = dict.intern(&format!("\"Person {}\"", i));
+        store.insert(Triple::new(s, name, name_val)).unwrap();
+        // Only half have emails
+        if i % 2 == 0 {
+            let email_val = dict.intern(&format!("\"p{}@example.org\"", i));
+            store.insert(Triple::new(s, email, email_val)).unwrap();
+        }
+    }
+
+    let vectors = VectorRegistry::new();
+    let sparql = "PREFIX ex: <http://example.org/> \
+                  SELECT ?person ?name ?email WHERE { \
+                  ?person a ex:Person . \
+                  ?person ex:name ?name . \
+                  OPTIONAL { ?person ex:email ?email } \
+                  } LIMIT 100";
+    let q = parse(sparql).unwrap();
+
+    c.bench_function("sparql_optional_1k", |b| {
+        b.iter(|| {
+            let result = execute_with_vectors(black_box(&q), &store, &dict, &vectors).unwrap();
+            black_box(result);
+        });
+    });
+}
+
+/// FILTER with comparison — equivalent to SQL WHERE clause.
+fn bench_filter(c: &mut Criterion) {
+    let mut dict = TermDictionary::new();
+    let mut store = TripleStore::new();
+    let rdf_type = dict.intern("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+    let name = dict.intern("http://example.org/name");
+    let score = dict.intern("http://example.org/score");
+    let item = dict.intern("http://example.org/Item");
+
+    for i in 0..2_000 {
+        let s = dict.intern(&format!("http://example.org/item/{}", i));
+        store.insert(Triple::new(s, rdf_type, item)).unwrap();
+        let name_val = dict.intern(&format!("\"Item {}\"", i));
+        store.insert(Triple::new(s, name, name_val)).unwrap();
+        let score_val = sutra_core::inline_integer(i as i64 % 100).unwrap();
+        store.insert(Triple::new(s, score, score_val)).unwrap();
+    }
+
+    let vectors = VectorRegistry::new();
+    let sparql = "PREFIX ex: <http://example.org/> \
+                  SELECT ?item ?name WHERE { \
+                  ?item a ex:Item . \
+                  ?item ex:name ?name . \
+                  ?item ex:score ?s . \
+                  FILTER(?s > 80) \
+                  } LIMIT 50";
+    let q = parse(sparql).unwrap();
+
+    c.bench_function("sparql_filter_gt_2k", |b| {
+        b.iter(|| {
+            let result = execute_with_vectors(black_box(&q), &store, &dict, &vectors).unwrap();
+            black_box(result);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse,
     bench_chain_traversal,
     bench_star_join,
     bench_vector_search,
+    bench_graph_then_vector,
+    bench_optional,
+    bench_filter,
 );
 criterion_main!(benches);

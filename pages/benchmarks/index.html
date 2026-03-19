@@ -62,14 +62,61 @@
     <div class="meta" id="meta">Loading latest results...</div>
 
     <h2>sutra-core &mdash; Triple Store</h2>
+    <p>The storage engine: how fast can we insert, look up, and scan triples? These benchmarks measure the SPO/POS/OSP index performance, IRI interning, pseudo-table discovery (auto-detected relational structure), and SIMD column scans.</p>
+    <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
+        <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
+        <dl style="margin-left:16px;">
+            <dt><strong>triple_insert_single</strong></dt><dd>Insert one triple into an empty store. Measures raw index write speed.</dd>
+            <dt><strong>triple_bulk_insert/N</strong></dt><dd>Insert N triples (100/1K/10K) into a fresh store. Measures throughput scaling.</dd>
+            <dt><strong>triple_lookup_subject/graph_size/N</strong></dt><dd>Find all triples for a specific subject in a graph of N nodes. Like <code>SELECT * FROM table WHERE id = ?</code> &mdash; this is the star-query pattern, the most common graph lookup.</dd>
+            <dt><strong>triple_lookup_predicate_5k</strong></dt><dd>Find all triples with a given predicate across 5K triples. Like scanning a column in SQL.</dd>
+            <dt><strong>triple_contains_10k</strong></dt><dd>Check if a specific triple exists in a 10K-triple store. Point lookup &mdash; should be O(1).</dd>
+            <dt><strong>triple_remove_single</strong></dt><dd>Remove one triple from a 1K-triple store. Measures deletion overhead.</dd>
+            <dt><strong>adjacency_star_500</strong></dt><dd>Get the adjacency list for a node connected to 500 neighbors. The core graph traversal primitive.</dd>
+            <dt><strong>term_dictionary_intern_10k</strong></dt><dd>Intern 10K unique IRIs into the dictionary. Measures the string&rarr;u64 mapping that makes everything else fast.</dd>
+            <dt><strong>pseudotable_discover/N</strong></dt><dd>Auto-discover relational (table-like) structure from N nodes that share the same predicate pattern. Like schema inference on a schemaless store.</dd>
+            <dt><strong>pseudotable_scan_eq_5k</strong></dt><dd>Scan a pseudo-table column for a specific value across 5K rows. Equivalent to <code>WHERE category = ?</code> in SQL. Uses SIMD when available.</dd>
+            <dt><strong>reverse_lookup_10k</strong></dt><dd>Find all subjects that reference a specific object across 10K triples. Like a reverse foreign key lookup in SQL &mdash; uses the OSP index.</dd>
+        </dl>
+    </details>
     <div class="chart-container"><canvas id="chart-core"></canvas></div>
     <table id="table-core"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
 
     <h2>sutra-hnsw &mdash; Vector Index</h2>
+    <p>The HNSW approximate nearest neighbor index: how fast can we insert vectors, search for similar ones, and how does it handle deletions and high dimensions? These are the numbers that matter if you're storing embeddings.</p>
+    <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
+        <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
+        <dl style="margin-left:16px;">
+            <dt><strong>hnsw_insert/Dd/N</strong></dt><dd>Insert N vectors of D dimensions. Measures index build time. 128d is typical for small models, 384d for sentence-transformers.</dd>
+            <dt><strong>hnsw_search/nN_Dd_efE/k10</strong></dt><dd>Search for 10 nearest neighbors in an index of N vectors at D dimensions, with search beam width E. Higher ef = more accurate but slower. This is the primary vector search operation.</dd>
+            <dt><strong>hnsw_search_k/5k_128d/K</strong></dt><dd>Vary k (1 to 100) on a fixed 5K-vector index. Shows how returning more results affects latency.</dd>
+            <dt><strong>hnsw_delete_then_search/P%</strong></dt><dd>Search after deleting P% of vectors (tombstoned, not removed). Measures search degradation under deletions &mdash; this is why the health report tracks tombstone ratio.</dd>
+            <dt><strong>hnsw_bulk_insert/128d/N</strong></dt><dd>Bulk insert N vectors at once (vs one-by-one). Measures batch optimization.</dd>
+            <dt><strong>hnsw_metrics/Cosine|Euclidean|DotProduct</strong></dt><dd>Search with each distance metric on the same data. Shows the cost difference between similarity measures.</dd>
+            <dt><strong>hnsw_high_dim/search_500n_Dd</strong></dt><dd>Search at 768d and 1536d &mdash; real embedding sizes from OpenAI, Cohere, etc. Measures how high dimensions affect search latency.</dd>
+            <dt><strong>hnsw_high_dim/insert_100n_Dd</strong></dt><dd>Insert at 768d and 1536d. High-dimensional insertion is significantly more expensive.</dd>
+            <dt><strong>hnsw_recall_at_10/1k_128d</strong></dt><dd>Quality benchmark, not speed: what fraction of the true top-10 nearest neighbors does HNSW actually find? Computed by brute-force comparison. Measures search accuracy.</dd>
+        </dl>
+    </details>
     <div class="chart-container"><canvas id="chart-hnsw"></canvas></div>
     <table id="table-hnsw"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
 
     <h2>sutra-sparql &mdash; Query Engine</h2>
+    <p>End-to-end SPARQL query performance: parsing, planning, and execution. Includes pure graph traversal, vector similarity search, and the combined graph+vector queries that are SutraDB's core differentiator.</p>
+    <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
+        <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
+        <dl style="margin-left:16px;">
+            <dt><strong>sparql_parse/simple_select</strong></dt><dd>Parse a basic <code>SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10</code>. Measures parser overhead.</dd>
+            <dt><strong>sparql_parse/complex_with_filter</strong></dt><dd>Parse a query with multiple patterns, FILTER, ORDER BY, and LIMIT. Worst-case parse time.</dd>
+            <dt><strong>sparql_parse/vector_similar</strong></dt><dd>Parse a VECTOR_SIMILAR query (SutraDB extension). Measures the cost of parsing vector literals.</dd>
+            <dt><strong>sparql_chain_traversal/N_nodes/H_hops</strong></dt><dd>Traverse a chain graph (node&rarr;node&rarr;node...) for H hops across N nodes. The fundamental graph walk. 4 hops on 200 nodes = following 4 edges.</dd>
+            <dt><strong>sparql_star_join/N_leaves/C_cats</strong></dt><dd>Star join: from a center node, fan out to N leaves, then join on type and category. Like a SQL <code>SELECT ... JOIN ... WHERE type = 'Leaf'</code>.</dd>
+            <dt><strong>sparql_vector_search/docs/N</strong></dt><dd>VECTOR_SIMILAR search across N documents with type filtering. The basic "find similar documents" query.</dd>
+            <dt><strong>sparql_graph_vector/cite_chain/N</strong></dt><dd>Combined graph+vector: find papers similar to a query vector that also cite other papers. This is the query pattern that justifies putting vectors and graphs in the same database.</dd>
+            <dt><strong>sparql_optional_1k</strong></dt><dd>OPTIONAL (left outer join) across 1K nodes where half have the optional property. Like <code>LEFT JOIN</code> in SQL.</dd>
+            <dt><strong>sparql_filter_gt_2k</strong></dt><dd>FILTER with integer comparison across 2K items. Like <code>WHERE score > 80</code> in SQL.</dd>
+        </dl>
+    </details>
     <div class="chart-container"><canvas id="chart-sparql"></canvas></div>
     <table id="table-sparql"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
 

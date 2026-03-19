@@ -190,6 +190,114 @@ fn bench_intern(c: &mut Criterion) {
     });
 }
 
+/// Pseudo-table discovery: find relational patterns in graph data.
+/// This is analogous to scanning a SQL table — SutraDB auto-discovers
+/// columnar structure from shared predicate patterns.
+fn bench_pseudotable_discover(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pseudotable_discover");
+
+    for &n in &[500, 2_000] {
+        let mut dict = TermDictionary::new();
+        let mut store = TripleStore::new();
+        let rdf_type = dict.intern("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+        let name = dict.intern("http://example.org/name");
+        let age = dict.intern("http://example.org/age");
+        let email = dict.intern("http://example.org/email");
+        let person = dict.intern("http://example.org/Person");
+
+        for i in 0..n {
+            let s = dict.intern(&format!("http://example.org/person/{}", i));
+            store.insert(Triple::new(s, rdf_type, person)).unwrap();
+            let name_val = dict.intern(&format!("\"Person {}\"", i));
+            store.insert(Triple::new(s, name, name_val)).unwrap();
+            let age_val = dict.intern(&format!("\"{}\"^^<http://www.w3.org/2001/XMLSchema#integer>", 20 + i % 60));
+            store.insert(Triple::new(s, age, age_val)).unwrap();
+            let email_val = dict.intern(&format!("\"person{}@example.org\"", i));
+            store.insert(Triple::new(s, email, email_val)).unwrap();
+        }
+
+        group.bench_with_input(
+            criterion::BenchmarkId::new("persons", n),
+            &(),
+            |b, _| {
+                b.iter(|| {
+                    let node_props = sutra_core::extract_node_properties(&store);
+                    let registry = sutra_core::discover_pseudo_tables(black_box(&node_props), &store);
+                    black_box(registry);
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+/// Scan a pseudo-table column — analogous to WHERE column = value in SQL.
+/// Uses SIMD-accelerated bitset operations when available.
+fn bench_pseudotable_scan(c: &mut Criterion) {
+    let mut dict = TermDictionary::new();
+    let mut store = TripleStore::new();
+    let rdf_type = dict.intern("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+    let name = dict.intern("http://example.org/name");
+    let category = dict.intern("http://example.org/category");
+    let item = dict.intern("http://example.org/Item");
+
+    let cats: Vec<_> = (0..10)
+        .map(|c| dict.intern(&format!("http://example.org/cat/{}", c)))
+        .collect();
+
+    for i in 0..5_000 {
+        let s = dict.intern(&format!("http://example.org/item/{}", i));
+        store.insert(Triple::new(s, rdf_type, item)).unwrap();
+        let name_val = dict.intern(&format!("\"Item {}\"", i));
+        store.insert(Triple::new(s, name, name_val)).unwrap();
+        store.insert(Triple::new(s, category, cats[i % 10])).unwrap();
+    }
+
+    let node_props = sutra_core::extract_node_properties(&store);
+    let registry = sutra_core::discover_pseudo_tables(&node_props, &store);
+
+    c.bench_function("pseudotable_scan_eq_5k", |b| {
+        b.iter(|| {
+            if let Some(table) = registry.tables.first() {
+                for seg in &table.segments {
+                    for (col_idx, col_prop) in table.columns.iter().enumerate() {
+                        if col_prop.predicate == category {
+                            let results = sutra_core::pseudotable::scan_column_eq(seg, col_idx, black_box(cats[3]));
+                            black_box(results);
+                        }
+                    }
+                }
+            }
+        });
+    });
+}
+
+/// Lookup by object (reverse index) — equivalent to finding all rows
+/// where a foreign key points to a specific value. Like SQL JOIN.
+fn bench_reverse_lookup(c: &mut Criterion) {
+    let mut dict = TermDictionary::new();
+    let mut store = TripleStore::new();
+    let mentions = dict.intern("http://example.org/mentions");
+    let target = dict.intern("http://example.org/entity/42");
+
+    for i in 0..10_000 {
+        let s = dict.intern(&format!("http://example.org/doc/{}", i));
+        let o = if i % 50 == 0 {
+            target
+        } else {
+            dict.intern(&format!("http://example.org/entity/{}", i % 500))
+        };
+        store.insert(Triple::new(s, mentions, o)).unwrap();
+    }
+
+    c.bench_function("reverse_lookup_10k", |b| {
+        b.iter(|| {
+            let results = store.find_by_object(black_box(target));
+            black_box(results);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_single_insert,
@@ -200,5 +308,8 @@ criterion_group!(
     bench_remove,
     bench_adjacency,
     bench_intern,
+    bench_pseudotable_discover,
+    bench_pseudotable_scan,
+    bench_reverse_lookup,
 );
 criterion_main!(benches);

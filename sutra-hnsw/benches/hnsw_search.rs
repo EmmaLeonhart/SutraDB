@@ -187,6 +187,90 @@ fn bench_distance_metrics(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_high_dimensional(c: &mut Criterion) {
+    let mut group = c.benchmark_group("hnsw_high_dim");
+    for &dims in &[768, 1536] {
+        let index = build_index(500, dims, DistanceMetric::Cosine);
+        let query = random_vector(dims, 99999);
+        group.bench_with_input(
+            criterion::BenchmarkId::new(format!("search_500n_{}d", dims), "k10"),
+            &(),
+            |b, _| {
+                b.iter(|| {
+                    let results = index.search(black_box(&query), 10, 100).unwrap();
+                    black_box(results);
+                });
+            },
+        );
+    }
+    // Insert at high dimensions
+    for &dims in &[768, 1536] {
+        group.bench_with_input(
+            criterion::BenchmarkId::new(format!("insert_100n_{}d", dims), ""),
+            &dims,
+            |b, &dims| {
+                b.iter_batched(
+                    || {
+                        let config = HnswConfig {
+                            dimensions: dims,
+                            m: 16,
+                            m0: 32,
+                            ef_construction: 100,
+                            metric: DistanceMetric::Cosine,
+                        };
+                        let index = HnswIndex::with_seed(config, 42);
+                        let vectors: Vec<_> = (0..100)
+                            .map(|i| (random_vector(dims, i as u64), i as u64))
+                            .collect();
+                        (index, vectors)
+                    },
+                    |(mut index, vectors)| {
+                        for (v, id) in vectors {
+                            index.insert(black_box(v), black_box(id)).unwrap();
+                        }
+                    },
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_recall(c: &mut Criterion) {
+    // Measures recall@10: what fraction of true top-10 nearest neighbors
+    // does HNSW find? Not a latency benchmark — measures quality.
+    let n = 1_000;
+    let dims = 128;
+    let index = build_index(n, dims, DistanceMetric::Cosine);
+    let query = random_vector(dims, 99999);
+
+    // Brute-force ground truth
+    let mut distances: Vec<(u64, f32)> = (0..n as u64)
+        .map(|i| {
+            let v = random_vector(dims, i);
+            let dot: f32 = query.iter().zip(v.iter()).map(|(a, b)| a * b).sum();
+            let norm_q: f32 = query.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let norm_v: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let cosine_sim = if norm_q * norm_v > 0.0 { dot / (norm_q * norm_v) } else { 0.0 };
+            (i, cosine_sim)
+        })
+        .collect();
+    distances.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    let ground_truth: std::collections::HashSet<u64> =
+        distances.iter().take(10).map(|(id, _)| *id).collect();
+
+    c.bench_function("hnsw_recall_at_10/1k_128d", |b| {
+        b.iter(|| {
+            let results = index.search(black_box(&query), 10, 100).unwrap();
+            let found: std::collections::HashSet<u64> =
+                results.iter().map(|r| r.triple_id).collect();
+            let recall = found.intersection(&ground_truth).count() as f32 / 10.0;
+            black_box(recall);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_insert,
@@ -195,5 +279,7 @@ criterion_group!(
     bench_delete_and_search,
     bench_bulk_insert,
     bench_distance_metrics,
+    bench_high_dimensional,
+    bench_recall,
 );
 criterion_main!(benches);

@@ -1,5 +1,7 @@
 name: Benchmarks
 
+run-name: "Benchmarks: ${{ github.event.workflow_run.head_commit.message || 'CI triggered' }}"
+
 on:
   workflow_run:
     workflows: ["CI"]
