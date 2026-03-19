@@ -93,7 +93,8 @@
       "Bash(mv src/main/java/org/sutradb/*.java src/main/java/io/github/emmaleonhart/sutradb/)",
       "Bash(mv src/test/java/org/sutradb/*.java src/test/java/io/github/emmaleonhart/sutradb/)",
       "Bash(rm -rf src/main/java/org src/test/java/org)",
-      "Bash(JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot\" ./gradlew clean build)"
+      "Bash(JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot\" ./gradlew clean build)",
+      "Bash(gh pr:*)"
     ]
   }
 }
