@@ -252,7 +252,11 @@ fn bench_recall(c: &mut Criterion) {
             let dot: f32 = query.iter().zip(v.iter()).map(|(a, b)| a * b).sum();
             let norm_q: f32 = query.iter().map(|x| x * x).sum::<f32>().sqrt();
             let norm_v: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-            let cosine_sim = if norm_q * norm_v > 0.0 { dot / (norm_q * norm_v) } else { 0.0 };
+            let cosine_sim = if norm_q * norm_v > 0.0 {
+                dot / (norm_q * norm_v)
+            } else {
+                0.0
+            };
             (i, cosine_sim)
         })
         .collect();

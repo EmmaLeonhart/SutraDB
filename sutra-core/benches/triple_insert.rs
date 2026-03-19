@@ -210,23 +210,22 @@ fn bench_pseudotable_discover(c: &mut Criterion) {
             store.insert(Triple::new(s, rdf_type, person)).unwrap();
             let name_val = dict.intern(&format!("\"Person {}\"", i));
             store.insert(Triple::new(s, name, name_val)).unwrap();
-            let age_val = dict.intern(&format!("\"{}\"^^<http://www.w3.org/2001/XMLSchema#integer>", 20 + i % 60));
+            let age_val = dict.intern(&format!(
+                "\"{}\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+                20 + i % 60
+            ));
             store.insert(Triple::new(s, age, age_val)).unwrap();
             let email_val = dict.intern(&format!("\"person{}@example.org\"", i));
             store.insert(Triple::new(s, email, email_val)).unwrap();
         }
 
-        group.bench_with_input(
-            criterion::BenchmarkId::new("persons", n),
-            &(),
-            |b, _| {
-                b.iter(|| {
-                    let node_props = sutra_core::extract_node_properties(&store);
-                    let registry = sutra_core::discover_pseudo_tables(black_box(&node_props), &store);
-                    black_box(registry);
-                });
-            },
-        );
+        group.bench_with_input(criterion::BenchmarkId::new("persons", n), &(), |b, _| {
+            b.iter(|| {
+                let node_props = sutra_core::extract_node_properties(&store);
+                let registry = sutra_core::discover_pseudo_tables(black_box(&node_props), &store);
+                black_box(registry);
+            });
+        });
     }
     group.finish();
 }
@@ -250,7 +249,9 @@ fn bench_pseudotable_scan(c: &mut Criterion) {
         store.insert(Triple::new(s, rdf_type, item)).unwrap();
         let name_val = dict.intern(&format!("\"Item {}\"", i));
         store.insert(Triple::new(s, name, name_val)).unwrap();
-        store.insert(Triple::new(s, category, cats[i % 10])).unwrap();
+        store
+            .insert(Triple::new(s, category, cats[i % 10]))
+            .unwrap();
     }
 
     let node_props = sutra_core::extract_node_properties(&store);
@@ -262,7 +263,11 @@ fn bench_pseudotable_scan(c: &mut Criterion) {
                 for seg in &table.segments {
                     for (col_idx, col_prop) in table.columns.iter().enumerate() {
                         if col_prop.predicate == category {
-                            let results = sutra_core::pseudotable::scan_column_eq(seg, col_idx, black_box(cats[3]));
+                            let results = sutra_core::pseudotable::scan_column_eq(
+                                seg,
+                                col_idx,
+                                black_box(cats[3]),
+                            );
                             black_box(results);
                         }
                     }

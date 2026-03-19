@@ -260,8 +260,12 @@ fn bench_graph_then_vector(c: &mut Criterion) {
         for i in 0..n {
             let paper = dict.intern(&format!("http://example.org/paper/{}", i));
             let vec_id = dict.intern(&format!("\"pvec_{}\"^^<http://sutra.dev/f32vec>", i));
-            store.insert(Triple::new(paper, rdf_type, paper_type)).unwrap();
-            store.insert(Triple::new(paper, has_embedding, vec_id)).unwrap();
+            store
+                .insert(Triple::new(paper, rdf_type, paper_type))
+                .unwrap();
+            store
+                .insert(Triple::new(paper, has_embedding, vec_id))
+                .unwrap();
             // Citation chain
             if i > 0 {
                 let prev = dict.intern(&format!("http://example.org/paper/{}", i - 1));
@@ -285,17 +289,12 @@ fn bench_graph_then_vector(c: &mut Criterion) {
                       } LIMIT 10";
 
         let q = parse(sparql).unwrap();
-        group.bench_with_input(
-            criterion::BenchmarkId::new("cite_chain", n),
-            &(),
-            |b, _| {
-                b.iter(|| {
-                    let result =
-                        execute_with_vectors(black_box(&q), &store, &dict, &vectors).unwrap();
-                    black_box(result);
-                });
-            },
-        );
+        group.bench_with_input(criterion::BenchmarkId::new("cite_chain", n), &(), |b, _| {
+            b.iter(|| {
+                let result = execute_with_vectors(black_box(&q), &store, &dict, &vectors).unwrap();
+                black_box(result);
+            });
+        });
     }
     group.finish();
 }
