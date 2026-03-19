@@ -14,7 +14,7 @@ Go to: **GitHub repo → Settings → Secrets and variables → Actions → New 
 
 ---
 
-## Python → PyPI
+## PyPI (Python)
 
 **Secret name:** `PYPI_TOKEN`
 
@@ -35,7 +35,7 @@ twine upload dist/*
 
 ---
 
-## TypeScript → npm
+## npm (TypeScript / JavaScript)
 
 **Secret name:** `NPM_TOKEN`
 
@@ -55,7 +55,7 @@ npm publish --access public
 
 ---
 
-## Rust → crates.io
+## crates.io (Rust)
 
 **Secret name:** `CRATES_IO_TOKEN`
 
@@ -75,12 +75,11 @@ cargo publish
 
 ---
 
-## Java → Maven Central (Central Portal)
+## Maven Central — Gradle (Kotlin / Java)
 
-**Build system:** Gradle (Kotlin DSL)
 **Secret names:** `MAVEN_USERNAME`, `MAVEN_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
 
-Maven Central is the most complex setup — it requires GPG-signed artifacts and a Sonatype Central Portal account.
+The Java/Kotlin SDK is built with Gradle (Kotlin DSL) and published to Maven Central via the Sonatype Central Portal. This is the most complex setup — it requires GPG-signed artifacts.
 
 ### 1. Sonatype Central Portal Account
 
@@ -154,14 +153,14 @@ MAVEN_TOKEN="token-password" \
 ### 5. First Publish Checklist
 
 - [ ] Sonatype Central Portal account created
-- [ ] `dev.sutradb` namespace claimed and verified
+- [ ] `io.github.emmaleonhart` namespace claimed and verified
 - [ ] GPG key generated and public key uploaded to keyserver
 - [ ] GitHub secrets set: `MAVEN_USERNAME`, `MAVEN_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`
 - [ ] Test locally: `./gradlew build` (compile + tests, no credentials needed)
 
 ---
 
-## .NET → NuGet
+## NuGet (.NET / C#)
 
 **Secret name:** `NUGET_TOKEN`
 
@@ -179,7 +178,7 @@ dotnet nuget push bin/Release/*.nupkg --api-key YOUR_KEY --source https://api.nu
 
 ---
 
-## Go → Go Module Proxy
+## Go Module Proxy (Go)
 
 **No secrets needed!** Go modules are published automatically.
 

@@ -1,6 +1,6 @@
-# SutraDB Java Client
+# SutraDB — Kotlin / Java Client
 
-Java client for [SutraDB](https://github.com/EmmaLeonhart/SutraDB) — an RDF-star triplestore with native HNSW vector indexing.
+Client for [SutraDB](https://github.com/EmmaLeonhart/SutraDB) — an RDF-star triplestore with native HNSW vector indexing.
 
 Requires Java 11+. Uses `java.net.http.HttpClient` (no external HTTP dependencies). Built with Gradle (Kotlin DSL).
 
@@ -9,13 +9,13 @@ Requires Java 11+. Uses `java.net.http.HttpClient` (no external HTTP dependencie
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("io.github.emmaleonhart:sutradb-java:0.3.0")
+implementation("io.github.emmaleonhart:sutradb:0.3.0")
 ```
 
 ### Gradle (Groovy DSL)
 
 ```groovy
-implementation 'io.github.emmaleonhart:sutradb-java:0.3.0'
+implementation 'io.github.emmaleonhart:sutradb:0.3.0'
 ```
 
 ### Maven
@@ -23,7 +23,7 @@ implementation 'io.github.emmaleonhart:sutradb-java:0.3.0'
 ```xml
 <dependency>
     <groupId>io.github.emmaleonhart</groupId>
-    <artifactId>sutradb-java</artifactId>
+    <artifactId>sutradb</artifactId>
     <version>0.3.0</version>
 </dependency>
 ```
@@ -31,8 +31,8 @@ implementation 'io.github.emmaleonhart:sutradb-java:0.3.0'
 ## Usage
 
 ```java
-import io.github.emmaleonhart.SutraClient;
-import io.github.emmaleonhart.SparqlResults;
+import io.github.emmaleonhart.sutradb.SutraClient;
+import io.github.emmaleonhart.sutradb.SparqlResults;
 
 SutraClient client = new SutraClient("http://localhost:7878");
 

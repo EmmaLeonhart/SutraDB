@@ -1,1 +1,1 @@
-rootProject.name = "sutradb-java"
+rootProject.name = "sutradb"

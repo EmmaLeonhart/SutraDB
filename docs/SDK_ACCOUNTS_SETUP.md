@@ -10,7 +10,7 @@
 6. In GitHub repo: Settings → Secrets → New → name: `PYPI_TOKEN`, value: the token
 7. Test: `cd sdks/python && pip install build twine && python -m build && twine upload --repository testpypi dist/*`
 
-## npm (TypeScript)
+## npm (TypeScript / JavaScript)
 
 1. Go to https://www.npmjs.com/signup
 2. Create account
@@ -28,7 +28,7 @@
 4. GitHub secret: `CRATES_IO_TOKEN`
 5. Test: `cd sdks/rust && cargo package --list`
 
-## Maven Central (Java — built with Gradle)
+## Maven Central — Gradle (Kotlin / Java)
 
 Maven Central requires **4 GitHub secrets** — more than any other registry.
 

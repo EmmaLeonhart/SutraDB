@@ -65,9 +65,9 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
-  # ── Java → Maven Central ────────────────────────────────────────
+  # ── Kotlin/Java → Maven Central (Gradle) ────────────────────────
   publish-java:
-    name: Publish Java SDK to Maven Central
+    name: Publish Kotlin/Java SDK to Maven Central
     runs-on: ubuntu-latest
     continue-on-error: true
     defaults:
