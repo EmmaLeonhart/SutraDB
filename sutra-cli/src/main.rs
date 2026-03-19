@@ -162,6 +162,12 @@ enum Commands {
         /// Passcode for authenticated server connections.
         #[arg(long)]
         passcode: Option<String>,
+
+        /// Disable auto-update on startup. By default, the MCP server checks
+        /// for updates and auto-installs after a 2-minute window unless the
+        /// agent declines via the decline_update tool.
+        #[arg(long)]
+        no_auto_update: bool,
     },
 }
 
@@ -178,8 +184,9 @@ async fn main() -> anyhow::Result<()> {
             url,
             data_dir,
             passcode,
+            no_auto_update,
         } => {
-            return mcp::run_mcp_server(url, data_dir, passcode).await;
+            return mcp::run_mcp_server(url, data_dir, passcode, !no_auto_update).await;
         }
         Commands::Serve {
             port,
