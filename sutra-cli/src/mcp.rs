@@ -346,7 +346,9 @@ fn handle_prompts_get(id: &Value, params: &Value) -> Value {
             }
         })],
         "find_similar" => {
-            let node = args["node_iri"].as_str().unwrap_or("<http://example.org/node>");
+            let node = args["node_iri"]
+                .as_str()
+                .unwrap_or("<http://example.org/node>");
             let pred = args["predicate"].as_str().unwrap_or(":hasEmbedding");
             vec![json!({
                 "role": "user",
@@ -572,7 +574,12 @@ async fn startup_update_check(
     };
 
     if !should_update {
-        send_log(&tx, "info", "sutra-update", "Auto-update declined or already applied.");
+        send_log(
+            &tx,
+            "info",
+            "sutra-update",
+            "Auto-update declined or already applied.",
+        );
         return;
     }
 
@@ -693,8 +700,7 @@ async fn perform_update(latest: &str) -> Result<(), String> {
     }
     std::fs::rename(&current_exe, &backup_path)
         .map_err(|e| format!("Backup current binary: {}", e))?;
-    std::fs::write(&current_exe, &extracted)
-        .map_err(|e| format!("Write new binary: {}", e))?;
+    std::fs::write(&current_exe, &extracted).map_err(|e| format!("Write new binary: {}", e))?;
 
     #[cfg(unix)]
     {
@@ -738,8 +744,7 @@ fn get_asset_url(assets: &[Value]) -> Option<String> {
 
 fn extract_from_zip(data: &[u8], file_name: &str) -> Result<Vec<u8>, String> {
     let cursor = std::io::Cursor::new(data);
-    let mut archive =
-        zip::ZipArchive::new(cursor).map_err(|e| format!("Zip open error: {}", e))?;
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("Zip open error: {}", e))?;
     for i in 0..archive.len() {
         let mut file = archive
             .by_index(i)
@@ -779,9 +784,7 @@ fn extract_from_tar_gz(data: &[u8], file_name: &str) -> Result<Vec<u8>, String> 
 
 // ─── Update tools ────────────────────────────────────────────────────────────
 
-async fn tool_check_update(
-    pending: &Arc<Mutex<Option<PendingUpdate>>>,
-) -> Result<String, String> {
+async fn tool_check_update(pending: &Arc<Mutex<Option<PendingUpdate>>>) -> Result<String, String> {
     let current = env!("CARGO_PKG_VERSION");
     let lock = pending.lock().await;
     match lock.as_ref() {
@@ -917,8 +920,7 @@ async fn tool_health_report(ctx: &McpContext) -> Result<String, String> {
         let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
         let (_ps, store, dict) = open_serverless(data_dir)?;
         let vectors = sutra_hnsw::VectorRegistry::new();
-        let report =
-            sutra_sparql::generate_health_report(&store, &dict, &vectors, None);
+        let report = sutra_sparql::generate_health_report(&store, &dict, &vectors, None);
         return Ok(report.to_ai_text());
     }
     let health = http_get(ctx, "/health").await?;
@@ -935,7 +937,12 @@ async fn tool_rebuild_hnsw(
         let (_ps, store, dict) = open_serverless(data_dir)?;
 
         // Rebuild HNSW from stored vector triples
-        send_log(notify_tx, "info", "sutra-hnsw", "Rebuilding HNSW indexes from stored vectors...");
+        send_log(
+            notify_tx,
+            "info",
+            "sutra-hnsw",
+            "Rebuilding HNSW indexes from stored vectors...",
+        );
 
         let mut vectors = sutra_hnsw::VectorRegistry::new();
         let mut vec_count = 0usize;
@@ -986,7 +993,10 @@ async fn tool_rebuild_hnsw(
                     "sutra-hnsw",
                     &format!(
                         "Rebuilt '{}': {} tombstones removed ({} -> {} nodes)",
-                        pred_name, removed, before, index.len()
+                        pred_name,
+                        removed,
+                        before,
+                        index.len()
                     ),
                 );
             }
@@ -998,7 +1008,12 @@ async fn tool_rebuild_hnsw(
         ));
     }
 
-    send_log(notify_tx, "info", "sutra-hnsw", "Requesting HNSW rebuild from server...");
+    send_log(
+        notify_tx,
+        "info",
+        "sutra-hnsw",
+        "Requesting HNSW rebuild from server...",
+    );
     let result = http_post(ctx, "/vectors/rebuild", "", "application/json").await?;
     send_log(notify_tx, "info", "sutra-hnsw", "HNSW rebuild complete.");
     Ok(result.to_string())
@@ -1053,8 +1068,8 @@ async fn tool_sparql_query(ctx: &McpContext, args: &Value) -> Result<String, Str
         let (_ps, store, dict) = open_serverless(data_dir)?;
         let vectors = sutra_hnsw::VectorRegistry::new();
 
-        let mut parsed = sutra_sparql::parse(query)
-            .map_err(|e| format!("SPARQL parse error: {}", e))?;
+        let mut parsed =
+            sutra_sparql::parse(query).map_err(|e| format!("SPARQL parse error: {}", e))?;
         sutra_sparql::optimize(&mut parsed);
         let result = sutra_sparql::execute_with_vectors(&parsed, &store, &dict, &vectors)
             .map_err(|e| format!("SPARQL execution error: {}", e))?;
@@ -1114,9 +1129,15 @@ async fn tool_insert_triples(ctx: &McpContext, args: &Value) -> Result<String, S
                 None => continue,
             };
             let (subj_str, pred_str, obj_str) = parsed;
-            let s_id = ps.intern(&subj_str).map_err(|e| format!("Intern error: {}", e))?;
-            let p_id = ps.intern(&pred_str).map_err(|e| format!("Intern error: {}", e))?;
-            let o_id = ps.intern(&obj_str).map_err(|e| format!("Intern error: {}", e))?;
+            let s_id = ps
+                .intern(&subj_str)
+                .map_err(|e| format!("Intern error: {}", e))?;
+            let p_id = ps
+                .intern(&pred_str)
+                .map_err(|e| format!("Intern error: {}", e))?;
+            let o_id = ps
+                .intern(&obj_str)
+                .map_err(|e| format!("Intern error: {}", e))?;
             match ps.insert(sutra_core::Triple::new(s_id, p_id, o_id)) {
                 Ok(()) => inserted += 1,
                 Err(_) => errors += 1,
@@ -1158,8 +1179,7 @@ async fn tool_backup(ctx: &McpContext) -> Result<String, String> {
     } else {
         serde_json::to_string_pretty(&export_result).unwrap_or_default()
     };
-    std::fs::write(&backup_file, &content)
-        .map_err(|e| format!("Write backup: {}", e))?;
+    std::fs::write(&backup_file, &content).map_err(|e| format!("Write backup: {}", e))?;
     Ok(format!(
         "Backup exported to {} ({} bytes). For full disk-level backup, \
          use --backup-interval on sutra serve or copy the data directory.",
