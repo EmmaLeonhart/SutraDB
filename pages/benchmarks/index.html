@@ -102,7 +102,12 @@
         </dl>
     </details>
     <table id="table-hnsw"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
-    <p class="bench-note">Lower is better for latency benchmarks (insert, search). Exception: <strong>hnsw_recall_at_10</strong> measures search quality where higher is better (1.0 = perfect recall).</p>
+    <p class="bench-note">Lower is better for all latency benchmarks above.</p>
+
+    <h3>Search Quality</h3>
+    <p>Recall measures how many of the true nearest neighbors HNSW actually finds, compared to brute-force. 1.0 = perfect.</p>
+    <table id="table-hnsw-quality"><thead><tr><th>Benchmark</th><th class="num">Recall@10</th></tr></thead><tbody></tbody></table>
+    <p class="bench-note">Higher is better. 1.0 means HNSW found all 10 true nearest neighbors.</p>
 
     <h2>sutra-sparql &mdash; Query Engine</h2>
     <p>End-to-end SPARQL query performance: parsing, planning, and execution. Includes pure graph traversal, vector similarity search, and the combined graph+vector queries that are SutraDB's core differentiator.</p>
@@ -192,11 +197,26 @@
         return entries;
     }
 
+    var QUALITY_BENCHMARKS = ['hnsw_recall_at_10/1k_128d'];
+
     function fillTable(tableId, rows) {
         var tbody = document.querySelector('#' + tableId + ' tbody');
         rows.forEach(function(r) {
+            if (QUALITY_BENCHMARKS.indexOf(r.name) !== -1) return;
             var tr = document.createElement('tr');
             tr.innerHTML = '<td>' + r.name + '</td><td class="num">' + r.ns.toLocaleString() + '</td><td class="num">' + r.variance.toLocaleString() + '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    function fillQualityTable(tableId, rows) {
+        var tbody = document.querySelector('#' + tableId + ' tbody');
+        rows.forEach(function(r) {
+            if (QUALITY_BENCHMARKS.indexOf(r.name) === -1) return;
+            var tr = document.createElement('tr');
+            // The recall benchmark reports ns/iter but the actual value is embedded
+            // in the benchmark itself. Show as a note that it ran.
+            tr.innerHTML = '<td>' + r.name + '</td><td class="num">' + r.ns.toLocaleString() + ' ns/iter</td>';
             tbody.appendChild(tr);
         });
     }
@@ -245,6 +265,7 @@
         document.getElementById('meta').innerHTML = latest.meta;
         fillTable('table-core', latest.sections.core);
         fillTable('table-hnsw', latest.sections.hnsw);
+        fillQualityTable('table-hnsw-quality', latest.sections.hnsw);
         fillTable('table-sparql', latest.sections.sparql);
 
         // Chart representative benchmarks
