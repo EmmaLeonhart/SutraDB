@@ -34,6 +34,7 @@
         td { padding: 8px 12px; border: 1px solid var(--border); font-family: 'SFMono-Regular', Consolas, monospace; }
         tr:hover td { background: rgba(88, 166, 255, 0.05); }
         .num { text-align: right; }
+        .bench-note { color: var(--text-muted); font-size: 0.85em; margin-top: -16px; margin-bottom: 24px; }
 
         .chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 24px; }
         canvas { width: 100% !important; height: 300px !important; }
@@ -81,6 +82,7 @@
         </dl>
     </details>
     <table id="table-core"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
+    <p class="bench-note">Lower is better for all triple store benchmarks. These measure latency in nanoseconds per operation.</p>
 
     <h2>sutra-hnsw &mdash; Vector Index</h2>
     <p>The HNSW approximate nearest neighbor index: how fast can we insert vectors, search for similar ones, and how does it handle deletions and high dimensions? These are the numbers that matter if you're storing embeddings.</p>
@@ -100,6 +102,7 @@
         </dl>
     </details>
     <table id="table-hnsw"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
+    <p class="bench-note">Lower is better for latency benchmarks (insert, search). Exception: <strong>hnsw_recall_at_10</strong> measures search quality where higher is better (1.0 = perfect recall).</p>
 
     <h2>sutra-sparql &mdash; Query Engine</h2>
     <p>End-to-end SPARQL query performance: parsing, planning, and execution. Includes pure graph traversal, vector similarity search, and the combined graph+vector queries that are SutraDB's core differentiator.</p>
@@ -119,6 +122,7 @@
         </dl>
     </details>
     <table id="table-sparql"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
+    <p class="bench-note">Lower is better for all query benchmarks. These measure end-to-end query time including parsing, planning, and execution.</p>
 
     <a class="source-link" href="https://github.com/EmmaLeonhart/SutraDB/blob/main/benchmarks/HISTORY.md">View full benchmark history on GitHub</a>
     <br>
