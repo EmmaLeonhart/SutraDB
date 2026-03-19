@@ -1,4 +1,4 @@
-package dev.sutradb;
+package io.github.emmaleonhart.sutradb;
 
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;

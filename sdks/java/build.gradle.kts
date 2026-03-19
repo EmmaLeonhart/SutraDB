@@ -4,7 +4,7 @@ plugins {
     signing
 }
 
-group = "dev.sutradb"
+group = "io.github.emmaleonhart"
 version = "0.3.0"
 
 java {

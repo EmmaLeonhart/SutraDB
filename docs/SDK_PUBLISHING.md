@@ -85,9 +85,7 @@ Maven Central is the most complex setup — it requires GPG-signed artifacts and
 ### 1. Sonatype Central Portal Account
 
 1. Create account at https://central.sonatype.com/
-2. Claim the `dev.sutradb` namespace:
-   - **Option A (domain):** Add a TXT DNS record to `sutradb.dev` to prove ownership
-   - **Option B (GitHub):** Use `io.github.emmaleonhart` as groupId (auto-verified for GitHub users)
+2. Claim the `io.github.emmaleonhart` namespace (auto-verified for GitHub users)
 3. Go to **Account → Generate User Token**
 4. You'll get a **token username** and **token password** — these are NOT your login credentials
 5. Add as GitHub secrets:

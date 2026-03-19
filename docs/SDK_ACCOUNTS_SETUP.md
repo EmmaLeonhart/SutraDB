@@ -34,9 +34,7 @@ Maven Central requires **4 GitHub secrets** — more than any other registry.
 
 ### Account & Namespace
 1. Go to https://central.sonatype.com/ → Sign up
-2. Claim the `dev.sutradb` namespace:
-   - **Option A:** Add a TXT DNS record to verify `sutradb.dev` domain ownership
-   - **Option B:** Use `io.github.emmaleonhart` as groupId (auto-verified for GitHub users)
+2. Claim the `io.github.emmaleonhart` namespace (auto-verified for GitHub users)
 3. Go to **Account → Generate User Token** (NOT your login password!)
 4. GitHub secrets:
    - `MAVEN_USERNAME` → token username

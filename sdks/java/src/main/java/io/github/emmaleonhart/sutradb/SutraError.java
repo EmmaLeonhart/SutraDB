@@ -1,4 +1,4 @@
-package dev.sutradb;
+package io.github.emmaleonhart.sutradb;
 
 /**
  * Exception thrown when a SutraDB operation fails.

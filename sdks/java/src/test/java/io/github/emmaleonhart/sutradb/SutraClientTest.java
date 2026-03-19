@@ -1,4 +1,4 @@
-package dev.sutradb;
+package io.github.emmaleonhart.sutradb;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;

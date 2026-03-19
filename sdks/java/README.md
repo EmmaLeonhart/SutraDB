@@ -9,20 +9,20 @@ Requires Java 11+. Uses `java.net.http.HttpClient` (no external HTTP dependencie
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("dev.sutradb:sutradb-java:0.3.0")
+implementation("io.github.emmaleonhart:sutradb-java:0.3.0")
 ```
 
 ### Gradle (Groovy DSL)
 
 ```groovy
-implementation 'dev.sutradb:sutradb-java:0.3.0'
+implementation 'io.github.emmaleonhart:sutradb-java:0.3.0'
 ```
 
 ### Maven
 
 ```xml
 <dependency>
-    <groupId>dev.sutradb</groupId>
+    <groupId>io.github.emmaleonhart</groupId>
     <artifactId>sutradb-java</artifactId>
     <version>0.3.0</version>
 </dependency>
@@ -31,8 +31,8 @@ implementation 'dev.sutradb:sutradb-java:0.3.0'
 ## Usage
 
 ```java
-import dev.sutradb.SutraClient;
-import dev.sutradb.SparqlResults;
+import io.github.emmaleonhart.SutraClient;
+import io.github.emmaleonhart.SparqlResults;
 
 SutraClient client = new SutraClient("http://localhost:7878");
 
