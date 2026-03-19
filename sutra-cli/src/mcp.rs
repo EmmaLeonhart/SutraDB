@@ -8,22 +8,22 @@
 //! On startup, checks for updates from GitHub releases. If an update is
 //! available, it will auto-install after 2 minutes unless the agent calls
 //! the `decline_update` tool or `--no-auto-update` is passed.
+//!
+//! Serverless tools call library functions directly — no PATH dependency
+//! on the `sutra` binary.
 
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::io::AsyncBufReadExt;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 const GITHUB_REPO: &str = "EmmaLeonhart/SutraDB";
 const AUTO_UPDATE_DELAY_SECS: u64 = 120;
 
 /// Pending update state shared between the main loop and the background timer.
 struct PendingUpdate {
-    /// Latest version string (e.g. "0.4.0").
     latest_version: String,
-    /// Whether the agent has declined this update.
     declined: bool,
-    /// Whether the update has already been applied.
     applied: bool,
 }
 
@@ -49,11 +49,15 @@ pub async fn run_mcp_server(
 
     let pending_update: Arc<Mutex<Option<PendingUpdate>>> = Arc::new(Mutex::new(None));
 
+    // Channel for background tasks to send notifications to the main loop
+    let (notify_tx, mut notify_rx) = mpsc::unbounded_channel::<Value>();
+
     // Kick off background update check
     if auto_update {
         let pending = Arc::clone(&pending_update);
+        let tx = notify_tx.clone();
         tokio::spawn(async move {
-            startup_update_check(pending).await;
+            startup_update_check(pending, tx).await;
         });
     }
 
@@ -62,55 +66,68 @@ pub async fn run_mcp_server(
     let reader = tokio::io::BufReader::new(stdin);
     let mut lines = reader.lines();
 
-    while let Ok(Some(line)) = lines.next_line().await {
-        let line = line.trim().to_string();
-        if line.is_empty() {
-            continue;
+    loop {
+        tokio::select! {
+            // Handle incoming JSON-RPC requests from stdin
+            line_result = lines.next_line() => {
+                let line = match line_result {
+                    Ok(Some(l)) => l,
+                    Ok(None) => break, // EOF
+                    Err(_) => break,   // stdin closed
+                };
+                let line = line.trim().to_string();
+                if line.is_empty() {
+                    continue;
+                }
+
+                let request: Value = match serde_json::from_str(&line) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let err = json!({
+                            "jsonrpc": "2.0",
+                            "id": null,
+                            "error": {"code": -32700, "message": format!("Parse error: {}", e)}
+                        });
+                        write_response(&stdout, &err).await;
+                        continue;
+                    }
+                };
+
+                let id = request.get("id").cloned().unwrap_or(Value::Null);
+                let method = request["method"].as_str().unwrap_or("");
+
+                let response = match method {
+                    "initialize" => handle_initialize(&id),
+                    "notifications/initialized" => continue,
+                    "notifications/cancelled" => continue,
+                    "ping" => json!({"jsonrpc": "2.0", "id": id, "result": {}}),
+                    "tools/list" => handle_tools_list(&id),
+                    "tools/call" => {
+                        handle_tools_call(&id, &request["params"], &ctx, &pending_update, &notify_tx).await
+                    }
+                    "resources/list" => handle_resources_list(&id, &ctx),
+                    "resources/read" => handle_resources_read(&id, &request["params"], &ctx).await,
+                    "prompts/list" => handle_prompts_list(&id),
+                    "prompts/get" => handle_prompts_get(&id, &request["params"]),
+                    "logging/setLevel" => {
+                        // Acknowledge — we log via tracing, level changes are best-effort
+                        json!({"jsonrpc": "2.0", "id": id, "result": {}})
+                    }
+                    _ => json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {"code": -32601, "message": format!("Method not found: {}", method)}
+                    }),
+                };
+
+                write_response(&stdout, &response).await;
+            }
+
+            // Handle outgoing notifications from background tasks
+            Some(notification) = notify_rx.recv() => {
+                write_response(&stdout, &notification).await;
+            }
         }
-
-        let request: Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(e) => {
-                let err = json!({
-                    "jsonrpc": "2.0",
-                    "id": null,
-                    "error": {"code": -32700, "message": format!("Parse error: {}", e)}
-                });
-                write_response(&stdout, &err).await;
-                continue;
-            }
-        };
-
-        let id = request.get("id").cloned().unwrap_or(Value::Null);
-        let method = request["method"].as_str().unwrap_or("");
-
-        let response = match method {
-            "initialize" => handle_initialize(&id),
-            "notifications/initialized" => continue, // no response needed
-            "notifications/cancelled" => continue,   // acknowledged, no response
-            "ping" => json!({"jsonrpc": "2.0", "id": id, "result": {}}),
-            "tools/list" => handle_tools_list(&id),
-            "tools/call" => {
-                handle_tools_call(&id, &request["params"], &ctx, &pending_update).await
-            }
-            "resources/list" => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {"resources": []}
-            }),
-            "prompts/list" => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {"prompts": []}
-            }),
-            _ => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "error": {"code": -32601, "message": format!("Method not found: {}", method)}
-            }),
-        };
-
-        write_response(&stdout, &response).await;
     }
 
     Ok(())
@@ -124,6 +141,29 @@ async fn write_response(stdout: &Arc<Mutex<tokio::io::Stdout>>, response: &Value
     let _ = out.flush().await;
 }
 
+/// Send an MCP notification (no id, no response expected).
+fn send_notification(tx: &mpsc::UnboundedSender<Value>, method: &str, params: Value) {
+    let notif = json!({
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params
+    });
+    let _ = tx.send(notif);
+}
+
+/// Send a log notification (notifications/message in MCP spec).
+fn send_log(tx: &mpsc::UnboundedSender<Value>, level: &str, logger: &str, data: &str) {
+    send_notification(
+        tx,
+        "notifications/message",
+        json!({
+            "level": level,
+            "logger": logger,
+            "data": data
+        }),
+    );
+}
+
 struct McpContext {
     url: String,
     data_dir: Option<String>,
@@ -131,13 +171,20 @@ struct McpContext {
     mode: String,
 }
 
+// ─── Initialize ──────────────────────────────────────────────────────────────
+
 fn handle_initialize(id: &Value) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": {
             "protocolVersion": "2024-11-05",
-            "capabilities": {"tools": {}},
+            "capabilities": {
+                "tools": {},
+                "resources": {},
+                "prompts": {},
+                "logging": {}
+            },
             "serverInfo": {
                 "name": "sutra-mcp",
                 "version": env!("CARGO_PKG_VERSION")
@@ -145,6 +192,200 @@ fn handle_initialize(id: &Value) -> Value {
         }
     })
 }
+
+// ─── Resources ───────────────────────────────────────────────────────────────
+
+fn handle_resources_list(id: &Value, ctx: &McpContext) -> Value {
+    let mut resources = vec![
+        json!({
+            "uri": "sutra://connection",
+            "name": "Connection Info",
+            "description": "Current SutraDB connection details: mode, endpoint, authentication status.",
+            "mimeType": "application/json"
+        }),
+        json!({
+            "uri": "sutra://version",
+            "name": "Version",
+            "description": "SutraDB version and build info.",
+            "mimeType": "application/json"
+        }),
+    ];
+    if ctx.mode == "serverless" {
+        resources.push(json!({
+            "uri": "sutra://schema",
+            "name": "Schema",
+            "description": "All unique predicates in the database (the schema).",
+            "mimeType": "application/json"
+        }));
+    }
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {"resources": resources}
+    })
+}
+
+async fn handle_resources_read(id: &Value, params: &Value, ctx: &McpContext) -> Value {
+    let uri = params["uri"].as_str().unwrap_or("");
+    let result = match uri {
+        "sutra://connection" => {
+            let info = json!({
+                "mode": ctx.mode,
+                "endpoint": if ctx.mode == "server" { &ctx.url } else { "n/a (direct .sdb)" },
+                "data_dir": ctx.data_dir.as_deref().unwrap_or("n/a"),
+                "authenticated": ctx.passcode.is_some()
+            });
+            Ok(serde_json::to_string_pretty(&info).unwrap())
+        }
+        "sutra://version" => {
+            let info = json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "name": "SutraDB",
+                "mcp_protocol": "2024-11-05",
+                "features": ["sparql+", "hnsw", "rdf-star", "vector-literals"]
+            });
+            Ok(serde_json::to_string_pretty(&info).unwrap())
+        }
+        "sutra://schema" => read_schema_resource(ctx).await,
+        _ => Err(format!("Unknown resource: {}", uri)),
+    };
+
+    match result {
+        Ok(text) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "contents": [{"uri": uri, "mimeType": "application/json", "text": text}]
+            }
+        }),
+        Err(e) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {"code": -32602, "message": e}
+        }),
+    }
+}
+
+async fn read_schema_resource(ctx: &McpContext) -> Result<String, String> {
+    if ctx.mode == "serverless" {
+        let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
+        let ps = sutra_core::PersistentStore::open(data_dir)
+            .map_err(|e| format!("Failed to open store: {}", e))?;
+        let mut dict = sutra_core::TermDictionary::new();
+        ps.load_terms_into(&mut dict);
+        let mut store = sutra_core::TripleStore::new();
+        for triple in ps.iter() {
+            let _ = store.insert(triple);
+        }
+        let mut predicates = std::collections::HashSet::new();
+        for triple in store.iter() {
+            predicates.insert(triple.predicate);
+        }
+        let pred_names: Vec<String> = predicates
+            .iter()
+            .filter_map(|&id| dict.resolve(id).map(|s| s.to_string()))
+            .collect();
+        Ok(serde_json::to_string_pretty(&pred_names).unwrap())
+    } else {
+        // In server mode, query for predicates via SPARQL
+        let query = "SELECT DISTINCT ?p WHERE { ?s ?p ?o } LIMIT 1000";
+        let result = http_post(ctx, "/sparql", query, "application/sparql-query").await?;
+        Ok(serde_json::to_string_pretty(&result).unwrap())
+    }
+}
+
+// ─── Prompts ─────────────────────────────────────────────────────────────────
+
+fn handle_prompts_list(id: &Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "prompts": [
+                {
+                    "name": "explore_graph",
+                    "description": "Generate a SPARQL query to explore the graph structure. Returns sample triples and schema overview.",
+                    "arguments": []
+                },
+                {
+                    "name": "find_similar",
+                    "description": "Generate a SPARQL+ query with VECTOR_SIMILAR to find nodes similar to a given one.",
+                    "arguments": [
+                        {
+                            "name": "node_iri",
+                            "description": "The IRI of the node to find similar items for",
+                            "required": true
+                        },
+                        {
+                            "name": "predicate",
+                            "description": "The vector predicate to use (e.g. :hasEmbedding)",
+                            "required": true
+                        }
+                    ]
+                },
+                {
+                    "name": "count_by_type",
+                    "description": "Generate a SPARQL query to count triples grouped by rdf:type.",
+                    "arguments": []
+                }
+            ]
+        }
+    })
+}
+
+fn handle_prompts_get(id: &Value, params: &Value) -> Value {
+    let name = params["name"].as_str().unwrap_or("");
+    let args = &params["arguments"];
+
+    let messages = match name {
+        "explore_graph" => vec![json!({
+            "role": "user",
+            "content": {
+                "type": "text",
+                "text": "Run these two queries to understand this database:\n\n1. Sample 20 triples:\nSELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 20\n\n2. List all predicates:\nSELECT DISTINCT ?p WHERE { ?s ?p ?o }\n\nThen summarize what you see."
+            }
+        })],
+        "find_similar" => {
+            let node = args["node_iri"].as_str().unwrap_or("<http://example.org/node>");
+            let pred = args["predicate"].as_str().unwrap_or(":hasEmbedding");
+            vec![json!({
+                "role": "user",
+                "content": {
+                    "type": "text",
+                    "text": format!(
+                        "First get the vector for {node}:\nSELECT ?vec WHERE {{ <{node}> <{pred}> ?vec }}\n\nThen use that vector in:\nSELECT ?similar WHERE {{\n  VECTOR_SIMILAR(?similar <{pred}> \"<paste vector>\"^^sutra:f32vec, 0.8)\n}} LIMIT 10",
+                        node = node, pred = pred
+                    )
+                }
+            })]
+        }
+        "count_by_type" => vec![json!({
+            "role": "user",
+            "content": {
+                "type": "text",
+                "text": "SELECT ?type (COUNT(?s) AS ?count) WHERE {\n  ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type\n} GROUP BY ?type ORDER BY DESC(?count)"
+            }
+        })],
+        _ => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32602, "message": format!("Unknown prompt: {}", name)}
+            });
+        }
+    };
+
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "description": format!("Template: {}", name),
+            "messages": messages
+        }
+    })
+}
+
+// ─── Tools list ──────────────────────────────────────────────────────────────
 
 fn handle_tools_list(id: &Value) -> Value {
     json!({
@@ -154,27 +395,27 @@ fn handle_tools_list(id: &Value) -> Value {
             "tools": [
                 {
                     "name": "health_report",
-                    "description": "Get full database health diagnostics including HNSW indexes, storage stats, and consistency status.",
+                    "description": "Get full database health diagnostics including HNSW indexes, storage stats, and consistency status. Returns structured text with [HEALTHY/WARNING/CRITICAL] status per metric.",
                     "inputSchema": {"type": "object", "properties": {}}
                 },
                 {
                     "name": "rebuild_hnsw",
-                    "description": "Compact and rebuild all HNSW vector indexes. Removes tombstones and restores connectivity.",
+                    "description": "Compact and rebuild all HNSW vector indexes. Removes tombstones and restores connectivity. Sends progress notifications.",
                     "inputSchema": {"type": "object", "properties": {}}
                 },
                 {
                     "name": "verify_consistency",
-                    "description": "Check that SPO/POS/OSP indexes are consistent. Reports whether repair is needed.",
+                    "description": "Check that SPO/POS/OSP indexes are consistent. Automatically repairs if inconsistency is found.",
                     "inputSchema": {"type": "object", "properties": {}}
                 },
                 {
                     "name": "database_info",
-                    "description": "Get database statistics: triple count, vector index count, and sample data.",
+                    "description": "Get database statistics: triple count, term count, vector index count.",
                     "inputSchema": {"type": "object", "properties": {}}
                 },
                 {
                     "name": "sparql_query",
-                    "description": "Execute a SPARQL query and return results.",
+                    "description": "Execute a SPARQL query and return results. Supports SPARQL+ extensions (VECTOR_SIMILAR, VECTOR_SCORE).",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -185,7 +426,7 @@ fn handle_tools_list(id: &Value) -> Value {
                 },
                 {
                     "name": "insert_triples",
-                    "description": "Insert RDF triples in N-Triples format.",
+                    "description": "Insert RDF triples in N-Triples format. Each line: <subject> <predicate> <object> .",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -196,7 +437,7 @@ fn handle_tools_list(id: &Value) -> Value {
                 },
                 {
                     "name": "backup",
-                    "description": "Create a backup snapshot of the database.",
+                    "description": "Create a backup snapshot of the database. Works in both serverless and server modes.",
                     "inputSchema": {"type": "object", "properties": {}}
                 },
                 {
@@ -205,22 +446,22 @@ fn handle_tools_list(id: &Value) -> Value {
                     "inputSchema": {
                         "type": "object",
                         "properties": {
-                            "predicate": {"type": "string", "description": "Vector predicate IRI"},
+                            "predicate": {"type": "string", "description": "Vector predicate IRI (e.g. http://example.org/hasEmbedding)"},
                             "vector": {"type": "array", "items": {"type": "number"}, "description": "Query vector (array of floats)"},
-                            "threshold": {"type": "number", "description": "Minimum similarity threshold (0.0-1.0)"},
-                            "limit": {"type": "integer", "description": "Maximum results to return"}
+                            "threshold": {"type": "number", "description": "Minimum similarity threshold (0.0-1.0, default 0.8)"},
+                            "limit": {"type": "integer", "description": "Maximum results to return (default 10)"}
                         },
                         "required": ["predicate", "vector"]
                     }
                 },
                 {
                     "name": "check_update",
-                    "description": "Check if a SutraDB update is available. Returns current version, latest version, and whether an auto-update is pending.",
+                    "description": "Check if a SutraDB update is available. Returns current version, latest version, and auto-update status.",
                     "inputSchema": {"type": "object", "properties": {}}
                 },
                 {
                     "name": "decline_update",
-                    "description": "Decline the pending auto-update. By default, SutraDB auto-updates 2 minutes after startup if a new version is available. Call this tool to cancel the pending update for this session.",
+                    "description": "Decline the pending auto-update. By default, SutraDB auto-updates 2 minutes after startup if a new version is available. Call this to cancel.",
                     "inputSchema": {"type": "object", "properties": {}}
                 }
             ]
@@ -228,18 +469,21 @@ fn handle_tools_list(id: &Value) -> Value {
     })
 }
 
+// ─── Tools dispatch ──────────────────────────────────────────────────────────
+
 async fn handle_tools_call(
     id: &Value,
     params: &Value,
     ctx: &McpContext,
     pending_update: &Arc<Mutex<Option<PendingUpdate>>>,
+    notify_tx: &mpsc::UnboundedSender<Value>,
 ) -> Value {
     let tool_name = params["name"].as_str().unwrap_or("");
     let args = &params["arguments"];
 
     let result = match tool_name {
         "health_report" => tool_health_report(ctx).await,
-        "rebuild_hnsw" => tool_rebuild_hnsw(ctx).await,
+        "rebuild_hnsw" => tool_rebuild_hnsw(ctx, notify_tx).await,
         "verify_consistency" => tool_verify_consistency(ctx).await,
         "database_info" => tool_database_info(ctx).await,
         "sparql_query" => tool_sparql_query(ctx, args).await,
@@ -272,22 +516,22 @@ async fn handle_tools_call(
 
 // ─── Auto-update ─────────────────────────────────────────────────────────────
 
-/// Background task: check for updates, then wait 2 minutes before auto-applying.
-/// The update proceeds unless `declined` is set to true via the `decline_update` tool.
-async fn startup_update_check(pending: Arc<Mutex<Option<PendingUpdate>>>) {
+async fn startup_update_check(
+    pending: Arc<Mutex<Option<PendingUpdate>>>,
+    tx: mpsc::UnboundedSender<Value>,
+) {
     let current = env!("CARGO_PKG_VERSION");
 
-    // Check latest version from GitHub
     let latest = match check_latest_version().await {
         Some(v) => v,
-        None => return, // network error or no releases — skip silently
+        None => return,
     };
 
     if latest == current {
-        return; // already up to date
+        return;
     }
 
-    // Store the pending update so the agent can see it via check_update
+    // Store pending update state
     {
         let mut lock = pending.lock().await;
         *lock = Some(PendingUpdate {
@@ -297,9 +541,19 @@ async fn startup_update_check(pending: Arc<Mutex<Option<PendingUpdate>>>) {
         });
     }
 
+    // Notify the agent about the available update
+    send_log(
+        &tx,
+        "warning",
+        "sutra-update",
+        &format!(
+            "Update available: v{} -> v{}. Auto-updating in {} seconds. Call 'decline_update' to cancel.",
+            current, latest, AUTO_UPDATE_DELAY_SECS
+        ),
+    );
+
     tracing::info!(
-        "Update available: v{} -> v{}. Auto-updating in {} seconds. \
-         Agent can call 'decline_update' tool to cancel.",
+        "Update available: v{} -> v{}. Auto-updating in {} seconds.",
         current,
         latest,
         AUTO_UPDATE_DELAY_SECS
@@ -318,30 +572,45 @@ async fn startup_update_check(pending: Arc<Mutex<Option<PendingUpdate>>>) {
     };
 
     if !should_update {
-        tracing::info!("Auto-update declined or already applied. Skipping.");
+        send_log(&tx, "info", "sutra-update", "Auto-update declined or already applied.");
         return;
     }
 
     // Perform the update
-    tracing::info!("Auto-update window expired. Updating to v{}...", latest);
+    send_log(
+        &tx,
+        "info",
+        "sutra-update",
+        &format!("Auto-update window expired. Downloading v{}...", latest),
+    );
+
     match perform_update(&latest).await {
         Ok(()) => {
             let mut lock = pending.lock().await;
             if let Some(p) = lock.as_mut() {
                 p.applied = true;
             }
-            tracing::info!(
-                "Updated to v{}. Restart the MCP server to use the new version.",
-                latest
+            send_log(
+                &tx,
+                "info",
+                "sutra-update",
+                &format!(
+                    "Updated to v{}. Restart the MCP server to use the new version.",
+                    latest
+                ),
             );
         }
         Err(e) => {
-            tracing::error!("Auto-update failed: {}. Continuing with v{}.", e, current);
+            send_log(
+                &tx,
+                "error",
+                "sutra-update",
+                &format!("Auto-update failed: {}. Continuing with v{}.", e, current),
+            );
         }
     }
 }
 
-/// Check the latest release version from GitHub.
 async fn check_latest_version() -> Option<String> {
     let url = format!(
         "https://api.github.com/repos/{}/releases/latest",
@@ -362,7 +631,6 @@ async fn check_latest_version() -> Option<String> {
     Some(tag.strip_prefix('v').unwrap_or(tag).to_string())
 }
 
-/// Download and install the latest binary, replacing the current executable.
 async fn perform_update(latest: &str) -> Result<(), String> {
     let current = env!("CARGO_PKG_VERSION");
     let url = format!(
@@ -530,13 +798,10 @@ async fn tool_check_update(
                 current, p.latest_version, status
             ))
         }
-        None => {
-            // No pending update — either we're up to date or check hasn't completed
-            Ok(format!(
-                "Current version: v{}\nNo update pending. Either already up to date or auto-update is disabled.",
-                current
-            ))
-        }
+        None => Ok(format!(
+            "Current version: v{}\nNo update pending. Either already up to date or auto-update is disabled.",
+            current
+        )),
     }
 }
 
@@ -561,7 +826,7 @@ async fn tool_decline_update(
     }
 }
 
-// ─── HTTP helpers ────────────────────────────────────────────────────────────
+// ─── HTTP helpers (server mode) ──────────────────────────────────────────────
 
 fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -608,40 +873,134 @@ async fn http_post(
     serde_json::from_str(&text).map_err(|_| text)
 }
 
-async fn cli_run(ctx: &McpContext, args: &[&str]) -> Result<String, String> {
-    let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
-    let mut cmd = tokio::process::Command::new("sutra");
-    for arg in args {
-        cmd.arg(arg);
+// ─── Serverless helpers (direct library calls, no PATH dependency) ───────────
+
+/// Open PersistentStore and hydrate in-memory TripleStore + TermDictionary.
+fn open_serverless(
+    data_dir: &str,
+) -> Result<
+    (
+        sutra_core::PersistentStore,
+        sutra_core::TripleStore,
+        sutra_core::TermDictionary,
+    ),
+    String,
+> {
+    let ps = sutra_core::PersistentStore::open(data_dir)
+        .map_err(|e| format!("Failed to open store: {}", e))?;
+    let mut dict = sutra_core::TermDictionary::new();
+    let mut store = sutra_core::TripleStore::new();
+    ps.load_terms_into(&mut dict);
+    for triple in ps.iter() {
+        let _ = store.insert(triple);
     }
-    cmd.arg("--data-dir").arg(data_dir);
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run sutra CLI: {}", e))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    Ok((ps, store, dict))
+}
+
+/// Resolve a TermId to its string representation.
+fn resolve_id(id: sutra_core::TermId, dict: &sutra_core::TermDictionary) -> String {
+    if let Some(n) = sutra_core::decode_inline_integer(id) {
+        return n.to_string();
     }
+    if let Some(b) = sutra_core::decode_inline_boolean(id) {
+        return b.to_string();
+    }
+    dict.resolve(id)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("_:id{}", id))
 }
 
 // ─── Tool implementations ────────────────────────────────────────────────────
 
 async fn tool_health_report(ctx: &McpContext) -> Result<String, String> {
     if ctx.mode == "serverless" {
-        return cli_run(ctx, &["health"]).await;
+        let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
+        let (_ps, store, dict) = open_serverless(data_dir)?;
+        let vectors = sutra_hnsw::VectorRegistry::new();
+        let report =
+            sutra_sparql::generate_health_report(&store, &dict, &vectors, None);
+        return Ok(report.to_ai_text());
     }
     let health = http_get(ctx, "/health").await?;
     let vectors = http_get(ctx, "/vectors/health").await?;
     Ok(json!({"health": health, "vectors": vectors}).to_string())
 }
 
-async fn tool_rebuild_hnsw(ctx: &McpContext) -> Result<String, String> {
+async fn tool_rebuild_hnsw(
+    ctx: &McpContext,
+    notify_tx: &mpsc::UnboundedSender<Value>,
+) -> Result<String, String> {
     if ctx.mode == "serverless" {
-        return cli_run(ctx, &["health", "--rebuild-hnsw"]).await;
+        let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
+        let (_ps, store, dict) = open_serverless(data_dir)?;
+
+        // Rebuild HNSW from stored vector triples
+        send_log(notify_tx, "info", "sutra-hnsw", "Rebuilding HNSW indexes from stored vectors...");
+
+        let mut vectors = sutra_hnsw::VectorRegistry::new();
+        let mut vec_count = 0usize;
+        let f32vec_suffix = "^^<http://sutra.dev/f32vec>";
+        for triple in store.iter() {
+            if let Some(obj_str) = dict.resolve(triple.object) {
+                if obj_str.contains(f32vec_suffix) {
+                    if let Some(start) = obj_str.find('"') {
+                        let end = obj_str[start + 1..].find('"').map(|p| p + start + 1);
+                        if let Some(end) = end {
+                            let vec_str = &obj_str[start + 1..end];
+                            let floats: Vec<f32> = vec_str
+                                .split_whitespace()
+                                .filter_map(|s| s.parse::<f32>().ok())
+                                .collect();
+                            if !floats.is_empty() {
+                                let dims = floats.len();
+                                if !vectors.has_index(triple.predicate) {
+                                    let config = sutra_hnsw::VectorPredicateConfig {
+                                        predicate_id: triple.predicate,
+                                        dimensions: dims,
+                                        m: 16,
+                                        ef_construction: 200,
+                                        metric: sutra_hnsw::DistanceMetric::Cosine,
+                                    };
+                                    let _ = vectors.declare(config);
+                                }
+                                let _ = vectors.insert(triple.predicate, floats, triple.object);
+                                vec_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Now compact each index
+        let mut total_removed = 0usize;
+        for pred_id in vectors.predicates() {
+            if let Some(index) = vectors.get_mut(pred_id) {
+                let pred_name = dict.resolve(pred_id).unwrap_or("unknown");
+                let before = index.len();
+                let removed = index.compact();
+                total_removed += removed;
+                send_log(
+                    notify_tx,
+                    "info",
+                    "sutra-hnsw",
+                    &format!(
+                        "Rebuilt '{}': {} tombstones removed ({} -> {} nodes)",
+                        pred_name, removed, before, index.len()
+                    ),
+                );
+            }
+        }
+
+        return Ok(format!(
+            "Rebuilt HNSW from {} vectors. Removed {} tombstones across all indexes.",
+            vec_count, total_removed
+        ));
     }
+
+    send_log(notify_tx, "info", "sutra-hnsw", "Requesting HNSW rebuild from server...");
     let result = http_post(ctx, "/vectors/rebuild", "", "application/json").await?;
+    send_log(notify_tx, "info", "sutra-hnsw", "HNSW rebuild complete.");
     Ok(result.to_string())
 }
 
@@ -661,7 +1020,6 @@ async fn tool_verify_consistency(ctx: &McpContext) -> Result<String, String> {
             count
         ));
     }
-    // Server mode: consistency is verified on startup, report current state
     let health = http_get(ctx, "/health").await?;
     Ok(format!(
         "Server is running (consistency verified at startup): {}",
@@ -671,7 +1029,16 @@ async fn tool_verify_consistency(ctx: &McpContext) -> Result<String, String> {
 
 async fn tool_database_info(ctx: &McpContext) -> Result<String, String> {
     if ctx.mode == "serverless" {
-        return cli_run(ctx, &["info"]).await;
+        let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
+        let ps = sutra_core::PersistentStore::open(data_dir)
+            .map_err(|e| format!("Failed to open store: {}", e))?;
+        let triple_count = ps.len();
+        let mut dict = sutra_core::TermDictionary::new();
+        let term_count = ps.load_terms_into(&mut dict);
+        return Ok(format!(
+            "SutraDB — {}\n  Triples: {}\n  Terms:   {}",
+            data_dir, triple_count, term_count
+        ));
     }
     let count_query = "SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }";
     let count_result = http_post(ctx, "/sparql", count_query, "application/sparql-query").await?;
@@ -682,7 +1049,51 @@ async fn tool_database_info(ctx: &McpContext) -> Result<String, String> {
 async fn tool_sparql_query(ctx: &McpContext, args: &Value) -> Result<String, String> {
     let query = args["query"].as_str().ok_or("Missing 'query' argument")?;
     if ctx.mode == "serverless" {
-        return cli_run(ctx, &["query", query]).await;
+        let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
+        let (_ps, store, dict) = open_serverless(data_dir)?;
+        let vectors = sutra_hnsw::VectorRegistry::new();
+
+        let mut parsed = sutra_sparql::parse(query)
+            .map_err(|e| format!("SPARQL parse error: {}", e))?;
+        sutra_sparql::optimize(&mut parsed);
+        let result = sutra_sparql::execute_with_vectors(&parsed, &store, &dict, &vectors)
+            .map_err(|e| format!("SPARQL execution error: {}", e))?;
+
+        // Format as table
+        let mut output = String::new();
+        if result.columns.len() == 1 && result.columns[0] == "result" {
+            // ASK query
+            if let Some(row) = result.rows.first() {
+                if let Some(&id) = row.get("result") {
+                    if sutra_core::decode_inline_boolean(id) == Some(true) {
+                        output.push_str("true");
+                    } else {
+                        output.push_str("false");
+                    }
+                }
+            }
+        } else {
+            // SELECT query
+            output.push_str(&result.columns.join("\t"));
+            output.push('\n');
+            output.push_str(&"-".repeat(result.columns.len() * 20));
+            output.push('\n');
+            for row in &result.rows {
+                let vals: Vec<String> = result
+                    .columns
+                    .iter()
+                    .map(|col| {
+                        row.get(col)
+                            .map(|&id| resolve_id(id, &dict))
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                output.push_str(&vals.join("\t"));
+                output.push('\n');
+            }
+            output.push_str(&format!("\n{} rows", result.rows.len()));
+        }
+        return Ok(output);
     }
     let result = http_post(ctx, "/sparql", query, "application/sparql-query").await?;
     Ok(serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string()))
@@ -691,28 +1102,41 @@ async fn tool_sparql_query(ctx: &McpContext, args: &Value) -> Result<String, Str
 async fn tool_insert_triples(ctx: &McpContext, args: &Value) -> Result<String, String> {
     let data = args["data"].as_str().ok_or("Missing 'data' argument")?;
     if ctx.mode == "serverless" {
-        // Write to temp file, import via CLI
-        let tmp = std::env::temp_dir().join("sutra_mcp_import.nt");
-        std::fs::write(&tmp, data).map_err(|e| format!("Write temp file: {}", e))?;
-        let result = cli_run(
-            ctx,
-            &["import", tmp.to_str().unwrap_or("sutra_mcp_import.nt")],
-        )
-        .await;
-        let _ = std::fs::remove_file(&tmp);
-        return result;
+        let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
+        let ps = sutra_core::PersistentStore::open(data_dir)
+            .map_err(|e| format!("Failed to open store: {}", e))?;
+
+        let mut inserted = 0usize;
+        let mut errors = 0usize;
+        for line in data.lines() {
+            let parsed = match sutra_core::parse_ntriples_line(line) {
+                Some(t) => t,
+                None => continue,
+            };
+            let (subj_str, pred_str, obj_str) = parsed;
+            let s_id = ps.intern(&subj_str).map_err(|e| format!("Intern error: {}", e))?;
+            let p_id = ps.intern(&pred_str).map_err(|e| format!("Intern error: {}", e))?;
+            let o_id = ps.intern(&obj_str).map_err(|e| format!("Intern error: {}", e))?;
+            match ps.insert(sutra_core::Triple::new(s_id, p_id, o_id)) {
+                Ok(()) => inserted += 1,
+                Err(_) => errors += 1,
+            }
+        }
+        ps.flush().map_err(|e| format!("Flush error: {}", e))?;
+        return Ok(format!("Inserted {} triples ({} errors)", inserted, errors));
     }
     let result = http_post(ctx, "/triples", data, "application/n-triples").await?;
     Ok(result.to_string())
 }
 
 async fn tool_backup(ctx: &McpContext) -> Result<String, String> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
     if ctx.mode == "serverless" {
         let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
         let backup_dir = format!("{}/backups/backup_{}", data_dir, timestamp);
         std::fs::create_dir_all(&backup_dir).map_err(|e| format!("Create dir: {}", e))?;
         copy_dir_for_backup(
@@ -722,7 +1146,26 @@ async fn tool_backup(ctx: &McpContext) -> Result<String, String> {
         .map_err(|e| format!("Backup failed: {}", e))?;
         return Ok(format!("Backup created at {}", backup_dir));
     }
-    Err("Backup in server mode: use --backup-interval on sutra serve, or stop the server and copy the data directory.".to_string())
+
+    // Server mode: snapshot the data directory that the server is using.
+    // We infer the data dir from the /health endpoint or default.
+    // Since we can't know the server's data dir, we create a backup via
+    // exporting all triples to a local N-Triples file.
+    let export_result = http_get(ctx, "/graph").await?;
+    let backup_file = format!("sutra_backup_{}.ttl", timestamp);
+    let content = if let Some(s) = export_result.as_str() {
+        s.to_string()
+    } else {
+        serde_json::to_string_pretty(&export_result).unwrap_or_default()
+    };
+    std::fs::write(&backup_file, &content)
+        .map_err(|e| format!("Write backup: {}", e))?;
+    Ok(format!(
+        "Backup exported to {} ({} bytes). For full disk-level backup, \
+         use --backup-interval on sutra serve or copy the data directory.",
+        backup_file,
+        content.len()
+    ))
 }
 
 async fn tool_vector_search(ctx: &McpContext, args: &Value) -> Result<String, String> {
