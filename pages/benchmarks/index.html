@@ -63,7 +63,7 @@
     <div class="meta" id="meta">Loading latest results...</div>
 
     <h2>sutra-core &mdash; Triple Store</h2>
-    <p>The storage engine: how fast can we insert, look up, and scan triples? These benchmarks measure the SPO/POS/OSP index performance, IRI interning, pseudo-table discovery (auto-detected relational structure), and SIMD column scans.</p>
+    <p>The storage engine: how fast can we insert, look up, and scan triples? These benchmarks measure the SPO/POS/OSP index performance, IRI interning, pseudo-table discovery (auto-detected relational structure), and SIMD column scans. <strong>Lower is better</strong> &mdash; all values are nanoseconds per operation.</p>
     <div class="chart-container"><canvas id="chart-core"></canvas></div>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
@@ -82,10 +82,9 @@
         </dl>
     </details>
     <table id="table-core"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
-    <p class="bench-note">Lower is better for all triple store benchmarks. These measure latency in nanoseconds per operation.</p>
 
     <h2>sutra-hnsw &mdash; Vector Index</h2>
-    <p>The HNSW approximate nearest neighbor index: how fast can we insert vectors, search for similar ones, and how does it handle deletions and high dimensions? These are the numbers that matter if you're storing embeddings.</p>
+    <p>The HNSW approximate nearest neighbor index: how fast can we insert vectors, search for similar ones, and how does it handle deletions and high dimensions? These are the numbers that matter if you're storing embeddings. <strong>Lower is better</strong> for latency benchmarks below.</p>
     <div class="chart-container"><canvas id="chart-hnsw"></canvas></div>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
@@ -102,15 +101,13 @@
         </dl>
     </details>
     <table id="table-hnsw"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
-    <p class="bench-note">Lower is better for all latency benchmarks above.</p>
 
-    <h3>Search Quality</h3>
-    <p>Recall measures how many of the true nearest neighbors HNSW actually finds, compared to brute-force. 1.0 = perfect.</p>
+    <h3>Search Quality &mdash; <strong style="color:#58a6ff;">Higher is better</strong></h3>
+    <p>Recall measures how many of the true nearest neighbors HNSW actually finds, compared to brute-force. 1.0 = perfect, meaning all 10 true nearest neighbors were returned.</p>
     <table id="table-hnsw-quality"><thead><tr><th>Benchmark</th><th class="num">Recall@10</th></tr></thead><tbody></tbody></table>
-    <p class="bench-note">Higher is better. 1.0 means HNSW found all 10 true nearest neighbors.</p>
 
     <h2>sutra-sparql &mdash; Query Engine</h2>
-    <p>End-to-end SPARQL query performance: parsing, planning, and execution. Includes pure graph traversal, vector similarity search, and the combined graph+vector queries that are SutraDB's core differentiator.</p>
+    <p>End-to-end SPARQL query performance: parsing, planning, and execution. Includes pure graph traversal, vector similarity search, and the combined graph+vector queries that are SutraDB's core differentiator. <strong>Lower is better</strong> &mdash; all values are nanoseconds per query.</p>
     <div class="chart-container"><canvas id="chart-sparql"></canvas></div>
     <details style="margin-bottom:16px;color:var(--text-muted);font-size:0.9em;">
         <summary style="cursor:pointer;color:var(--accent);margin-bottom:8px;">What each benchmark measures</summary>
@@ -127,7 +124,6 @@
         </dl>
     </details>
     <table id="table-sparql"><thead><tr><th>Benchmark</th><th class="num">ns/iter</th><th class="num">&plusmn;variance</th></tr></thead><tbody></tbody></table>
-    <p class="bench-note">Lower is better for all query benchmarks. These measure end-to-end query time including parsing, planning, and execution.</p>
 
     <a class="source-link" href="https://github.com/EmmaLeonhart/SutraDB/blob/main/benchmarks/HISTORY.md">View full benchmark history on GitHub</a>
     <br>
