@@ -457,6 +457,24 @@ fn handle_tools_list(id: &Value) -> Value {
                     }
                 },
                 {
+                    "name": "download_studio",
+                    "description": "Download and install Sutra Studio (the GUI dashboard). Downloads the pre-built binary from GitHub releases for the current platform. Sutra Studio provides graph visualization, HNSW health diagnostics, SPARQL query editor, and ontology browsing.",
+                    "inputSchema": {"type": "object", "properties": {}}
+                },
+                {
+                    "name": "launch_studio",
+                    "description": "Launch Sutra Studio. Opens the GUI dashboard connecting to the current SutraDB instance. Downloads Studio first if not already installed.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "endpoint": {
+                                "type": "string",
+                                "description": "SutraDB endpoint URL for Studio to connect to (defaults to current MCP connection)"
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "check_update",
                     "description": "Check if a SutraDB update is available. Returns current version, latest version, and auto-update status.",
                     "inputSchema": {"type": "object", "properties": {}}
@@ -492,6 +510,8 @@ async fn handle_tools_call(
         "insert_triples" => tool_insert_triples(ctx, args).await,
         "backup" => tool_backup(ctx).await,
         "vector_search" => tool_vector_search(ctx, args).await,
+        "download_studio" => tool_download_studio(notify_tx).await,
+        "launch_studio" => tool_launch_studio(ctx, args, notify_tx).await,
         "check_update" => tool_check_update(pending_update).await,
         "decline_update" => tool_decline_update(pending_update).await,
         _ => Err(format!("Unknown tool: {}", tool_name)),
@@ -614,6 +634,30 @@ async fn startup_update_check(
                 "sutra-update",
                 &format!("Auto-update failed: {}. Continuing with v{}.", e, current),
             );
+        }
+    }
+
+    // Also update Sutra Studio if it is installed
+    if studio_is_installed() {
+        send_log(
+            &tx,
+            "info",
+            "sutra-update",
+            "Sutra Studio is installed — checking for Studio update...",
+        );
+        // Remove old installation and re-download to get the matching version
+        match download_studio_from_github(&tx).await {
+            Ok(msg) => {
+                send_log(&tx, "info", "sutra-update", &format!("Studio updated: {}", msg));
+            }
+            Err(e) => {
+                send_log(
+                    &tx,
+                    "warning",
+                    "sutra-update",
+                    &format!("Studio update failed (non-critical): {}", e),
+                );
+            }
         }
     }
 }
@@ -780,6 +824,290 @@ fn extract_from_tar_gz(data: &[u8], file_name: &str) -> Result<Vec<u8>, String> 
         }
     }
     Err(format!("Binary '{}' not found in archive", file_name))
+}
+
+// ─── Studio tools ─────────────────────────────────────────────────────────────
+
+/// Get the directory where Sutra Studio is (or should be) installed.
+/// Located alongside the sutra binary: `<binary-dir>/sutra-studio/`.
+fn studio_install_dir() -> Result<std::path::PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("Cannot find exe: {}", e))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| "Cannot determine binary directory".to_string())?;
+    Ok(dir.join("sutra-studio"))
+}
+
+/// Get the platform-specific Studio executable path.
+fn studio_executable() -> Result<std::path::PathBuf, String> {
+    let dir = studio_install_dir()?;
+    if cfg!(target_os = "windows") {
+        Ok(dir.join("sutra-studio.exe"))
+    } else if cfg!(target_os = "macos") {
+        Ok(dir.join("sutra-studio.app").join("Contents").join("MacOS").join("sutra_studio"))
+    } else {
+        Ok(dir.join("sutra-studio"))
+    }
+}
+
+/// Check if Sutra Studio is installed.
+fn studio_is_installed() -> bool {
+    studio_executable()
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+/// Get the asset name pattern for Sutra Studio on this platform.
+fn studio_asset_target() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "sutra-studio-windows"
+    } else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "sutra-studio-macos-arm64"
+        } else {
+            "sutra-studio-macos-x64"
+        }
+    } else {
+        "sutra-studio-linux"
+    }
+}
+
+/// Download and install Sutra Studio from GitHub releases.
+async fn download_studio_from_github(
+    notify_tx: &mpsc::UnboundedSender<Value>,
+) -> Result<String, String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
+    let client = http_client();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", format!("sutra/{}", env!("CARGO_PKG_VERSION")))
+        .send()
+        .await
+        .map_err(|e| format!("HTTP error: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API returned HTTP {}", resp.status()));
+    }
+    let json: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("JSON error: {}", e))?;
+
+    let assets = json["assets"].as_array().cloned().unwrap_or_default();
+    let target = studio_asset_target();
+    let asset_url = assets
+        .iter()
+        .find(|a| {
+            a["name"]
+                .as_str()
+                .map(|n| n.contains(target))
+                .unwrap_or(false)
+        })
+        .and_then(|a| a["browser_download_url"].as_str().map(|s| s.to_string()))
+        .ok_or_else(|| {
+            format!(
+                "No Sutra Studio build for this platform ({}) in the latest release. \
+                 Build from source: cd sutra-studio && flutter build",
+                target
+            )
+        })?;
+
+    let version = json["tag_name"]
+        .as_str()
+        .unwrap_or("unknown");
+
+    send_log(
+        notify_tx,
+        "info",
+        "sutra-studio",
+        &format!("Downloading Sutra Studio {} for {}...", version, target),
+    );
+
+    let archive_resp = client
+        .get(&asset_url)
+        .header("User-Agent", format!("sutra/{}", env!("CARGO_PKG_VERSION")))
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+    if !archive_resp.status().is_success() {
+        return Err(format!("Download failed (HTTP {})", archive_resp.status()));
+    }
+
+    let bytes = archive_resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Read error: {}", e))?;
+
+    let install_dir = studio_install_dir()?;
+
+    // Remove old installation if it exists
+    if install_dir.exists() {
+        std::fs::remove_dir_all(&install_dir)
+            .map_err(|e| format!("Failed to remove old Studio installation: {}", e))?;
+    }
+    std::fs::create_dir_all(&install_dir)
+        .map_err(|e| format!("Failed to create Studio directory: {}", e))?;
+
+    // Extract archive
+    if asset_url.ends_with(".zip") {
+        extract_zip_to_dir(&bytes, &install_dir)?;
+    } else {
+        extract_tar_gz_to_dir(&bytes, &install_dir)?;
+    }
+
+    // Set executable permission on Unix
+    #[cfg(unix)]
+    {
+        if let Ok(exe) = studio_executable() {
+            if exe.exists() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755));
+            }
+        }
+    }
+
+    send_log(
+        notify_tx,
+        "info",
+        "sutra-studio",
+        &format!("Sutra Studio {} installed to {}", version, install_dir.display()),
+    );
+
+    Ok(format!(
+        "Sutra Studio {} installed successfully at {}",
+        version,
+        install_dir.display()
+    ))
+}
+
+/// Extract a zip archive into a directory, preserving structure.
+fn extract_zip_to_dir(data: &[u8], dest: &std::path::Path) -> Result<(), String> {
+    let cursor = std::io::Cursor::new(data);
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("Zip open error: {}", e))?;
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| format!("Zip read error: {}", e))?;
+        let out_path = dest.join(
+            file.enclosed_name()
+                .ok_or_else(|| "Invalid zip entry name".to_string())?,
+        );
+        if file.is_dir() {
+            std::fs::create_dir_all(&out_path)
+                .map_err(|e| format!("Create dir error: {}", e))?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Create dir error: {}", e))?;
+            }
+            let mut outfile = std::fs::File::create(&out_path)
+                .map_err(|e| format!("Create file error: {}", e))?;
+            std::io::copy(&mut file, &mut outfile)
+                .map_err(|e| format!("Extract error: {}", e))?;
+        }
+    }
+    Ok(())
+}
+
+/// Extract a tar.gz archive into a directory, preserving structure.
+fn extract_tar_gz_to_dir(data: &[u8], dest: &std::path::Path) -> Result<(), String> {
+    let cursor = std::io::Cursor::new(data);
+    let gz = flate2::read::GzDecoder::new(cursor);
+    let mut archive = tar::Archive::new(gz);
+    archive
+        .unpack(dest)
+        .map_err(|e| format!("Tar extract error: {}", e))?;
+    Ok(())
+}
+
+async fn tool_download_studio(
+    notify_tx: &mpsc::UnboundedSender<Value>,
+) -> Result<String, String> {
+    if studio_is_installed() {
+        send_log(
+            notify_tx,
+            "info",
+            "sutra-studio",
+            "Sutra Studio already installed. Re-downloading to get latest version...",
+        );
+    }
+    download_studio_from_github(notify_tx).await
+}
+
+async fn tool_launch_studio(
+    ctx: &McpContext,
+    args: &Value,
+    notify_tx: &mpsc::UnboundedSender<Value>,
+) -> Result<String, String> {
+    // Download first if not installed
+    if !studio_is_installed() {
+        send_log(
+            notify_tx,
+            "info",
+            "sutra-studio",
+            "Sutra Studio not found. Downloading...",
+        );
+        download_studio_from_github(notify_tx).await?;
+    }
+
+    let exe = studio_executable()?;
+    if !exe.exists() {
+        return Err(format!(
+            "Studio executable not found at {}. The release archive may have a different structure. \
+             Check the sutra-studio directory and launch manually.",
+            exe.display()
+        ));
+    }
+
+    // Determine the endpoint for Studio to connect to
+    let endpoint = args
+        .get("endpoint")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            if ctx.mode == "server" {
+                ctx.url.clone()
+            } else {
+                "http://localhost:3030".to_string()
+            }
+        });
+
+    send_log(
+        notify_tx,
+        "info",
+        "sutra-studio",
+        &format!("Launching Sutra Studio (connecting to {})...", endpoint),
+    );
+
+    // Launch Studio as a detached process
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("cmd")
+        .args(["/c", "start", "", &exe.to_string_lossy()])
+        .env("SUTRA_ENDPOINT", &endpoint)
+        .spawn();
+
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open")
+        .arg(exe.parent().unwrap().parent().unwrap().parent().unwrap()) // .app bundle
+        .env("SUTRA_ENDPOINT", &endpoint)
+        .spawn();
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let result = std::process::Command::new(&exe)
+        .env("SUTRA_ENDPOINT", &endpoint)
+        .spawn();
+
+    match result {
+        Ok(_) => Ok(format!(
+            "Sutra Studio launched, connecting to {}. \
+             The GUI provides graph visualization, HNSW health diagnostics, \
+             SPARQL query editor, and ontology browsing.",
+            endpoint
+        )),
+        Err(e) => Err(format!("Failed to launch Sutra Studio: {}", e)),
+    }
 }
 
 // ─── Update tools ────────────────────────────────────────────────────────────
