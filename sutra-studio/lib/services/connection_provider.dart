@@ -13,15 +13,30 @@ class ConnectionProvider extends ChangeNotifier {
   String _statusMessage = 'Not connected';
   Timer? _healthTimer;
   DbStats? _stats;
+  final String? _initialEndpoint;
 
-  ConnectionProvider()
-      : _config = const ConnectionConfig(),
-        _client = SutraClient() {
+  ConnectionProvider({String? initialEndpoint})
+      : _initialEndpoint = initialEndpoint,
+        _config = ConnectionConfig(
+          endpoint: initialEndpoint ?? 'http://localhost:3030',
+        ),
+        _client = SutraClient(
+          config: ConnectionConfig(
+            endpoint: initialEndpoint ?? 'http://localhost:3030',
+          ),
+        ) {
     _loadSavedConfig();
   }
 
   /// Load saved connection config from shared_preferences.
+  /// If an initial endpoint was provided (e.g. from SUTRA_ENDPOINT env var),
+  /// it takes priority over saved preferences.
   Future<void> _loadSavedConfig() async {
+    // If launched with an explicit endpoint, use it immediately and save it
+    if (_initialEndpoint != null && _initialEndpoint!.isNotEmpty) {
+      await connect(ConnectionConfig(endpoint: _initialEndpoint!));
+      return;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final endpoint = prefs.getString('sutra_endpoint');
@@ -33,6 +48,9 @@ class ConnectionProvider extends ChangeNotifier {
           authMethod: apiKey != null ? AuthMethod.apiKey : AuthMethod.none,
         );
         await connect(saved);
+      } else {
+        // No saved config either — try connecting with the default
+        await connect(_config);
       }
     } catch (_) {
       // Ignore errors loading saved config

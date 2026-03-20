@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/connection_provider.dart';
@@ -10,11 +11,15 @@ import 'screens/health_screen.dart';
 import 'theme/sutra_theme.dart';
 
 void main() {
-  runApp(const SutraStudioApp());
+  // Read SUTRA_ENDPOINT env var (set by MCP launch_studio tool)
+  final envEndpoint = Platform.environment['SUTRA_ENDPOINT'];
+  runApp(SutraStudioApp(initialEndpoint: envEndpoint));
 }
 
 class SutraStudioApp extends StatefulWidget {
-  const SutraStudioApp({super.key});
+  final String? initialEndpoint;
+
+  const SutraStudioApp({super.key, this.initialEndpoint});
 
   @override
   State<SutraStudioApp> createState() => _SutraStudioAppState();
@@ -39,7 +44,7 @@ class _SutraStudioAppState extends State<SutraStudioApp> {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => ConnectionProvider(),
+      create: (_) => ConnectionProvider(initialEndpoint: widget.initialEndpoint),
       child: MaterialApp(
         title: 'Sutra Studio',
         debugShowCheckedModeBanner: false,
