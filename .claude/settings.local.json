@@ -95,7 +95,9 @@
       "Bash(rm -rf src/main/java/org src/test/java/org)",
       "Bash(JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot\" ./gradlew clean build)",
       "Bash(gh pr:*)",
-      "Bash(gh release:*)"
+      "Bash(gh release:*)",
+      "Bash(find . -type f \\\\\\(-name *mcp* -o -name *studio* \\\\\\))",
+      "Bash(sed 's/\\(.*$//')"
     ]
   }
 }
