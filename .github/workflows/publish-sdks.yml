@@ -1,5 +1,7 @@
 name: Publish SDKs
 
+run-name: "Publish SDKs: ${{ github.ref_name }}"
+
 on:
   push:
     tags:

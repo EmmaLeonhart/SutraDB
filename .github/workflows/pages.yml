@@ -1,5 +1,7 @@
 name: Deploy Pages
 
+run-name: "Deploy Pages: ${{ github.event.head_commit.message }}"
+
 on:
   push:
     branches: [main]

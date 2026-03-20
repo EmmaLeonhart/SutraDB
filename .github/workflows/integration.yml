@@ -1,5 +1,7 @@
 name: Integration Tests
 
+run-name: "Integration Tests: ${{ github.event.head_commit.message || github.event.pull_request.title }}"
+
 on:
   push:
     branches: [main]
