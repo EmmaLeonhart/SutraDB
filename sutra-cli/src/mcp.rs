@@ -1066,17 +1066,66 @@ async fn tool_launch_studio(
     }
 
     // Determine the endpoint for Studio to connect to
-    let endpoint = args
-        .get("endpoint")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            if ctx.mode == "server" {
-                ctx.url.clone()
-            } else {
-                "http://localhost:3030".to_string()
+    let endpoint = if let Some(ep) = args.get("endpoint").and_then(|v| v.as_str()) {
+        ep.to_string()
+    } else if ctx.mode == "server" {
+        ctx.url.clone()
+    } else {
+        // Serverless mode — we need an HTTP server for Studio to connect to.
+        // Start a background `sutra serve` pointing at the same .sdb file.
+        let data_dir = ctx.data_dir.as_deref().unwrap_or("./sutra-data");
+        let port = find_available_port().unwrap_or(3030);
+
+        send_log(
+            notify_tx,
+            "info",
+            "sutra-studio",
+            &format!(
+                "Serverless mode — starting temporary server on port {} for Studio (data: {})...",
+                port, data_dir
+            ),
+        );
+
+        let sutra_exe = std::env::current_exe()
+            .map_err(|e| format!("Cannot find sutra binary: {}", e))?;
+        let mut serve_args = vec![
+            "serve".to_string(),
+            "--port".to_string(),
+            port.to_string(),
+            "--data-dir".to_string(),
+            data_dir.to_string(),
+        ];
+        if let Some(ref pass) = ctx.passcode {
+            serve_args.push("--passcode".to_string());
+            serve_args.push(pass.clone());
+        }
+
+        match std::process::Command::new(&sutra_exe)
+            .args(&serve_args)
+            .spawn()
+        {
+            Ok(_) => {
+                // Give the server a moment to start
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                send_log(
+                    notify_tx,
+                    "info",
+                    "sutra-studio",
+                    &format!("Background server started on port {}", port),
+                );
             }
-        });
+            Err(e) => {
+                return Err(format!(
+                    "Failed to start background server for Studio: {}. \
+                     Start a server manually with `sutra serve --data-dir {}` \
+                     and try again.",
+                    e, data_dir
+                ));
+            }
+        }
+
+        format!("http://localhost:{}", port)
+    };
 
     send_log(
         notify_tx,
@@ -1112,6 +1161,14 @@ async fn tool_launch_studio(
         )),
         Err(e) => Err(format!("Failed to launch Sutra Studio: {}", e)),
     }
+}
+
+/// Find an available TCP port by binding to port 0.
+fn find_available_port() -> Option<u16> {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .ok()
+        .and_then(|l| l.local_addr().ok())
+        .map(|a| a.port())
 }
 
 // ─── Update tools ────────────────────────────────────────────────────────────
