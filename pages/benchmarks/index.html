@@ -58,7 +58,7 @@
 
 <div class="container">
     <h1>Benchmarks</h1>
-    <p>Criterion benchmarks run automatically on every push to main. All numbers from GitHub Actions (ubuntu-latest).</p>
+    <p>Criterion benchmarks run daily and on each release. Charts show daily averages with release milestones marked. All numbers from GitHub Actions (ubuntu-latest).</p>
 
     <div class="meta" id="meta">Loading latest results...</div>
 
@@ -139,6 +139,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3/dist/chartjs-plugin-annotation.min.js"></script>
 <script>
 (function() {
     var LATEST_URL = 'https://raw.githubusercontent.com/EmmaLeonhart/SutraDB/main/benchmarks/LATEST.md';
@@ -169,7 +170,7 @@
         return {meta: meta, sections: sections};
     }
 
-    // Parse HISTORY.md into per-commit data for charts
+    // Parse HISTORY.md into per-commit entries, detecting release tags
     function parseHistory(text) {
         var entries = [];
         var blocks = text.split(/^## /m).slice(1);
@@ -177,8 +178,14 @@
             var header = block.split('\n')[0];
             var dateMatch = header.match(/^(\d{4}-\d{2}-\d{2})/);
             var commitMatch = header.match(/`([a-f0-9]+)`/);
+            var releaseMatch = header.match(/\[(v[\d.]+)\]/);
             if (!dateMatch) return;
-            var entry = {date: dateMatch[1], commit: commitMatch ? commitMatch[1] : '?', core: {}, hnsw: {}, sparql: {}};
+            var entry = {
+                date: dateMatch[1],
+                commit: commitMatch ? commitMatch[1] : '?',
+                release: releaseMatch ? releaseMatch[1] : null,
+                core: {}, hnsw: {}, sparql: {}
+            };
             var currentSuite = null;
             block.split('\n').forEach(function(line) {
                 if (line.indexOf('sutra-core') !== -1) currentSuite = 'core';
@@ -191,6 +198,41 @@
             entries.push(entry);
         });
         return entries;
+    }
+
+    // Aggregate per-commit entries into daily averages
+    function aggregateByDay(entries) {
+        var dayMap = {};
+        var dayOrder = [];
+        entries.forEach(function(e) {
+            if (!dayMap[e.date]) {
+                dayMap[e.date] = {entries: [], releases: []};
+                dayOrder.push(e.date);
+            }
+            dayMap[e.date].entries.push(e);
+            if (e.release) dayMap[e.date].releases.push(e.release);
+        });
+        var result = [];
+        dayOrder.forEach(function(date) {
+            var group = dayMap[date];
+            var avg = {date: date, releases: group.releases, core: {}, hnsw: {}, sparql: {}};
+            // Collect all benchmark keys across all entries for this day
+            ['core', 'hnsw', 'sparql'].forEach(function(suite) {
+                var allKeys = {};
+                group.entries.forEach(function(e) {
+                    Object.keys(e[suite]).forEach(function(k) { allKeys[k] = true; });
+                });
+                Object.keys(allKeys).forEach(function(key) {
+                    var sum = 0, count = 0;
+                    group.entries.forEach(function(e) {
+                        if (e[suite][key] != null) { sum += e[suite][key]; count++; }
+                    });
+                    if (count > 0) avg[suite][key] = Math.round(sum / count);
+                });
+            });
+            result.push(avg);
+        });
+        return result;
     }
 
     var QUALITY_BENCHMARKS = ['hnsw_recall_at_10/1k_128d'];
@@ -210,41 +252,103 @@
         rows.forEach(function(r) {
             if (QUALITY_BENCHMARKS.indexOf(r.name) === -1) return;
             var tr = document.createElement('tr');
-            // The recall benchmark reports ns/iter but the actual value is embedded
-            // in the benchmark itself. Show as a note that it ran.
             tr.innerHTML = '<td>' + r.name + '</td><td class="num">' + r.ns.toLocaleString() + ' ns/iter</td>';
             tbody.appendChild(tr);
         });
     }
 
-    function makeChart(canvasId, entries, suite, benchNames) {
-        // Pick up to 4 representative benchmarks to chart
+    // Build Chart.js annotation objects for release markers
+    function buildReleaseAnnotations(dailyEntries) {
+        var annotations = {};
+        var releaseColors = ['#f85149', '#ff7b72', '#ffa198'];
+        var colorIdx = 0;
+        dailyEntries.forEach(function(day, i) {
+            if (day.releases.length === 0) return;
+            var label = day.releases.join(', ');
+            annotations['release_' + i] = {
+                type: 'line',
+                xMin: i,
+                xMax: i,
+                borderColor: releaseColors[colorIdx % releaseColors.length],
+                borderWidth: 2,
+                borderDash: [6, 3],
+                label: {
+                    display: true,
+                    content: label,
+                    position: 'start',
+                    backgroundColor: 'rgba(248, 81, 73, 0.85)',
+                    color: '#fff',
+                    font: {size: 10, weight: 'bold'},
+                    padding: {top: 2, bottom: 2, left: 4, right: 4},
+                    borderRadius: 3
+                }
+            };
+            colorIdx++;
+        });
+        return annotations;
+    }
+
+    function makeChart(canvasId, dailyEntries, suite, benchNames) {
         var picks = benchNames.slice(0, 4);
-        var labels = entries.map(function(e) { return e.date + ' (' + e.commit + ')'; });
+        var labels = dailyEntries.map(function(e) {
+            var label = e.date;
+            if (e.releases.length > 0) label += ' (' + e.releases.join(', ') + ')';
+            return label;
+        });
         var colors = ['#58a6ff', '#3fb950', '#d29922', '#bc8cff'];
         var datasets = picks.map(function(name, i) {
             return {
                 label: name.replace(/.*\//, ''),
-                data: entries.map(function(e) { return e[suite][name] || null; }),
+                data: dailyEntries.map(function(e) { return e[suite][name] || null; }),
                 borderColor: colors[i % colors.length],
                 backgroundColor: 'transparent',
                 tension: 0.3,
-                pointRadius: 2,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                borderWidth: 2,
                 spanGaps: true
             };
         });
+        var annotations = buildReleaseAnnotations(dailyEntries);
         new Chart(document.getElementById(canvasId), {
             type: 'line',
             data: {labels: labels, datasets: datasets},
             options: {
                 responsive: true,
+                interaction: {mode: 'index', intersect: false},
                 plugins: {
-                    legend: {labels: {color: '#8b949e', font: {size: 11}}},
-                    tooltip: {callbacks: {label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString() + ' ns/iter'; }}}
+                    legend: {labels: {color: '#8b949e', font: {size: 11}, usePointStyle: true}},
+                    tooltip: {
+                        backgroundColor: 'rgba(22, 27, 34, 0.95)',
+                        titleColor: '#e6edf3',
+                        bodyColor: '#8b949e',
+                        borderColor: '#30363d',
+                        borderWidth: 1,
+                        callbacks: {
+                            title: function(items) {
+                                var idx = items[0].dataIndex;
+                                var day = dailyEntries[idx];
+                                var title = day.date;
+                                if (day.releases.length > 0) title += '  —  ' + day.releases.join(', ');
+                                return title;
+                            },
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString() + ' ns/iter';
+                            }
+                        }
+                    },
+                    annotation: {annotations: annotations}
                 },
                 scales: {
-                    x: {ticks: {color: '#8b949e', maxTicksLimit: 10, font: {size: 10}}, grid: {color: '#21262d'}},
-                    y: {ticks: {color: '#8b949e', callback: function(v) { return v.toLocaleString(); }}, grid: {color: '#21262d'}, title: {display: true, text: 'ns/iter', color: '#8b949e'}}
+                    x: {
+                        ticks: {color: '#8b949e', maxTicksLimit: 12, font: {size: 10}},
+                        grid: {color: '#21262d'}
+                    },
+                    y: {
+                        ticks: {color: '#8b949e', callback: function(v) { return v.toLocaleString(); }},
+                        grid: {color: '#21262d'},
+                        title: {display: true, text: 'ns/iter', color: '#8b949e'}
+                    }
                 }
             }
         });
@@ -256,9 +360,11 @@
         fetch(HISTORY_URL).then(function(r) { return r.text(); })
     ]).then(function(results) {
         var latest = parseLatest(results[0]);
-        var history = parseHistory(results[1]);
+        var rawHistory = parseHistory(results[1]);
+        var dailyHistory = aggregateByDay(rawHistory);
 
-        document.getElementById('meta').innerHTML = latest.meta;
+        document.getElementById('meta').innerHTML = latest.meta +
+            ' &mdash; <span style="color:#8b949e;">' + rawHistory.length + ' runs across ' + dailyHistory.length + ' days</span>';
         fillTable('table-core', latest.sections.core);
         fillTable('table-hnsw', latest.sections.hnsw);
         fillQualityTable('table-hnsw-quality', latest.sections.hnsw);
@@ -269,14 +375,13 @@
         var hnswNames = latest.sections.hnsw.map(function(r) { return r.name; });
         var sparqlNames = latest.sections.sparql.map(function(r) { return r.name; });
 
-        // Pick interesting ones for each chart
         var corePicks = ['triple_insert_single', 'triple_lookup_subject/graph_size/10000', 'triple_contains_10k', 'adjacency_star_500'];
         var hnswPicks = ['hnsw_search/n1000_128d_ef100/k10', 'hnsw_search/n5000_128d_ef100/k10', 'hnsw_metrics/1k_128d/Cosine', 'hnsw_metrics/1k_128d/DotProduct'];
         var sparqlPicks = ['sparql_parse/simple_select', 'sparql_chain_traversal/500_nodes/2_hops', 'sparql_chain_traversal/200_nodes/4_hops', 'sparql_star_join/1000_leaves/10_cats'];
 
-        makeChart('chart-core', history, 'core', corePicks.filter(function(n) { return coreNames.indexOf(n) !== -1; }));
-        makeChart('chart-hnsw', history, 'hnsw', hnswPicks.filter(function(n) { return hnswNames.indexOf(n) !== -1; }));
-        makeChart('chart-sparql', history, 'sparql', sparqlPicks.filter(function(n) { return sparqlNames.indexOf(n) !== -1; }));
+        makeChart('chart-core', dailyHistory, 'core', corePicks.filter(function(n) { return coreNames.indexOf(n) !== -1; }));
+        makeChart('chart-hnsw', dailyHistory, 'hnsw', hnswPicks.filter(function(n) { return hnswNames.indexOf(n) !== -1; }));
+        makeChart('chart-sparql', dailyHistory, 'sparql', sparqlPicks.filter(function(n) { return sparqlNames.indexOf(n) !== -1; }));
     }).catch(function(err) {
         document.getElementById('meta').textContent = 'Failed to load benchmarks: ' + err;
     });

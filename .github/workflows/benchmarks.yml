@@ -1,12 +1,14 @@
 name: Benchmarks
 
-run-name: "Benchmarks: ${{ github.event.workflow_run.head_commit.message || 'CI triggered' }}"
+run-name: "Benchmarks: ${{ github.event_name == 'schedule' && 'Daily run' || github.event_name == 'release' && github.event.release.tag_name || 'Manual run' }}"
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: '0 6 * * *'
+  release:
+    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,8 +27,6 @@ jobs:
   benchmark:
     name: Run Benchmarks
     runs-on: ubuntu-latest
-    # Only run if CI succeeded
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,15 +49,37 @@ jobs:
       - name: Run sutra-sparql benchmarks
         run: cargo bench -p sutra-sparql --bench sparql_query -- --output-format=bencher 2>/dev/null | tee /tmp/bench_sparql.txt
 
+      # Determine run type (daily or release)
+      - name: Set run metadata
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "run_type=release" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_type=daily" >> "$GITHUB_OUTPUT"
+            echo "release_tag=" >> "$GITHUB_OUTPUT"
+          fi
+
       # Append to history log
       - name: Update benchmark history
         run: |
           TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
           COMMIT_SHA=$(git rev-parse --short HEAD)
           COMMIT_MSG=$(git log -1 --pretty=%s)
+          RUN_TYPE="${{ steps.meta.outputs.run_type }}"
+          RELEASE_TAG="${{ steps.meta.outputs.release_tag }}"
+
+          # Build header line
+          if [ "$RUN_TYPE" = "release" ] && [ -n "$RELEASE_TAG" ]; then
+            HEADER="## ${TIMESTAMP} — \`${COMMIT_SHA}\` [${RELEASE_TAG}] ${COMMIT_MSG}"
+          else
+            HEADER="## ${TIMESTAMP} — \`${COMMIT_SHA}\` ${COMMIT_MSG}"
+          fi
+
           {
             echo ""
-            echo "## ${TIMESTAMP} — \`${COMMIT_SHA}\` ${COMMIT_MSG}"
+            echo "$HEADER"
             echo ""
             echo "### sutra-core (triple store)"
             echo '```'
