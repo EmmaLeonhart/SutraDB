@@ -65,9 +65,80 @@ jobs:
           name: ${{ matrix.archive }}
           path: ${{ matrix.archive }}
 
+  build-studio:
+    name: Build Studio ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            build_cmd: flutter build windows --release
+            output_dir: build/windows/x64/runner/Release
+            archive: sutra-studio-windows-x64.zip
+          - platform: linux
+            os: ubuntu-latest
+            build_cmd: flutter build linux --release
+            output_dir: build/linux/x64/release/bundle
+            archive: sutra-studio-linux-x64.tar.gz
+          - platform: macos
+            os: macos-latest
+            build_cmd: flutter build macos --release
+            output_dir: build/macos/Build/Products/Release
+            archive: sutra-studio-macos-arm64.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Get Flutter dependencies
+        working-directory: sutra-studio
+        run: flutter pub get
+
+      - name: Build Studio
+        working-directory: sutra-studio
+        run: ${{ matrix.build_cmd }}
+
+      - name: Package (Windows)
+        if: matrix.platform == 'windows'
+        shell: bash
+        working-directory: sutra-studio
+        run: |
+          cd "${{ matrix.output_dir }}"
+          7z a "$GITHUB_WORKSPACE/sutra-studio/${{ matrix.archive }}" .
+
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        working-directory: sutra-studio
+        run: |
+          cd "${{ matrix.output_dir }}"
+          tar czf "$GITHUB_WORKSPACE/sutra-studio/${{ matrix.archive }}" .
+
+      - name: Package (macOS)
+        if: matrix.platform == 'macos'
+        working-directory: sutra-studio
+        run: |
+          cd "${{ matrix.output_dir }}"
+          tar czf "$GITHUB_WORKSPACE/sutra-studio/${{ matrix.archive }}" sutra_studio.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: sutra-studio/${{ matrix.archive }}
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, build-studio]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -82,4 +153,7 @@ jobs:
             sutra-linux-x64.tar.gz
             sutra-macos-arm64.tar.gz
             sutra-macos-x64.tar.gz
+            sutra-studio-windows-x64.zip
+            sutra-studio-linux-x64.tar.gz
+            sutra-studio-macos-arm64.tar.gz
           generate_release_notes: true
