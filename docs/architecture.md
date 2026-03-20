@@ -2,7 +2,7 @@
 
 > A lean, high-performance RDF triplestore with native vector indexing and hybrid SPARQL.
 > Influenced by Qdrant's vector indexing and Oxigraph's storage architecture, unified into a single system.
-> Draft v0.2
+> Draft v0.3
 
 ---
 
@@ -331,7 +331,8 @@ sutra-core/      # Triple storage, LSM indexes, IRI interning, RDF-star IDs
 sutra-hnsw/      # HNSW index, vector literal type, predicate index registry
 sutra-sparql/    # SPARQL 1.1 parser, planner, executor, hybrid extension
 sutra-proto/     # SPARQL HTTP protocol, Graph Store Protocol, REST API
-sutra-cli/       # CLI: import, export, query, benchmark
+sutra-cli/       # CLI: serve, query, import, export, health, mcp
+sutra-ffi/       # C-compatible FFI layer for embedding in non-Rust apps
 ```
 
 **Hard dependency rules:**
@@ -339,10 +340,135 @@ sutra-cli/       # CLI: import, export, query, benchmark
 - `sutra-sparql` → depends on `sutra-core` + `sutra-hnsw`
 - `sutra-proto` → depends on `sutra-sparql`
 - `sutra-cli` → depends on `sutra-proto` + `sutra-sparql`
+- `sutra-ffi` → depends on `sutra-core` + `sutra-hnsw` + `sutra-sparql`. Produces a C shared library (`.dll`/`.so`/`.dylib`).
 
 ---
 
-## 7. Query Language Policy
+## 7. Sutra Studio
+
+Sutra Studio is a Flutter desktop/web application that provides a visual interface to SutraDB. It is designed for operations that benefit from visual intuition — graph visualization, HNSW health heatmaps, manual emergency editing — while the CLI and MCP server remain the primary interfaces for agents and automation.
+
+### 7.1 Connection Modes
+
+Studio connects to SutraDB in two ways:
+
+| Mode | How it works | When to use |
+|---|---|---|
+| **HTTP client** | Connects to a running `sutra serve` instance over HTTP | Server mode, remote databases, multi-client |
+| **FFI (direct)** | Loads `sutra-ffi` shared library via `dart:ffi`, opens `.sdb` file directly | Serverless mode, local databases, no server needed |
+
+The FFI mode is the primary mode. Studio can open a `.sdb` file the same way SQLite browsers open `.db` files — no server process, no port, no configuration. The HTTP mode exists for connecting to remote or already-running instances.
+
+On launch, Studio checks for a `SUTRA_ENDPOINT` environment variable (set by the MCP `launch_studio` tool). If present, it connects to that HTTP endpoint. Otherwise, it loads saved preferences or prompts the user.
+
+### 7.2 FFI Layer (`sutra-ffi`)
+
+The `sutra-ffi` crate produces a C-compatible shared library that can be loaded by any language with FFI support (Dart, Python, C, C++, etc.). It wraps the core Rust crates behind a stable C ABI.
+
+**Exposed functions:**
+
+```c
+// Database lifecycle
+sutra_db_t* sutra_db_open(const char* path);       // Open or create .sdb file
+void        sutra_db_close(sutra_db_t* db);         // Close and flush
+
+// Triple operations
+int      sutra_insert_ntriples(sutra_db_t* db, const char* data);   // Insert N-Triples
+uint64_t sutra_triple_count(sutra_db_t* db);                         // Total triple count
+
+// Term dictionary
+uint64_t    sutra_intern(sutra_db_t* db, const char* term);          // String → ID
+const char* sutra_resolve(sutra_db_t* db, uint64_t id);              // ID → string
+
+// SPARQL query
+sutra_result_t* sutra_query(sutra_db_t* db, const char* sparql);     // Execute SPARQL+
+void            sutra_result_free(sutra_result_t* result);            // Free result
+
+// Health diagnostics
+const char* sutra_health_report(sutra_db_t* db);                     // Full health text
+void        sutra_string_free(const char* s);                         // Free returned strings
+
+// Server management
+int sutra_serve_start(sutra_db_t* db, uint16_t port, const char* passcode);
+int sutra_serve_stop(sutra_db_t* db);
+```
+
+**Design principles:**
+- All functions are `extern "C"` with `#[no_mangle]`
+- Opaque pointer types (`sutra_db_t`, `sutra_result_t`) hide Rust internals
+- Strings are passed as `*const c_char` (null-terminated UTF-8) and returned as owned C strings that must be freed with `sutra_string_free`
+- Errors return null pointers or negative integers; last error message available via `sutra_last_error()`
+- Thread-safe: the opaque handle wraps `Arc<Mutex<...>>` internally
+
+**Build output per platform:**
+
+| Platform | Library | Dart FFI loads via |
+|---|---|---|
+| Windows | `sutra_ffi.dll` | `DynamicLibrary.open('sutra_ffi.dll')` |
+| Linux | `libsutra_ffi.so` | `DynamicLibrary.open('libsutra_ffi.so')` |
+| macOS | `libsutra_ffi.dylib` | `DynamicLibrary.open('libsutra_ffi.dylib')` |
+
+The shared library ships alongside the Studio binary in release archives. Studio loads it at startup from the same directory as its own executable.
+
+### 7.3 MCP Integration
+
+The MCP server provides two tools for Studio management:
+
+- **`download_studio`** — Downloads the pre-built Studio binary (including the FFI shared library) from GitHub releases for the current platform.
+- **`launch_studio`** — Opens Studio. If not installed, downloads it first. In server mode, passes the HTTP endpoint. In serverless mode, passes the `.sdb` path for FFI-direct access.
+
+Auto-update keeps Studio in sync with the CLI version — when the `sutra` binary updates, Studio is also re-downloaded if installed.
+
+### 7.4 Studio Screens
+
+| Screen | Purpose |
+|---|---|
+| **Health** | HNSW index diagnostics, tombstone ratios, pseudo-table coverage, rebuild controls |
+| **Graph** | Force-directed graph visualization (semantic, vector, or all edges) |
+| **Triples** | Sortable/filterable triple table with add/delete |
+| **SPARQL** | Query editor with syntax highlighting and result display |
+| **Ontology** | OWL class hierarchy browser |
+| **Auth** | Connection settings, endpoint configuration, authentication |
+
+---
+
+## 8. MCP Server (Model Context Protocol)
+
+SutraDB includes a native MCP server (`sutra mcp`) that allows AI agents to interact with the database over JSON-RPC 2.0 via stdin/stdout. The MCP server operates in two modes:
+
+- **Server mode**: connects to a running `sutra serve` HTTP endpoint
+- **Serverless mode**: opens a `.sdb` file directly via library calls (no server needed)
+
+### 8.1 MCP Tools
+
+| Tool | Description |
+|---|---|
+| `health_report` | Full database diagnostics (HNSW, storage, consistency) |
+| `rebuild_hnsw` | Compact and rebuild vector indexes |
+| `verify_consistency` | Check SPO/POS/OSP index consistency, auto-repair |
+| `database_info` | Triple count, term count, vector index count |
+| `sparql_query` | Execute SPARQL+ queries |
+| `insert_triples` | Insert N-Triples data |
+| `backup` | Create database snapshot |
+| `vector_search` | ANN search via VECTOR_SIMILAR |
+| `download_studio` | Download and install Sutra Studio |
+| `launch_studio` | Open Sutra Studio (downloads first if needed) |
+| `check_update` | Check for new SutraDB releases |
+| `decline_update` | Cancel pending auto-update |
+
+### 8.2 Auto-Update
+
+On startup, the MCP server checks GitHub releases for a newer version. If found, it notifies the agent and auto-installs after a 2-minute window (cancelable via `decline_update`). When Studio is installed, it is also updated to match.
+
+### 8.3 Resources and Prompts
+
+**Resources:** `sutra://connection` (mode/endpoint info), `sutra://version` (build info), `sutra://schema` (predicates, serverless only).
+
+**Prompts:** `explore_graph` (sample triples + schema), `find_similar` (VECTOR_SIMILAR template), `count_by_type` (GROUP BY rdf:type).
+
+---
+
+## 9. Query Language Policy
 
 **Supported:**
 - **SPARQL+** — SPARQL 1.1 superset with VECTOR_SIMILAR, VECTOR_SCORE, and predicate-based exit conditions (UNTIL). The primary query interface.
@@ -357,7 +483,7 @@ sutra-cli/       # CLI: import, export, query, benchmark
 
 ---
 
-## 8. Explicitly Out of Scope
+## 10. Explicitly Out of Scope
 
 These will not be implemented without explicit instruction. They cannot be handled better at the database layer than at the application layer:
 
@@ -369,7 +495,7 @@ These will not be implemented without explicit instruction. They cannot be handl
 
 ---
 
-## 9. Reference Architectures
+## 11. Reference Architectures
 
 SutraDB draws from multiple open-source databases across two domains: RDF/vector indexing and SQL query optimization.
 
@@ -390,7 +516,7 @@ Every operation you can do in SQL you can do in SPARQL — triple pattern matchi
 
 ---
 
-## 10. Open Questions
+## 12. Open Questions
 
 These are unresolved architecture decisions that must be answered before or during implementation of the relevant component:
 

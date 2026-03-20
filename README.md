@@ -42,13 +42,22 @@ curl -X POST http://localhost:3030/sparql \
   -d 'SELECT * WHERE { ?s ?p ?o } LIMIT 10'
 ```
 
-## What's New in v0.2
+## What's New in v0.3
 
-- **ACID compliance** — atomic sled transactions, startup consistency verification, durable flushes
-- **Self-update** — `sutra update`, `sutra --version`, startup version check
-- **MCP server for AI agents** — dual-mode (serverless + server), 8 maintenance tools
-- **HNSW rebuild HTTP endpoint** — `POST /vectors/rebuild` for compacting and rebuilding all HNSW indexes
-- **COSINE_SEARCH, EUCLID_SEARCH, DOTPRODUCT_SEARCH** — new SPARQL operators for explicit distance metric selection
+- **Sutra Studio pre-built binaries** — Windows, Linux, and macOS desktop apps ship with every release. No Flutter SDK required.
+- **MCP Studio tools** — AI agents can download and launch Sutra Studio directly via `download_studio` and `launch_studio` MCP tools.
+- **FFI layer (planned)** — `sutra-ffi` crate will produce a C shared library (`.dll`/`.so`/`.dylib`) so Studio and other apps can open `.sdb` files directly via `dart:ffi` without needing an HTTP server.
+- **Studio auto-update** — when the CLI auto-updates, Studio is also updated to match.
+- **12 MCP tools** — added `download_studio`, `launch_studio` alongside existing database tools.
+
+### Previous releases
+
+**v0.2:**
+- ACID compliance — atomic sled transactions, startup consistency verification, durable flushes
+- Self-update — `sutra update`, `sutra --version`, startup version check
+- MCP server for AI agents — dual-mode (serverless + server), maintenance tools
+- HNSW rebuild HTTP endpoint — `POST /vectors/rebuild`
+- COSINE_SEARCH, EUCLID_SEARCH, DOTPRODUCT_SEARCH — explicit distance metric operators
 
 ## Data Model
 
@@ -86,7 +95,8 @@ SELECT, ASK, CONSTRUCT, DESCRIBE | INSERT DATA, DELETE DATA | FILTER (=, !=, <, 
 | `sutra-hnsw` | HNSW vector index with SIMD (AVX2/SSE), multiple distance metrics | Implemented |
 | `sutra-sparql` | SPARQL 1.1 parser, query planner, executor, hybrid extension | Implemented |
 | `sutra-proto` | HTTP server, SPARQL protocol, Graph Store Protocol | Implemented |
-| `sutra-cli` | CLI: serve, query, import, export, info | Implemented |
+| `sutra-cli` | CLI: serve, query, import, export, health, MCP server | Implemented |
+| `sutra-ffi` | C FFI shared library for embedding in non-Rust apps | Planned |
 
 ## CLI
 
@@ -112,11 +122,44 @@ sutra info                      # Show database stats
 
 ## Sutra Studio
 
-Flutter desktop/web client for visual database management. See `sutra-studio/README.md`.
+Flutter desktop/web GUI for visual database management — graph visualization, HNSW health diagnostics, SPARQL query editor, and ontology browsing.
 
+**Pre-built binaries** ship with every release (Windows, Linux, macOS). No Flutter SDK needed.
+
+**Via MCP (AI agents):**
+```
+# The agent calls these MCP tools:
+download_studio    # Downloads Studio for your platform
+launch_studio      # Opens Studio connected to your database
+```
+
+**Via CLI:**
+```bash
+sutra install-agent --launch-studio   # Download + launch during setup
+```
+
+**From source:**
 ```bash
 cd sutra-studio && flutter run -d chrome
 ```
+
+Studio connects to SutraDB via HTTP (server mode) or will connect directly via FFI (serverless mode, planned). The FFI layer (`sutra-ffi`) will allow Studio to open `.sdb` files without any server process — like how SQLite browsers open database files directly.
+
+## MCP Server
+
+Native Model Context Protocol server for AI agents. Runs over JSON-RPC 2.0 on stdin/stdout.
+
+```bash
+# Server mode (connects to running instance)
+sutra mcp --url http://localhost:3030
+
+# Serverless mode (opens .sdb file directly)
+sutra mcp --data-dir ./my-database
+```
+
+12 tools: `health_report`, `rebuild_hnsw`, `verify_consistency`, `database_info`, `sparql_query`, `insert_triples`, `backup`, `vector_search`, `download_studio`, `launch_studio`, `check_update`, `decline_update`.
+
+Auto-updates the CLI binary (and Studio if installed) from GitHub releases on startup, with a 2-minute decline window.
 
 ## Test Suite
 

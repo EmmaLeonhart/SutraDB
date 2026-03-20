@@ -50,7 +50,8 @@ sutra-core/      # Triple storage engine, LSM indexes, IRI interning, RDF-star I
 sutra-hnsw/      # HNSW index, vector literal type, predicate index registry
 sutra-sparql/    # SPARQL 1.1 parser, query planner, executor, hybrid extension
 sutra-proto/     # SPARQL HTTP protocol, Graph Store Protocol, REST API
-sutra-cli/       # CLI tools: import, export, query, benchmark
+sutra-cli/       # CLI tools: serve, query, import, export, health, mcp
+sutra-ffi/       # C-compatible FFI shared library for Sutra Studio and other non-Rust consumers
 ```
 
 **Dependency rules:**
@@ -58,6 +59,17 @@ sutra-cli/       # CLI tools: import, export, query, benchmark
 - `sutra-sparql` depends on both `sutra-core` and `sutra-hnsw`.
 - `sutra-proto` depends on `sutra-sparql`.
 - `sutra-cli` depends on `sutra-proto` and `sutra-sparql`.
+- `sutra-ffi` depends on `sutra-core`, `sutra-hnsw`, and `sutra-sparql`. Produces `.dll`/`.so`/`.dylib`.
+
+## Sutra Studio & FFI
+
+Sutra Studio is a Flutter desktop app. It connects to SutraDB via:
+1. **FFI (primary)** — loads `sutra-ffi` shared library via `dart:ffi`, opens `.sdb` files directly. No server needed.
+2. **HTTP (fallback)** — connects to a running `sutra serve` instance.
+
+The FFI layer (`sutra-ffi`) exposes a C ABI: `sutra_db_open`, `sutra_db_close`, `sutra_query`, `sutra_insert_ntriples`, `sutra_health_report`, etc. All functions use opaque pointers and null-terminated strings. The shared library ships alongside the Studio binary in release archives.
+
+The MCP server has `download_studio` and `launch_studio` tools so agents can install and open Studio without user intervention. Auto-update keeps Studio in sync with the CLI version.
 
 ---
 
