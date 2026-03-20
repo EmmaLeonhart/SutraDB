@@ -1086,8 +1086,8 @@ async fn tool_launch_studio(
             ),
         );
 
-        let sutra_exe = std::env::current_exe()
-            .map_err(|e| format!("Cannot find sutra binary: {}", e))?;
+        let sutra_exe =
+            std::env::current_exe().map_err(|e| format!("Cannot find sutra binary: {}", e))?;
         let mut serve_args = vec![
             "serve".to_string(),
             "--port".to_string(),
