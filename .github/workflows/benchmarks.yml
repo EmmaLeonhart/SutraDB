@@ -1,11 +1,10 @@
 name: Benchmarks
 
-run-name: "Benchmarks: ${{ github.event_name == 'schedule' && 'Daily run' || github.event_name == 'release' && github.event.release.tag_name || 'Manual run' }}"
+run-name: "Benchmarks ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}"
 
 on:
   schedule:
-    # Run daily at 06:00 UTC
-    - cron: '0 6 * * *'
+    - cron: '0 0 * * *'
   release:
     types: [published]
   workflow_dispatch:
