@@ -847,15 +847,15 @@ fn studio_install_dir() -> Result<std::path::PathBuf, String> {
 fn studio_executable() -> Result<std::path::PathBuf, String> {
     let dir = studio_install_dir()?;
     if cfg!(target_os = "windows") {
-        Ok(dir.join("sutra-studio.exe"))
+        Ok(dir.join("sutra_studio.exe"))
     } else if cfg!(target_os = "macos") {
         Ok(dir
-            .join("sutra-studio.app")
+            .join("sutra_studio.app")
             .join("Contents")
             .join("MacOS")
             .join("sutra_studio"))
     } else {
-        Ok(dir.join("sutra-studio"))
+        Ok(dir.join("sutra_studio"))
     }
 }
 
