@@ -648,7 +648,12 @@ async fn startup_update_check(
         // Remove old installation and re-download to get the matching version
         match download_studio_from_github(&tx).await {
             Ok(msg) => {
-                send_log(&tx, "info", "sutra-update", &format!("Studio updated: {}", msg));
+                send_log(
+                    &tx,
+                    "info",
+                    "sutra-update",
+                    &format!("Studio updated: {}", msg),
+                );
             }
             Err(e) => {
                 send_log(
@@ -844,7 +849,11 @@ fn studio_executable() -> Result<std::path::PathBuf, String> {
     if cfg!(target_os = "windows") {
         Ok(dir.join("sutra-studio.exe"))
     } else if cfg!(target_os = "macos") {
-        Ok(dir.join("sutra-studio.app").join("Contents").join("MacOS").join("sutra_studio"))
+        Ok(dir
+            .join("sutra-studio.app")
+            .join("Contents")
+            .join("MacOS")
+            .join("sutra_studio"))
     } else {
         Ok(dir.join("sutra-studio"))
     }
@@ -852,9 +861,7 @@ fn studio_executable() -> Result<std::path::PathBuf, String> {
 
 /// Check if Sutra Studio is installed.
 fn studio_is_installed() -> bool {
-    studio_executable()
-        .map(|p| p.exists())
-        .unwrap_or(false)
+    studio_executable().map(|p| p.exists()).unwrap_or(false)
 }
 
 /// Get the asset name pattern for Sutra Studio on this platform.
@@ -914,9 +921,7 @@ async fn download_studio_from_github(
             )
         })?;
 
-    let version = json["tag_name"]
-        .as_str()
-        .unwrap_or("unknown");
+    let version = json["tag_name"].as_str().unwrap_or("unknown");
 
     send_log(
         notify_tx,
@@ -972,7 +977,11 @@ async fn download_studio_from_github(
         notify_tx,
         "info",
         "sutra-studio",
-        &format!("Sutra Studio {} installed to {}", version, install_dir.display()),
+        &format!(
+            "Sutra Studio {} installed to {}",
+            version,
+            install_dir.display()
+        ),
     );
 
     Ok(format!(
@@ -995,17 +1004,14 @@ fn extract_zip_to_dir(data: &[u8], dest: &std::path::Path) -> Result<(), String>
                 .ok_or_else(|| "Invalid zip entry name".to_string())?,
         );
         if file.is_dir() {
-            std::fs::create_dir_all(&out_path)
-                .map_err(|e| format!("Create dir error: {}", e))?;
+            std::fs::create_dir_all(&out_path).map_err(|e| format!("Create dir error: {}", e))?;
         } else {
             if let Some(parent) = out_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Create dir error: {}", e))?;
+                std::fs::create_dir_all(parent).map_err(|e| format!("Create dir error: {}", e))?;
             }
             let mut outfile = std::fs::File::create(&out_path)
                 .map_err(|e| format!("Create file error: {}", e))?;
-            std::io::copy(&mut file, &mut outfile)
-                .map_err(|e| format!("Extract error: {}", e))?;
+            std::io::copy(&mut file, &mut outfile).map_err(|e| format!("Extract error: {}", e))?;
         }
     }
     Ok(())
@@ -1022,9 +1028,7 @@ fn extract_tar_gz_to_dir(data: &[u8], dest: &std::path::Path) -> Result<(), Stri
     Ok(())
 }
 
-async fn tool_download_studio(
-    notify_tx: &mpsc::UnboundedSender<Value>,
-) -> Result<String, String> {
+async fn tool_download_studio(notify_tx: &mpsc::UnboundedSender<Value>) -> Result<String, String> {
     if studio_is_installed() {
         send_log(
             notify_tx,
