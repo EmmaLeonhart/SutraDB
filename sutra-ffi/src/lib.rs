@@ -377,15 +377,18 @@ pub extern "C" fn sutra_query(db: *const SutraDb, query: *const c_char) -> *mut 
 
     sutra_sparql::optimize(&mut parsed);
 
-    let result =
-        match sutra_sparql::execute_with_vectors(&parsed, &inner.store, &inner.dict, &inner.vectors)
-        {
-            Ok(r) => r,
-            Err(e) => {
-                set_error(&format!("SPARQL execution error: {}", e));
-                return std::ptr::null_mut();
-            }
-        };
+    let result = match sutra_sparql::execute_with_vectors(
+        &parsed,
+        &inner.store,
+        &inner.dict,
+        &inner.vectors,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            set_error(&format!("SPARQL execution error: {}", e));
+            return std::ptr::null_mut();
+        }
+    };
 
     // Convert to string-resolved rows for easy consumption across FFI
     let columns = result.columns.clone();
@@ -429,10 +432,7 @@ pub extern "C" fn sutra_result_row_count(result: *const SutraResult) -> u64 {
 ///
 /// Returns a C string that must be freed with `sutra_string_free`.
 #[no_mangle]
-pub extern "C" fn sutra_result_column_name(
-    result: *const SutraResult,
-    index: u32,
-) -> *mut c_char {
+pub extern "C" fn sutra_result_column_name(result: *const SutraResult, index: u32) -> *mut c_char {
     if result.is_null() {
         return std::ptr::null_mut();
     }
@@ -677,7 +677,9 @@ fn unsafe_db_ref<'a>(ptr: *const SutraDb) -> Option<&'a SutraDb> {
 }
 
 fn string_to_c(s: &str) -> *mut c_char {
-    CString::new(s).map(|c| c.into_raw()).unwrap_or(std::ptr::null_mut())
+    CString::new(s)
+        .map(|c| c.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 fn resolve_id(id: sutra_core::TermId, dict: &sutra_core::TermDictionary) -> String {
