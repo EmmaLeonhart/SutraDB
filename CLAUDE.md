@@ -63,11 +63,15 @@ sutra-ffi/       # C-compatible FFI shared library for Sutra Studio and other no
 
 ## Sutra Studio & FFI
 
-Sutra Studio is a Flutter desktop app. It connects to SutraDB via:
-1. **FFI (primary)** — loads `sutra-ffi` shared library via `dart:ffi`, opens `.sdb` files directly. No server needed.
-2. **HTTP (fallback)** — connects to a running `sutra serve` instance.
+**Single-process architecture:** Studio, the MCP server, and the database engine all run in one process. Flutter loads `sutra_ffi.dll`/`.so`/`.dylib` via `dart:ffi`, which contains the full database engine. The MCP server runs on a background thread in the same process, sharing the same database handle. The GUI is optional — `sutra mcp` runs the same engine headless.
 
-The FFI layer (`sutra-ffi`) exposes a C ABI: `sutra_db_open`, `sutra_db_close`, `sutra_query`, `sutra_insert_ntriples`, `sutra_health_report`, etc. All functions use opaque pointers and null-terminated strings. The shared library ships alongside the Studio binary in release archives.
+**Two entry points:**
+- `sutra mcp` → MCP + database, no GUI
+- Sutra Studio → GUI + database + optional MCP server, all one process
+
+**FFI functions:** `sutra_db_open`, `sutra_db_close`, `sutra_query`, `sutra_insert_ntriples`, `sutra_health_report`, `sutra_export_ntriples`, `sutra_verify_consistency`, `sutra_repair`, `sutra_db_info`, `sutra_intern`, `sutra_resolve`, `sutra_version`. All use opaque pointers and null-terminated C strings. Thread-safe via `Arc<Mutex<...>>`.
+
+Studio can also fall back to HTTP mode for connecting to remote instances.
 
 The MCP server has `download_studio` and `launch_studio` tools so agents can install and open Studio without user intervention. Auto-update keeps Studio in sync with the CLI version.
 

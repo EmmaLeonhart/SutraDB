@@ -348,18 +348,36 @@ sutra-ffi/       # C-compatible FFI layer for embedding in non-Rust apps
 
 Sutra Studio is a Flutter desktop/web application that provides a visual interface to SutraDB. It is designed for operations that benefit from visual intuition — graph visualization, HNSW health heatmaps, manual emergency editing — while the CLI and MCP server remain the primary interfaces for agents and automation.
 
-### 7.1 Connection Modes
+### 7.1 Single-Process Architecture
 
-Studio connects to SutraDB in two ways:
+Studio, the MCP server, and the database engine all run in a single process:
 
-| Mode | How it works | When to use |
-|---|---|---|
-| **HTTP client** | Connects to a running `sutra serve` instance over HTTP | Server mode, remote databases, multi-client |
-| **FFI (direct)** | Loads `sutra-ffi` shared library via `dart:ffi`, opens `.sdb` file directly | Serverless mode, local databases, no server needed |
+```
+┌─────────────────────────────────────────┐
+│  Sutra Studio (Flutter GUI)             │  ← optional, can be on or off
+│  Health │ Graph │ SPARQL │ Ontology      │
+├─────────────────────────────────────────┤
+│  MCP Server (JSON-RPC stdin/stdout)     │  ← optional, toggleable at runtime
+├─────────────────────────────────────────┤
+│  sutra-ffi (C ABI shared library)       │  ← the glue layer
+│  ┌─────────┬───────────┬──────────────┐ │
+│  │sutra-core│sutra-hnsw│sutra-sparql  │ │  ← the database engine
+│  └─────────┴───────────┴──────────────┘ │
+└─────────────────────────────────────────┘
+```
 
-The FFI mode is the primary mode. Studio can open a `.sdb` file the same way SQLite browsers open `.db` files — no server process, no port, no configuration. The HTTP mode exists for connecting to remote or already-running instances.
+Flutter loads `sutra_ffi.dll`/`.so`/`.dylib` via `dart:ffi`. The shared library contains the full database engine. The MCP server can run on a background thread within the same process. All three layers share the same database handle — zero serialization overhead.
 
-On launch, Studio checks for a `SUTRA_ENDPOINT` environment variable (set by the MCP `launch_studio` tool). If present, it connects to that HTTP endpoint. Otherwise, it loads saved preferences or prompts the user.
+**Two entry points to the same system:**
+
+| Entry point | What runs |
+|---|---|
+| `sutra mcp` | MCP server + database engine. Headless, no GUI. |
+| Sutra Studio | GUI + database engine + optional MCP server. All one process. |
+
+Studio can open `.sdb` files directly (like SQLite browsers), start/stop the MCP server from within the GUI, and optionally start an HTTP server for remote SDK access — all without separate processes.
+
+The HTTP client mode still exists for connecting to remote or already-running instances.
 
 ### 7.2 FFI Layer (`sutra-ffi`)
 
@@ -410,16 +428,22 @@ int sutra_serve_stop(sutra_db_t* db);
 
 The shared library ships alongside the Studio binary in release archives. Studio loads it at startup from the same directory as its own executable.
 
-### 7.3 MCP Integration
+### 7.3 MCP Server as an FFI Capability
+
+The MCP server is not a separate binary — it is a capability exposed by the FFI layer. Studio can start an MCP server on a background thread via `sutra_mcp_start(db, stdin_fd, stdout_fd)`, sharing the same database handle that the GUI is using. This means an AI agent can connect to Studio's MCP server and both the agent and the human see the same database state in real time.
+
+When running headless (`sutra mcp`), the CLI binary uses the same FFI functions internally.
+
+### 7.4 MCP Studio Tools
 
 The MCP server provides two tools for Studio management:
 
 - **`download_studio`** — Downloads the pre-built Studio binary (including the FFI shared library) from GitHub releases for the current platform.
-- **`launch_studio`** — Opens Studio. If not installed, downloads it first. In server mode, passes the HTTP endpoint. In serverless mode, passes the `.sdb` path for FFI-direct access.
+- **`launch_studio`** — Opens Studio. If not installed, downloads it first. Passes the database path or HTTP endpoint depending on mode.
 
 Auto-update keeps Studio in sync with the CLI version — when the `sutra` binary updates, Studio is also re-downloaded if installed.
 
-### 7.4 Studio Screens
+### 7.5 Studio Screens
 
 | Screen | Purpose |
 |---|---|

@@ -5,6 +5,7 @@ members = [
     "sutra-sparql",
     "sutra-proto",
     "sutra-cli",
+    "sutra-ffi",
 ]
 exclude = ["sdks/rust"]
 resolver = "2"

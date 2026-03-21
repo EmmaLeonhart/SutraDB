@@ -1,0 +1,17 @@
+[package]
+name = "sutra-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C-compatible FFI shared library for SutraDB — used by Sutra Studio (Flutter) and other non-Rust consumers"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+sutra-core = { path = "../sutra-core" }
+sutra-hnsw = { path = "../sutra-hnsw" }
+sutra-sparql = { path = "../sutra-sparql" }
+
+[dev-dependencies]
+tempfile = "3"
