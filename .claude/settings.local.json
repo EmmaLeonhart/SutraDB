@@ -97,7 +97,8 @@
       "Bash(gh pr:*)",
       "Bash(gh release:*)",
       "Bash(find . -type f \\\\\\(-name *mcp* -o -name *studio* \\\\\\))",
-      "Bash(sed 's/\\(.*$//')"
+      "Bash(sed 's/\\(.*$//')",
+      "Bash(flutter build:*)"
     ]
   }
 }
