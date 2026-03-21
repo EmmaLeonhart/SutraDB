@@ -82,6 +82,13 @@ The SDK is functionally complete (3 classes, ~400 LOC). Build migrated from Mave
 - [ ] Go SDK → tag for Go modules
 
 ### Sutra Studio
+- [x] Pre-built binaries in release pipeline (Windows, Linux, macOS)
+- [x] MCP download_studio + launch_studio tools
+- [x] SUTRA_ENDPOINT env var for launch-time connection
+- [x] `sutra mcp --studio` flag to launch MCP + Studio together
+- [ ] Remote Studio access: connect Studio to a remote SutraDB over the network
+- [ ] Dart FFI bindings: replace HTTP client with direct sutra_ffi.dll calls
+- [ ] Studio-embedded MCP server: start MCP on background thread from within Studio
 - [ ] Flutter graph view: remaining browse.html parity
 - [ ] Long-term: absorb core Protege functionality
 
@@ -220,7 +227,7 @@ Deferred until paying customers.
 ### Native MCP Server
 - [x] `sutra mcp` command: native Rust MCP server built into the binary (no Python needed)
 - [x] Dual-mode: `--url` for server mode, `--data-dir` for serverless mode
-- [x] 10 tools: health_report, rebuild_hnsw, verify_consistency, database_info, sparql_query, insert_triples, backup, vector_search, check_update, decline_update
+- [x] 12 tools: health_report, rebuild_hnsw, verify_consistency, database_info, sparql_query, insert_triples, backup, vector_search, download_studio, launch_studio, check_update, decline_update
 - [x] Auto-update on MCP startup with 2-minute decline window (`--no-auto-update` to disable)
 - [x] Direct library calls in serverless mode (no PATH dependency on `sutra` binary)
 - [x] MCP resources: sutra://connection, sutra://version, sutra://schema

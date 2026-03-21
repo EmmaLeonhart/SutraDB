@@ -168,6 +168,11 @@ enum Commands {
         /// agent declines via the decline_update tool.
         #[arg(long)]
         no_auto_update: bool,
+
+        /// Also launch Sutra Studio GUI alongside the MCP server.
+        /// Studio connects to the same database for visual diagnostics.
+        #[arg(long)]
+        studio: bool,
     },
 }
 
@@ -185,7 +190,61 @@ async fn main() -> anyhow::Result<()> {
             data_dir,
             passcode,
             no_auto_update,
+            studio,
         } => {
+            if studio {
+                // Launch Sutra Studio as a detached process
+                let studio_dir = std::path::Path::new("sutra-studio");
+                let endpoint = if data_dir.is_some() {
+                    // Serverless — Studio will connect via FFI or default localhost
+                    "http://localhost:3030".to_string()
+                } else {
+                    url.clone()
+                };
+
+                // Try pre-built binary first, fall back to flutter run
+                let exe_dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|d| d.join("sutra-studio")));
+                let studio_exe = exe_dir.as_ref().map(|d| {
+                    if cfg!(target_os = "windows") {
+                        d.join("sutra_studio.exe")
+                    } else {
+                        d.join("sutra_studio")
+                    }
+                });
+
+                if let Some(ref exe) = studio_exe {
+                    if exe.exists() {
+                        #[cfg(target_os = "windows")]
+                        let _ = std::process::Command::new("cmd")
+                            .args(["/c", "start", "", &exe.to_string_lossy()])
+                            .env("SUTRA_ENDPOINT", &endpoint)
+                            .spawn();
+                        #[cfg(not(target_os = "windows"))]
+                        let _ = std::process::Command::new(exe)
+                            .env("SUTRA_ENDPOINT", &endpoint)
+                            .spawn();
+                        eprintln!("[OK] Sutra Studio launched");
+                    } else if studio_dir.exists() {
+                        eprintln!("Launching Sutra Studio from source...");
+                        #[cfg(target_os = "windows")]
+                        let _ = std::process::Command::new("cmd")
+                            .args(["/c", "start", "", "flutter", "run", "-d", "windows"])
+                            .current_dir(studio_dir)
+                            .env("SUTRA_ENDPOINT", &endpoint)
+                            .spawn();
+                        #[cfg(not(target_os = "windows"))]
+                        let _ = std::process::Command::new("flutter")
+                            .args(["run", "-d", "linux"])
+                            .current_dir(studio_dir)
+                            .env("SUTRA_ENDPOINT", &endpoint)
+                            .spawn();
+                    } else {
+                        eprintln!("[WARN] Sutra Studio not found. Use the MCP download_studio tool to install it.");
+                    }
+                }
+            }
             return mcp::run_mcp_server(url, data_dir, passcode, !no_auto_update).await;
         }
         Commands::Serve {
