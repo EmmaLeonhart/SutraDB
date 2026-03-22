@@ -69,6 +69,33 @@
         Time is 1D. A range scan on 1D ordered data is a B-tree lookup &mdash; the simplest index structure in computer science. SutraDB already pays the hard tax for HNSW (approximate search in 768+ dimensions). Temporal indexing is a rounding error by comparison.
     </div>
 
+    <h2>Not Always a Clock</h2>
+
+    <p>The &ldquo;T&rdquo; in TSPO is not necessarily a UTC timestamp. It is an <strong>ordered scalar</strong> &mdash; any value that can be sorted and range-scanned. The B-tree doesn&rsquo;t care what the bytes represent. It only needs a total ordering.</p>
+
+    <table>
+        <tr><th>Domain</th><th>Ordering Axis</th><th>Example Values</th></tr>
+        <tr><td>Historical events</td><td>UTC timestamps (default)</td><td><code>"1804-05-18"</code>, <code>"2024-03-14T10:00"</code></td></tr>
+        <tr><td>Screenplays</td><td>Scene numbers</td><td><code>1</code>, <code>2</code>, <code>3.5</code></td></tr>
+        <tr><td>Video production</td><td>Frame numbers</td><td><code>0</code>, <code>1</code>, <code>2</code>, &hellip;, <code>86400</code></td></tr>
+        <tr><td>Film continuity</td><td>Minutes into movie</td><td><code>0.0</code>, <code>12.5</code>, <code>90.3</code></td></tr>
+        <tr><td>Novels</td><td>Page numbers</td><td><code>1</code>, <code>42</code>, <code>300</code></td></tr>
+        <tr><td>Religious texts</td><td>Book.chapter.verse</td><td><code>1.1.1</code>, <code>66.22.21</code></td></tr>
+        <tr><td>Legal proceedings</td><td>Exhibit / transcript page</td><td><code>1</code>, <code>2</code>, <code>47</code></td></tr>
+    </table>
+
+    <p>The axis type is a <strong>database-wide setting</strong> configured at creation time. You do not mix frame numbers and UTC timestamps in the same TSPO index &mdash; that would make range scans meaningless.</p>
+
+    <pre><code><span class="cmt"># Database creation with non-default axis</span>
+sutra create movie.sdb <span class="kw">--temporal-axis</span>=integer    <span class="cmt"># frame/scene numbers</span>
+sutra create scripture.sdb <span class="kw">--temporal-axis</span>=float  <span class="cmt"># chapter.verse as float</span>
+sutra create events.sdb                            <span class="cmt"># default: UTC timestamp</span></code></pre>
+
+    <div class="callout orange">
+        <strong>Same index, different semantics.</strong>
+        The SPARQL+ operators (AT_TIME, DURING, WORLD_STATE, TEMPORAL_DIFF) work identically regardless of axis type. The operator names reference time because that&rsquo;s the common case, but they accept any ordered scalar matching the database&rsquo;s configured axis.
+    </div>
+
     <h2>Three Ways to Say When</h2>
 
     <p>Every triple can carry up to three temporal signifiers. None are required &mdash; some facts are intrinsically atemporal. A triple can have any combination, and can have <strong>multiple valid time intervals</strong>.</p>

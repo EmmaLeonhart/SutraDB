@@ -55,9 +55,53 @@ None of these answer the fundamental ontochronological question: **traverse the 
 
 ---
 
-## 3. Temporal Model
+## 3. The Ordering Axis
 
-### 3.1 Three Temporal Signifiers
+### 3.1 Not Always a Clock
+
+The "T" in TSPO is not necessarily a UTC timestamp. It is an **ordered scalar** — any value that can be sorted and range-scanned. The indexing is identical regardless of what the scalar represents, because the data structure is always a B-tree over ordered keys.
+
+The default is UTC timestamps, because most databases deal with real-world time. But many domains have a natural ordering axis that is not a clock:
+
+| Domain | Ordering Axis | Example Values |
+|---|---|---|
+| Historical events | UTC timestamps (default) | `"1804-05-18"`, `"2024-03-14T10:00:00"` |
+| Screenplays | Scene numbers | `1`, `2`, `3.5` (for inserted scenes) |
+| Video production | Frame numbers or timecodes | `0`, `1`, `2`, ..., `86400` |
+| Film continuity | Minutes into movie | `0.0`, `12.5`, `90.3` |
+| Novels / books | Page numbers or chapter.paragraph | `1`, `42`, `300` |
+| Religious texts | Book.chapter.verse | `1.1.1`, `1.1.2`, `66.22.21` |
+| Legal proceedings | Exhibit numbers or transcript page | `1`, `2`, `47` |
+| Music | Measure numbers or seconds | `1`, `2`, `3`, `4` |
+| Software | Version numbers or commit ordinals | `1`, `2`, `3`, `1000` |
+
+The axis type is a **database-wide setting** configured at creation time. Once set, it applies to all temporal predicates in that database. You do not mix frame numbers and UTC timestamps in the same TSPO index — that would make range scans meaningless.
+
+```
+# Database creation with non-default axis
+sutra create movie.sdb --temporal-axis=integer    # frame/scene numbers
+sutra create scripture.sdb --temporal-axis=float   # chapter.verse as float
+sutra create events.sdb                            # default: UTC timestamp
+```
+
+The implementation cost of supporting different axis types is near zero. The B-tree doesn't care what the bytes represent — it only needs a total ordering. An integer axis, a float axis, and a timestamp axis all produce the same index structure with the same performance characteristics.
+
+### 3.2 Implications for Non-Temporal Axes
+
+When the ordering axis is not a clock, some concepts adapt:
+
+- **"Assertion time"** becomes **"assertion position"** — "known to be the case at this point in the sequence."
+- **"Start time" / "end time"** become **"start position" / "end position"** — the interval during which a fact holds.
+- **Precision** may not apply (frame 42 is exact; there's no "decade-level precision" for scene numbers).
+- **The world state query** becomes "give me the complete state at position P" instead of "at time T" — same range scan, different semantics.
+
+The SPARQL+ operators (`AT_TIME`, `DURING`, `WORLD_STATE`, `TEMPORAL_DIFF`) work identically regardless of axis type. The operator names reference time because that's the common case, but they accept any ordered scalar matching the database's axis type.
+
+---
+
+## 4. Temporal Model (UTC Default)
+
+### 4.1 Three Temporal Signifiers
 
 Every triple in SutraDB can carry up to three temporal signifiers. None are required — some triples are intrinsically atemporal (definitional facts, ontological axioms). A triple can have zero, one, two, or all three.
 
@@ -73,7 +117,7 @@ These map onto the bitemporal model from database theory:
 
 But the key insight is that **assertion time is a fallback, not a parallel axis.** In a well-instrumented system, most triples have start/end times. Assertion time is the crutch you reach for when the world-state transition happened but nobody was watching.
 
-### 3.2 What Assertion Time Actually Is
+### 4.2 What Assertion Time Actually Is
 
 Assertion time says: "We have evidence this fact was the case at this moment." It does not assert when it started or ended. It is a **point attestation** — like a photograph. The triple is grounded to a witness, a document, an observation at a specific moment.
 
@@ -81,7 +125,7 @@ For a very large amount of real-world data, start and end times are simply not k
 
 The inference rule: a fact asserted at time T is likely true indefinitely into the past and future unless contradicted, but its relevance decays with temporal distance from T.
 
-### 3.3 Precision
+### 4.3 Precision
 
 Temporal signifiers carry a precision level:
 
@@ -100,7 +144,7 @@ Temporal signifiers carry a precision level:
 
 Precision is not confidence. A fact with year-level precision is not "less certain" — it's genuinely imprecise. The granularity is part of the truth claim, not an epistemic hedge. Historical facts especially have this property: you know something happened in a decade, not a day.
 
-### 3.4 Open Intervals and Absence
+### 4.4 Open Intervals and Absence
 
 - A triple with a start time and no end time: **open-ended interval** — "still true as far as we know."
 - A triple with an end time and no start time: "existed before our record begins, ended here."
@@ -109,7 +153,7 @@ Precision is not confidence. A fact with year-level precision is not "less certa
 
 The absence of temporal signifiers is not null — it is the correct representation. In the RDF open world, if something is not stated, it is unknown, not false. A triple without a start time doesn't have an "unknown" start time — the start time is simply not asserted.
 
-### 3.5 Multiple Valid Times
+### 4.5 Multiple Valid Times
 
 A single triple can be valid at multiple disjoint time intervals. A person can hold the same job title at different periods (left, returned). A building can be used as a school, converted to offices, then converted back to a school. Each interval is a separate temporal annotation on the same triple.
 
@@ -117,9 +161,9 @@ This means the temporal annotation is not a single (start, end) pair — it is a
 
 ---
 
-## 4. Indexing Strategy
+## 5. Indexing Strategy
 
-### 4.1 Time-Primary Index (TSPO)
+### 5.1 Time-Primary Index (TSPO)
 
 The core ontochronological index adds time as a **leading key component**:
 
@@ -132,7 +176,7 @@ This is the same insight applied to any dimension: **promote the query axis to a
 
 With TSPO, "give me the complete world state at time T" is a single range scan on the first key component. Every triple valid at T falls out with no joins, no filter passes, no graph traversal.
 
-### 4.2 Why This Is Cheap
+### 5.2 Why This Is Cheap
 
 Time indexing is a 1D exact range query on ordered data. That's a B-tree — the simplest, most well-understood index structure in computer science.
 
@@ -146,7 +190,7 @@ Compare to SutraDB's existing indexes:
 
 HNSW solves a genuinely hard problem — approximate search in high-dimensional space. Temporal indexing is trivially cheap by comparison. It's just "put time first in the key." The overhead is basically just storage for the additional index.
 
-### 4.3 Coordinate Indexing (Optional)
+### 5.3 Coordinate Indexing (Optional)
 
 The same pattern extends to spatial data:
 
@@ -173,7 +217,7 @@ The dimensional spectrum for SutraDB's indexes:
 
 SutraDB already pays the hard tax for the high-dimensional end. Low-dimensional indexing is a rounding error on implementation cost.
 
-### 4.4 Provenance as a Low-Dimensional Index
+### 5.4 Provenance as a Low-Dimensional Index
 
 The same pattern generalizes beyond time and space to any low-dimensional metadata axis:
 
@@ -189,9 +233,9 @@ For GraphRAG, this means traceable reasoning is essentially free. The audit trai
 
 ---
 
-## 5. World State Queries
+## 6. World State Queries
 
-### 5.1 The Fundamental Query
+### 6.1 The Fundamental Query
 
 The defining query of an ontochronological database:
 
@@ -201,25 +245,25 @@ This returns every triple that was valid at T — every entity that existed, eve
 
 With the TSPO index, this is a range scan: all entries where the time component contains T (either as a point attestation at T, or as an interval containing T).
 
-### 5.2 Temporal Diff
+### 6.2 Temporal Diff
 
 > **What changed between T1 and T2?**
 
 Two range scans (world state at T1, world state at T2), then compute the diff. Triples present at T2 but not T1 are assertions. Triples present at T1 but not T2 are retractions. This is the core operation for changelog reconstruction.
 
-### 5.3 Entity History
+### 6.3 Entity History
 
 > **Give me the complete history of entity E.**
 
 This is a subject-primary query with temporal ordering. The standard SPO index handles the entity lookup; the temporal signifiers on each triple give the ordering. No TSPO scan needed — just read E's triples and sort by time.
 
-### 5.4 Co-Presence
+### 6.4 Co-Presence
 
 > **Which entities were co-present during interval [T1, T2]?**
 
 Range scan on TSPO for the interval, then group by subject. Any subject appearing in the result was "active" (had at least one valid triple) during the interval. This is the alibi query — "who was where during the relevant window."
 
-### 5.5 Temporal Graph Traversal
+### 6.5 Temporal Graph Traversal
 
 > **Starting from entity E at time T, traverse relationship R through the graph, but only follow edges that were valid at T.**
 
@@ -227,9 +271,9 @@ This is a standard graph traversal with a temporal filter: at each hop, check th
 
 ---
 
-## 6. SPARQL+ Temporal Extensions
+## 7. SPARQL+ Temporal Extensions
 
-### 6.1 AT_TIME
+### 7.1 AT_TIME
 
 Scope a graph pattern to a specific moment:
 
@@ -244,7 +288,7 @@ SELECT ?person ?location WHERE {
 
 Semantics: only match triples that were valid at the specified time. Triples with assertion time at or near T are included with lower priority than triples with valid-time intervals containing T.
 
-### 6.2 DURING
+### 7.2 DURING
 
 Scope a graph pattern to an interval:
 
@@ -259,7 +303,7 @@ SELECT ?person ?location WHERE {
 
 Returns triples whose valid-time interval overlaps with the specified interval.
 
-### 6.3 WORLD_STATE
+### 7.3 WORLD_STATE
 
 Retrieve the complete state snapshot at a given time:
 
@@ -273,7 +317,7 @@ SELECT ?s ?p ?o WHERE {
 
 This is the fundamental ontochronological query expressed in SPARQL+.
 
-### 6.4 TEMPORAL_DIFF
+### 7.4 TEMPORAL_DIFF
 
 Compute the difference between two world states:
 
@@ -291,7 +335,7 @@ SELECT ?change_type ?s ?p ?o WHERE {
 
 Returns triples annotated with whether they were added, removed, or modified between the two timestamps.
 
-### 6.5 Combining Temporal and Vector Queries
+### 7.5 Combining Temporal and Vector Queries
 
 Ontochronological queries compose with existing SPARQL+ vector operators:
 
@@ -309,9 +353,9 @@ This finds documents semantically similar to a query vector that mention persons
 
 ---
 
-## 7. RDF-star Representation
+## 8. RDF-star Representation
 
-### 7.1 Temporal Signifiers as Annotations
+### 8.1 Temporal Signifiers as Annotations
 
 Temporal data is stored using RDF-star annotations on triples:
 
@@ -330,7 +374,7 @@ Temporal data is stored using RDF-star annotations on triples:
 :water :chemicalFormula "H2O" .
 ```
 
-### 7.2 The `sutra:temporal` Datatype
+### 8.2 The `sutra:temporal` Datatype
 
 A new literal type that encodes both a timestamp and its precision:
 
@@ -343,7 +387,7 @@ A new literal type that encodes both a timestamp and its precision:
 
 The precision is derived from the format of the literal, not from a separate field. This keeps the data model simple while preserving precision information.
 
-### 7.3 Multiple Valid Intervals
+### 8.3 Multiple Valid Intervals
 
 ```turtle
 # Person held same title in two separate periods
@@ -358,9 +402,9 @@ Each interval is a separate RDF-star annotation. The TSPO index has separate ent
 
 ---
 
-## 8. Persistence and World State Snapshots
+## 9. Persistence and World State Snapshots
 
-### 8.1 Event Sourcing Model
+### 9.1 Event Sourcing Model
 
 The natural storage model for ontochronological data is a **changelog** — an ordered sequence of state changes. The world state at any time T is the result of replaying all changes up to T.
 
@@ -368,7 +412,7 @@ This means the TSPO index is fundamentally an index over events, not states. The
 1. Finding the nearest snapshot before T
 2. Replaying all changes between the snapshot and T
 
-### 8.2 Periodic Snapshots
+### 9.2 Periodic Snapshots
 
 To avoid full replay on every temporal query, SutraDB can maintain periodic world-state snapshots. These are complete copies of all valid triples at meaningful boundaries:
 
@@ -380,7 +424,7 @@ The query model becomes:
 - "What changed between T1 and T2" → diff two snapshots or scan changelog between them
 - "History of entity E" → SPO scan, temporally ordered
 
-### 8.3 Persistence-First Inference
+### 9.3 Persistence-First Inference
 
 For text extraction and narrative modeling, the **default is persistence**: any asserted state propagates forward in time until contradicted.
 
@@ -394,15 +438,15 @@ The conventions are stored as ontology triples in the database itself — they'r
 
 ---
 
-## 9. Relationship to Existing SutraDB Architecture
+## 10. Relationship to Existing SutraDB Architecture
 
-### 9.1 New Index Type
+### 10.1 New Index Type
 
 TSPO joins SPO/POS/OSP/VECTOR as a fifth index type. Like VECTOR indexes, it is opt-in — enabled when temporal predicates (`sutra:assertedAt`, `sutra:validFrom`, `sutra:validTo`) are present in the data.
 
 The query planner treats TSPO the same way it treats all other indexes: as an access path with cost estimates. Temporal queries that benefit from TSPO get routed there; queries that don't simply ignore it.
 
-### 9.2 New Predicates
+### 10.2 New Predicates
 
 | Predicate | Domain | Range | Purpose |
 |---|---|---|---|
@@ -412,11 +456,11 @@ The query planner treats TSPO the same way it treats all other indexes: as an ac
 
 These are reserved predicates that trigger TSPO indexing when used.
 
-### 9.3 New Literal Type
+### 10.3 New Literal Type
 
 `sutra:temporal` — a timestamp with embedded precision. Stored internally as a (i64 timestamp, u8 precision) pair for efficient comparison and range scanning.
 
-### 9.4 Compatibility
+### 10.4 Compatibility
 
 Ontochronological features are purely additive:
 - Existing SPO/POS/OSP indexes are unaffected
@@ -427,21 +471,21 @@ Ontochronological features are purely additive:
 
 ---
 
-## 10. Design Decisions
+## 11. Design Decisions
 
-### 10.1 Why Not a Separate Temporal Database?
+### 11.1 Why Not a Separate Temporal Database?
 
 For the same reason SutraDB doesn't use a separate vector database. The whole point is that temporal queries compose with graph traversal and vector search in a single query. Splitting temporal data into a separate system creates the same JSON-handoff problem that SutraDB already solved for vectors.
 
-### 10.2 Why RDF-star Annotations, Not Named Graphs?
+### 11.2 Why RDF-star Annotations, Not Named Graphs?
 
 Named graphs (the traditional RDF approach to context/provenance) are heavyweight and don't compose well. RDF-star annotations let you attach temporal metadata directly to the triple being annotated, which is the natural structure — "this relationship was valid from X to Y" is a statement about the relationship.
 
-### 10.3 Why Precision, Not Confidence?
+### 11.3 Why Precision, Not Confidence?
 
 Temporal precision and temporal confidence are different things. Precision says "this timestamp has year-level granularity" — it's a fact about the data. Confidence says "we're 80% sure this timestamp is correct" — it's a fact about our belief. Precision is stored on the temporal literal itself. Confidence, if needed, goes on the triple as a separate predicate — it's not specific to temporal data.
 
-### 10.4 Why Assertion Time Is a Crutch
+### 11.4 Why Assertion Time Is a Crutch
 
 In a perfect world, every fact would have known start and end times. Assertion time exists because the world is imperfect — for most historical data, most extracted data, and most real-time observations, we don't know when a state began or ended. We only know it was observed at a certain time.
 
@@ -449,7 +493,7 @@ As data quality improves, assertion time becomes less necessary. A well-instrume
 
 ---
 
-## 11. Implementation Priority
+## 12. Implementation Priority
 
 1. **`sutra:temporal` literal type** — timestamp + precision, stored as (i64, u8)
 2. **Reserved temporal predicates** — `sutra:assertedAt`, `sutra:validFrom`, `sutra:validTo`
