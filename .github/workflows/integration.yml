@@ -8,6 +8,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   integration:
     name: SDK Integration Tests
