@@ -64,7 +64,7 @@ sutra:declareVectorPredicate :hasEmbedding ;
 
 All triples are stored across six covering indexes to ensure any SPARQL access pattern hits an index rather than scanning. For RDF-star quoted triples, the quoted triple is assigned a deterministic content-addressed ID and treated as a node internally.
 
-SutraDB maintains **four types of indexes**. The first three are covering indexes over interned u64 IDs that ensure any triple access pattern hits an index rather than scanning. The fourth is what makes SutraDB unique — a native vector index that the query planner treats as a first-class access path alongside the triple indexes.
+SutraDB maintains **five types of indexes**. The first three are covering indexes over interned u64 IDs that ensure any triple access pattern hits an index rather than scanning. The fourth is a native vector index that the query planner treats as a first-class access path alongside the triple indexes. The fifth is the temporal index that makes SutraDB an ontochronological database — time is a structural axis, not metadata.
 
 | Index | Key Order | Purpose |
 |---|---|---|
@@ -72,6 +72,7 @@ SutraDB maintains **four types of indexes**. The first three are covering indexe
 | **POS** | Predicate → Object → Subject | Predicate-first lookups: type queries (`?x rdf:type :Person`), predicate+object reverse lookup for vector resolution. |
 | **OSP** | Object → Subject → Predicate | Object-first reverse traversal: "what points to this entity?" |
 | **VECTOR(p)** | One HNSW graph per vector predicate | Approximate nearest neighbor search over vector embeddings. Keyed by the vector object's TermId. Returns ranked results that join back through POS for entity resolution. |
+| **TSPO** | Time → Subject → Predicate → Object | Temporal queries: "what was the complete world state at time T?" Single range scan on the leading time key. Built automatically when temporal predicates (`sutra:assertedAt`, `sutra:validFrom`, `sutra:validTo`) are present. See `docs/ontochronology.md` for full design. |
 
 All triple index keys are 24 bytes (3 × u64 in big-endian for correct sort order). Since they are sorted, prefix scans serve multiple access patterns — there is no need for separate SP or PO indexes because they are just prefix scans on SPO and POS respectively.
 

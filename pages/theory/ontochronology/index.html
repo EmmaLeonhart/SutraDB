@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Ontochronology — SutraDB">
+    <meta property="og:description" content="Time as a first-class structural axis, not metadata on triples. Query the complete world state at any moment.">
+    <meta name="description" content="Ontochronology: modeling what exists at which times. SutraDB treats time as a primary index axis for temporal graph queries.">
+    <meta property="og:url" content="https://sutradb.org/theory/ontochronology/">
+    <meta property="og:site_name" content="SutraDB">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Ontochronology — SutraDB">
+    <meta name="twitter:description" content="Time as a first-class structural axis. Query the complete world state at any moment.">
+    <meta name="theme-color" content="#58a6ff">
+    <link rel="canonical" href="https://sutradb.org/theory/ontochronology/">
+    <title>Ontochronology &mdash; SutraDB</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4dc;</text></svg>">
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<nav>
+    <a href="../../" class="logo"><span>Sutra</span>DB</a>
+    <a href="../../#download">Download</a>
+    <a href="../../graph-vector/">Graph+Vector</a>
+    <a href="../../sdb-format/">Architecture</a>
+    <a href="../../theory/">Theory</a>
+    <a href="../../codeofethics/">Code of Ethics</a>
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h1>Onto<span>chronology</span></h1>
+        <p class="subtitle">Time is not metadata on triples. Time is a structural axis of the database.</p>
+    </div>
+
+    <h2>The Problem: Time as an Afterthought</h2>
+
+    <p>Every knowledge graph has temporal data. Almost none of them can query it well.</p>
+
+    <p>The dominant pattern is <strong>time as a qualifier</strong>: a triple like <code>(:Napoleon :heldPosition :Emperor)</code> gets a start date and end date as metadata hanging off it. This works for point lookups &mdash; &ldquo;was Napoleon emperor in 1810?&rdquo; &mdash; but it fails catastrophically for the queries that actually matter:</p>
+
+    <ul>
+        <li><strong>What was the complete state of the world at time T?</strong> &rarr; Full graph scan, filter every triple&rsquo;s qualifiers.</li>
+        <li><strong>What changed between T1 and T2?</strong> &rarr; Two full graph scans, diff the results.</li>
+        <li><strong>Which entities were co-present during this interval?</strong> &rarr; Scan everything, filter, group.</li>
+    </ul>
+
+    <p>These queries are expensive because time is organized <em>around</em> triples instead of triples being organized <em>around</em> time.</p>
+
+    <h2>The Insight: Time as a Leading Index Key</h2>
+
+    <p>SutraDB already maintains three index orderings over every triple &mdash; SPO, POS, and OSP &mdash; so that any access pattern hits an index. Ontochronology adds a fourth ordering with <strong>time as the leading key</strong>:</p>
+
+    <table>
+        <tr><th>Index</th><th>Key Order</th><th>Answers</th></tr>
+        <tr><td><strong>SPO</strong></td><td>Subject &rarr; Predicate &rarr; Object</td><td>&ldquo;What do we know about Alice?&rdquo;</td></tr>
+        <tr><td><strong>POS</strong></td><td>Predicate &rarr; Object &rarr; Subject</td><td>&ldquo;Who is a Person?&rdquo;</td></tr>
+        <tr><td><strong>OSP</strong></td><td>Object &rarr; Subject &rarr; Predicate</td><td>&ldquo;What links to Tokyo?&rdquo;</td></tr>
+        <tr><td><strong>VECTOR(p)</strong></td><td>Per-predicate HNSW graph</td><td>&ldquo;What&rsquo;s semantically similar?&rdquo;</td></tr>
+        <tr><td><strong>TSPO</strong></td><td><strong>Time &rarr; Subject &rarr; Predicate &rarr; Object</strong></td><td><strong>&ldquo;What existed at time T?&rdquo;</strong></td></tr>
+    </table>
+
+    <p>With TSPO, &ldquo;give me the complete world state at time T&rdquo; is a <strong>single range scan</strong> on the first key component. No joins. No filter passes. No graph traversal. Every triple valid at T just falls out.</p>
+
+    <div class="callout green">
+        <strong>This is almost embarrassingly cheap.</strong>
+        Time is 1D. A range scan on 1D ordered data is a B-tree lookup &mdash; the simplest index structure in computer science. SutraDB already pays the hard tax for HNSW (approximate search in 768+ dimensions). Temporal indexing is a rounding error by comparison.
+    </div>
+
+    <h2>Three Ways to Say When</h2>
+
+    <p>Every triple can carry up to three temporal signifiers. None are required &mdash; some facts are intrinsically atemporal. A triple can have any combination, and can have <strong>multiple valid time intervals</strong>.</p>
+
+    <table>
+        <tr><th>Signifier</th><th>Meaning</th><th>When to Use</th></tr>
+        <tr>
+            <td><strong>Assertion time</strong></td>
+            <td>&ldquo;Known to be the case at this time&rdquo;</td>
+            <td>When start/end times are unknown. The fallback &mdash; a proxy for &ldquo;true as of when we recorded it.&rdquo;</td>
+        </tr>
+        <tr>
+            <td><strong>Start time</strong></td>
+            <td>&ldquo;Became true at this time&rdquo;</td>
+            <td>When the onset is known.</td>
+        </tr>
+        <tr>
+            <td><strong>End time</strong></td>
+            <td>&ldquo;Stopped being true at this time&rdquo;</td>
+            <td>When the termination is known. Absent = still true.</td>
+        </tr>
+    </table>
+
+    <p>Assertion time is the <strong>crutch</strong>. In a perfect world, every fact would have known start and end times. But for most historical data, most extracted data, and most real-time observations, we don&rsquo;t know when a state began or ended. We only know it was observed at a certain time.</p>
+
+    <h3>Precision, Not Confidence</h3>
+
+    <p>Timestamps carry a precision level derived from their format:</p>
+
+    <div class="comparison">
+        <div class="card">
+            <h4>Precise</h4>
+            <pre><code><span class="str">"1977-10-29"</span>^^sutra:temporal
+<span class="cmt">&rarr; day precision</span></code></pre>
+        </div>
+        <div class="card">
+            <h4>Imprecise</h4>
+            <pre><code><span class="str">"1909"</span>^^sutra:temporal
+<span class="cmt">&rarr; year precision</span></code></pre>
+        </div>
+    </div>
+
+    <p>Precision is not confidence. A fact with year-level precision isn&rsquo;t &ldquo;less certain&rdquo; &mdash; the granularity is genuinely part of the truth claim. &ldquo;Born in 1909&rdquo; is as certain as &ldquo;died October 29, 1977&rdquo; &mdash; we just don&rsquo;t have a more specific date.</p>
+
+    <h2>RDF-star Representation</h2>
+
+    <p>Temporal data uses RDF-star annotations &mdash; statements about statements:</p>
+
+    <pre><code><span class="cmt"># Assertion time only (the crutch)</span>
+&lt;&lt; <span class="fn">:building_42</span> <span class="fn">:locatedIn</span> <span class="fn">:MainStreet</span> &gt;&gt;
+    <span class="kw">sutra:assertedAt</span> <span class="str">"1847"</span>^^sutra:temporal .
+
+<span class="cmt"># Full valid-time interval</span>
+&lt;&lt; <span class="fn">:napoleon</span> <span class="fn">:heldPosition</span> <span class="fn">:Emperor</span> &gt;&gt;
+    <span class="kw">sutra:validFrom</span> <span class="str">"1804-05-18"</span>^^sutra:temporal ;
+    <span class="kw">sutra:validTo</span>   <span class="str">"1814-04-11"</span>^^sutra:temporal .
+
+<span class="cmt"># Open-ended (still true)</span>
+&lt;&lt; <span class="fn">:alice</span> <span class="fn">:worksAt</span> <span class="fn">:Acme</span> &gt;&gt;
+    <span class="kw">sutra:validFrom</span> <span class="str">"2023-01-15"</span>^^sutra:temporal .
+
+<span class="cmt"># Atemporal (no temporal annotation at all)</span>
+<span class="fn">:water</span> <span class="fn">:chemicalFormula</span> <span class="str">"H2O"</span> .</code></pre>
+
+    <h2>SPARQL+ Temporal Operators</h2>
+
+    <p>New operators scope graph patterns to specific moments or intervals:</p>
+
+    <h3>AT_TIME &mdash; Point-in-time query</h3>
+
+    <pre><code><span class="cmt"># Who was where at 10am on March 14th?</span>
+<span class="kw">SELECT</span> ?person ?location <span class="kw">WHERE</span> {
+  <span class="fn">AT_TIME</span>(<span class="str">"2024-03-14T10:00:00"</span>^^xsd:dateTime) {
+    ?person <span class="fn">:locatedIn</span> ?location .
+    ?person rdf:type <span class="fn">:Suspect</span> .
+  }
+}</code></pre>
+
+    <h3>DURING &mdash; Interval query</h3>
+
+    <pre><code><span class="cmt"># Who was at the courthouse during the hearing?</span>
+<span class="kw">SELECT</span> ?person ?location <span class="kw">WHERE</span> {
+  <span class="fn">DURING</span>(<span class="str">"2024-03-14T09:00"</span>, <span class="str">"2024-03-14T11:00"</span>) {
+    ?person <span class="fn">:locatedIn</span> <span class="fn">:Courthouse</span> .
+  }
+}</code></pre>
+
+    <h3>WORLD_STATE &mdash; Complete snapshot</h3>
+
+    <pre><code><span class="cmt"># Everything that was true at this moment</span>
+<span class="kw">SELECT</span> ?s ?p ?o <span class="kw">WHERE</span> {
+  <span class="fn">WORLD_STATE</span>(<span class="str">"2024-03-14T10:00:00"</span>^^xsd:dateTime) {
+    ?s ?p ?o .
+  }
+}</code></pre>
+
+    <h3>TEMPORAL_DIFF &mdash; What changed?</h3>
+
+    <pre><code><span class="cmt"># What changed between scene 3 and scene 4?</span>
+<span class="kw">SELECT</span> ?change ?s ?p ?o <span class="kw">WHERE</span> {
+  <span class="fn">TEMPORAL_DIFF</span>(<span class="str">"scene_3_end"</span>, <span class="str">"scene_4_start"</span>) {
+    ?s ?p ?o .
+    <span class="kw">BIND</span>(sutra:changeType <span class="kw">AS</span> ?change)
+  }
+}</code></pre>
+
+    <h3>Composition with Vector Search</h3>
+
+    <pre><code><span class="cmt"># Find semantically similar documents about people
+# who existed at a specific time</span>
+<span class="kw">SELECT</span> ?doc ?entity <span class="kw">WHERE</span> {
+  <span class="fn">AT_TIME</span>(<span class="str">"2024-06-01"</span>^^xsd:dateTime) {
+    ?entity rdf:type <span class="fn">:Person</span> .
+    ?doc <span class="fn">:mentions</span> ?entity .
+  }
+  <span class="fn">VECTOR_SIMILAR</span>(?doc <span class="fn">:hasEmbedding</span> <span class="str">"..."</span>^^sutra:f32vec, 0.85)
+}</code></pre>
+
+    <h2>Use Cases</h2>
+
+    <div class="comparison">
+        <div class="card">
+            <h4>Text-to-Video Continuity</h4>
+            <p>Track every entity across scenes. &ldquo;Who is holding the knife? What are they wearing? Was the door open?&rdquo; Continuity errors become constraint violations detected by query.</p>
+        </div>
+        <div class="card">
+            <h4>Legal Investigation</h4>
+            <p>Reconstruct timelines from depositions. &ldquo;Where was the defendant during the relevant window? Which witness statements conflict?&rdquo; Chain of custody as a temporal graph trace.</p>
+        </div>
+    </div>
+    <div class="comparison">
+        <div class="card">
+            <h4>Historical Knowledge</h4>
+            <p>Model entities with imprecise temporal bounds. Year-level precision for births, day-level for deaths. Both stored without forcing false precision.</p>
+        </div>
+        <div class="card">
+            <h4>GraphRAG Provenance</h4>
+            <p>Track which extraction pass produced which triples, from which source, at which confidence. &ldquo;What did we know at time T&rdquo; vs &ldquo;what do we know now.&rdquo;</p>
+        </div>
+    </div>
+
+    <h2>The Dimensional Spectrum</h2>
+
+    <p>Ontochronological indexing is one instance of a general pattern: <strong>promote the query axis to a leading index key</strong>. The same approach extends to coordinates, provenance, and confidence:</p>
+
+    <table>
+        <tr><th>Dimension</th><th>Index</th><th>Data Structure</th><th>Query</th></tr>
+        <tr><td>Time (1D)</td><td>TSPO</td><td>B-tree</td><td>&ldquo;Everything at time T&rdquo;</td></tr>
+        <tr><td>Coordinates (2&ndash;3D)</td><td>XYSPO</td><td>R-tree / composite B-tree</td><td>&ldquo;Everything at location L&rdquo;</td></tr>
+        <tr><td>Combined</td><td>TXYSPO</td><td>Composite range scan</td><td>&ldquo;Everything at L during T&rdquo;</td></tr>
+        <tr><td>Embeddings (768D+)</td><td>VECTOR(p)</td><td>HNSW</td><td>&ldquo;Semantically similar&rdquo;</td></tr>
+    </table>
+
+    <div class="callout purple">
+        <strong>SutraDB already pays the hard tax for the high-dimensional end.</strong>
+        HNSW solves approximate search in hundreds of dimensions. Temporal and spatial indexing are just B-trees &mdash; exact, cheap, and well understood since the 1970s. They are essentially free once you have HNSW.
+    </div>
+
+    <h2>Architecture</h2>
+
+    <p>Ontochronological features are <strong>purely additive</strong>:</p>
+
+    <ul>
+        <li>Existing SPO/POS/OSP indexes are unaffected</li>
+        <li>Existing HNSW vector indexes are unaffected</li>
+        <li>Existing SPARQL+ queries work unchanged</li>
+        <li>Databases without temporal data pay zero cost</li>
+        <li>The TSPO index is only built when temporal predicates are present</li>
+    </ul>
+
+    <p>Three new reserved predicates trigger temporal indexing:</p>
+
+    <table>
+        <tr><th>Predicate</th><th>Purpose</th></tr>
+        <tr><td><code>sutra:assertedAt</code></td><td>Point attestation &mdash; &ldquo;known true at this time&rdquo;</td></tr>
+        <tr><td><code>sutra:validFrom</code></td><td>Interval start &mdash; &ldquo;became true at this time&rdquo;</td></tr>
+        <tr><td><code>sutra:validTo</code></td><td>Interval end &mdash; &ldquo;stopped being true at this time&rdquo;</td></tr>
+    </table>
+
+    <p>The query planner treats TSPO exactly like it treats SPO, POS, OSP, and VECTOR &mdash; as an access path with cost estimates. Temporal queries that benefit from TSPO get routed there. Queries that don&rsquo;t simply ignore it.</p>
+
+</div>
+
+<footer>
+    <a href="../../">Home</a> &middot;
+    <a href="../">Theory</a> &middot;
+    <a href="https://github.com/EmmaLeonhart/SutraDB">GitHub</a>
+</footer>
+</body>
+</html>
